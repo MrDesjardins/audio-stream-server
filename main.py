@@ -102,6 +102,7 @@ def index():
 <html>
 <head>
     <title>YouTube Radio</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
 <style>
 button {{
@@ -111,7 +112,7 @@ button {{
 </style>
 <body>
     <h1>Private YouTube Radio</h1>
-    <input type="text" id="youtube_video_id" placeholder="YouTube ID" size="50" value="YDBYK83smMU">
+    <input type="text" id="youtube_video_id" placeholder="YouTube ID" size="40" value="YDBYK83smMU">
     <br style="margin: 10px 0;"/>
     <button onclick="startStream()">Start Stream</button>
     <button onclick="stopStream()">Stop Stream</button>

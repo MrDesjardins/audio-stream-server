@@ -47,4 +47,6 @@ sudo ufw status
 
 ```sh
 FASTAPI_HOST=127.0.0.1 FASTAPI_API_PORT=8000 uv run main.py
+
+FASTAPI_HOST=10.0.0.181 FASTAPI_API_PORT=8000 uv run main.py
 ```
