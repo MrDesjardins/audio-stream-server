@@ -1,7 +1,9 @@
 # file: youtube_streamer.py
 import os
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 import subprocess
 import threading
@@ -11,6 +13,10 @@ host = os.environ.get("FASTAPI_HOST", "127.0.0.1")
 api_port = int(os.environ.get("FASTAPI_API_PORT", 8000))
 
 app = FastAPI()
+
+# Mount static files and templates
+app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
 
 # Global process/thread for streaming
 current_process = None
@@ -95,80 +101,13 @@ def stream_audio():
     return StreamingResponse(current_process.stdout, media_type="audio/mpeg")
 
 
-@app.get("/", response_class=HTMLResponse)
-def index():
-    html_content = f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <title>YouTube Radio</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-</head>
-<style>
-button {{
-  height:40px;
-  width:100px;
-}}
-</style>
-<body>
-    <h1>Private YouTube Radio</h1>
-    <input type="text" id="youtube_video_id" placeholder="YouTube ID" size="40" value="YDBYK83smMU">
-    <br style="margin: 10px 0;"/>
-    <button onclick="startStream()">Start Stream</button>
-    <button onclick="stopStream()">Stop Stream</button>
-    <br style="margin: 10px 0;"/>
-    <br style="margin: 10px 0;"/>
-    <button onclick="rewind()">Rewind</button>
-    <button onclick="pauseAudio()">Pause</button>
-    <button onclick="playAudio()">Play</button>
-    <p id="status">Status: idle</p>
-
-    <audio id="player" controls autoplay>
-        <source src="http://{host}:{api_port}/mystream" type="audio/mpeg">
-        Your browser does not support audio.
-    </audio>
-
-    <script>
-        const player = document.getElementById('player');
-
-        async function startStream() {{
-            const youtube_video_id = document.getElementById('youtube_video_id').value;
-            const res = await fetch('/stream', {{
-                method: 'POST',
-                headers: {{'Content-Type': 'application/json'}},
-                body: JSON.stringify({{youtube_video_id}})
-            }});
-            const data = await res.json();
-            document.getElementById('status').innerText = 'Status: ' + (data.status || data.detail);
-
-            // Reload audio to pick up new stream
-            player.src = 'http://{host}:{api_port}/mystream';
-            player.load();
-            player.play().catch(e => console.log(e));
-        }}
-
-        async function stopStream() {{
-            const res = await fetch('/stop', {{method: 'POST'}});
-            const data = await res.json();
-            document.getElementById('status').innerText = 'Status: ' + (data.status || data.detail);
-        }}
-
-        function pauseAudio() {{ player.pause(); }}
-        function playAudio() {{ player.play(); }}
-        function rewind() {{ player.currentTime = Math.max(0, player.currentTime - 15); }}
-
-        async function updateStatus() {{
-            const res = await fetch('/status');
-            const data = await res.json();
-            document.getElementById('status').innerText = 'Status: ' + data.status;
-        }}
-
-        setInterval(updateStatus, 3000);
-    </script>
-</body>
-</html>
-"""
-    return HTMLResponse(content=html_content)
+@app.get("/")
+def index(request: Request):
+    return templates.TemplateResponse("index.html", {
+        "request": request,
+        "host": host,
+        "api_port": api_port
+    })
 
 
 if __name__ == "__main__":

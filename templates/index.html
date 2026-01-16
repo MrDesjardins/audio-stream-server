@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Radio</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1><i class="fab fa-youtube"></i> Private YouTube Radio</h1>
+        </header>
+
+        <main>
+            <div class="control-section">
+                <div class="input-group">
+                    <label for="youtube_video_id">
+                        <i class="fas fa-link"></i> YouTube Video ID or URL
+                    </label>
+                    <input
+                        type="text"
+                        id="youtube_video_id"
+                        placeholder="Enter YouTube ID or URL"
+                        value="YDBYK83smMU"
+                    >
+                </div>
+
+                <div class="button-group">
+                    <button onclick="startStream()" class="btn btn-primary">
+                        <i class="fas fa-play-circle"></i>
+                        Start Stream
+                    </button>
+                    <button onclick="stopStream()" class="btn btn-secondary">
+                        <i class="fas fa-stop-circle"></i>
+                        Stop Stream
+                    </button>
+                </div>
+            </div>
+
+            <div class="player-section">
+                <div class="status-indicator">
+                    <span id="status-dot" class="status-dot"></span>
+                    <i class="fas fa-broadcast-tower"></i>
+                    <p id="status">Status: idle</p>
+                </div>
+
+                <audio id="player" controls>
+                    <source src="http://{{ host }}:{{ api_port }}/mystream" type="audio/mpeg">
+                    Your browser does not support audio.
+                </audio>
+
+                <div class="playback-controls">
+                    <button onclick="rewind()" class="btn btn-control">
+                        <i class="fas fa-backward"></i>
+                        <span class="btn-label">-15s</span>
+                    </button>
+                    <button onclick="pauseAudio()" class="btn btn-control">
+                        <i class="fas fa-pause"></i>
+                        <span class="btn-label">Pause</span>
+                    </button>
+                    <button onclick="playAudio()" class="btn btn-control">
+                        <i class="fas fa-play"></i>
+                        <span class="btn-label">Play</span>
+                    </button>
+                    <button onclick="fastforward()" class="btn btn-control">
+                        <i class="fas fa-forward"></i>
+                        <span class="btn-label">+15s</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="history-section">
+                <div class="history-header">
+                    <h2>
+                        <i class="fas fa-history"></i>
+                        Recent Videos
+                    </h2>
+                    <button onclick="clearHistory()" class="btn-clear-history" title="Clear history">
+                        <i class="fas fa-trash-alt"></i>
+                    </button>
+                </div>
+                <div id="history-list" class="history-list">
+                    <p class="history-empty">No history yet</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const player = document.getElementById('player');
+        const statusDot = document.getElementById('status-dot');
+        const statusText = document.getElementById('status');
+        const MAX_HISTORY_ITEMS = 10;
+
+        // History Management
+        function getHistory() {
+            try {
+                const history = localStorage.getItem('youtube_history');
+                return history ? JSON.parse(history) : [];
+            } catch (e) {
+                console.error('Error reading history:', e);
+                return [];
+            }
+        }
+
+        function saveToHistory(videoId) {
+            try {
+                let history = getHistory();
+
+                // Remove duplicate if exists
+                history = history.filter(item => item.id !== videoId);
+
+                // Add to beginning with timestamp
+                history.unshift({
+                    id: videoId,
+                    timestamp: Date.now()
+                });
+
+                // Keep only last MAX_HISTORY_ITEMS
+                history = history.slice(0, MAX_HISTORY_ITEMS);
+
+                localStorage.setItem('youtube_history', JSON.stringify(history));
+                renderHistory();
+            } catch (e) {
+                console.error('Error saving to history:', e);
+            }
+        }
+
+        function clearHistory() {
+            if (confirm('Are you sure you want to clear all history?')) {
+                localStorage.removeItem('youtube_history');
+                renderHistory();
+            }
+        }
+
+        function renderHistory() {
+            const historyContainer = document.getElementById('history-list');
+            const history = getHistory();
+
+            if (history.length === 0) {
+                historyContainer.innerHTML = '<p class="history-empty">No history yet</p>';
+                return;
+            }
+
+            historyContainer.innerHTML = history.map(item => {
+                const date = new Date(item.timestamp);
+                const timeAgo = getTimeAgo(item.timestamp);
+
+                return `
+                    <div class="history-item" onclick="loadFromHistory('${item.id}')">
+                        <div class="history-info">
+                            <i class="fab fa-youtube"></i>
+                            <span class="history-id">${item.id}</span>
+                        </div>
+                        <div class="history-meta">
+                            <span class="history-time">${timeAgo}</span>
+                            <i class="fas fa-play-circle"></i>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function getTimeAgo(timestamp) {
+            const seconds = Math.floor((Date.now() - timestamp) / 1000);
+
+            if (seconds < 60) return 'Just now';
+            if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+            if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+            if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
+            return new Date(timestamp).toLocaleDateString();
+        }
+
+        function loadFromHistory(videoId) {
+            document.getElementById('youtube_video_id').value = videoId;
+            startStream();
+        }
+
+        function extractVideoId(input) {
+            // If it's already just an ID (11 characters, alphanumeric), return it
+            if (/^[a-zA-Z0-9_-]{11}$/.test(input.trim())) {
+                return input.trim();
+            }
+
+            // Try to extract from various YouTube URL formats
+            const patterns = [
+                /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
+                /youtube\.com\/watch\?.*v=([a-zA-Z0-9_-]{11})/
+            ];
+
+            for (const pattern of patterns) {
+                const match = input.match(pattern);
+                if (match) {
+                    return match[1];
+                }
+            }
+
+            // If no pattern matched, return the original input trimmed
+            return input.trim();
+        }
+
+        async function startStream() {
+            const input = document.getElementById('youtube_video_id').value;
+
+            if (!input.trim()) {
+                updateStatus('Please enter a YouTube ID or URL', 'error');
+                return;
+            }
+
+            // Extract video ID from URL or use as-is if it's already an ID
+            const youtube_video_id = extractVideoId(input);
+
+            if (!youtube_video_id) {
+                updateStatus('Invalid YouTube ID or URL', 'error');
+                return;
+            }
+
+            try {
+                const res = await fetch('/stream', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({youtube_video_id})
+                });
+                const data = await res.json();
+                updateStatus(data.status || data.detail, res.ok ? 'streaming' : 'error');
+
+                if (res.ok) {
+                    // Save to history on successful stream start
+                    saveToHistory(youtube_video_id);
+                }
+
+                // Reload audio to pick up new stream
+                player.src = 'http://{{ host }}:{{ api_port }}/mystream';
+                player.load();
+                player.play().catch(e => console.log(e));
+            } catch (error) {
+                updateStatus('Failed to start stream', 'error');
+                console.error(error);
+            }
+        }
+
+        async function stopStream() {
+            try {
+                const res = await fetch('/stop', {method: 'POST'});
+                const data = await res.json();
+                updateStatus(data.status || data.detail, 'idle');
+            } catch (error) {
+                updateStatus('Failed to stop stream', 'error');
+                console.error(error);
+            }
+        }
+
+        function pauseAudio() {
+            player.pause();
+        }
+
+        function playAudio() {
+            player.play();
+        }
+
+        function rewind() {
+            player.currentTime = Math.max(0, player.currentTime - 15);
+        }
+
+        function fastforward() {
+            player.currentTime = Math.max(0, player.currentTime + 15);
+        }
+
+        async function updateStatus(message, state) {
+            if (message) {
+                statusText.innerText = 'Status: ' + message;
+            }
+
+            // Update status dot
+            statusDot.className = 'status-dot';
+            if (state === 'streaming') {
+                statusDot.classList.add('streaming');
+            } else if (state === 'error') {
+                statusDot.classList.add('error');
+            }
+        }
+
+        async function fetchStatus() {
+            try {
+                const res = await fetch('/status');
+                const data = await res.json();
+                updateStatus(data.status, data.status);
+            } catch (error) {
+                console.error('Failed to fetch status:', error);
+            }
+        }
+
+        // Poll status every 3 seconds
+        setInterval(fetchStatus, 3000);
+
+        // Initial status fetch and history render
+        fetchStatus();
+        renderHistory();
+    </script>
+</body>
+</html>
