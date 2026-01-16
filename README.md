@@ -54,9 +54,15 @@ FASTAPI_HOST=10.0.0.181 FASTAPI_API_PORT=8000 uv run main.py
 # Service
 
 ```sh
-sudo cp audio-stream.service /etc/systemd/system/
+sudo cp audio-stream.service /etc/systemd/system/audio-stream.service 
 sudo systemctl daemon-reload
 sudo systemctl enable audio-stream
 sudo systemctl start audio-stream
 sudo systemctl status audio-stream
+```
+
+# Debug log
+
+```sh
+journalctl -u audio-stream -f
 ```
