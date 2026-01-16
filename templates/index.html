@@ -71,6 +71,35 @@
                 </div>
             </div>
 
+            {% if transcription_enabled %}
+            <div class="transcription-section">
+                <div class="transcription-header">
+                    <h2>
+                        <i class="fas fa-file-alt"></i>
+                        Transcription
+                    </h2>
+                </div>
+                <div id="transcription-status" class="transcription-status">
+                    <p class="transcription-idle">Start streaming to see transcription status</p>
+                </div>
+            </div>
+
+            <!-- Summary Modal -->
+            <div id="summary-modal" class="modal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h2><i class="fas fa-file-alt"></i> Summary</h2>
+                        <button onclick="closeSummaryModal()" class="modal-close">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div id="summary-content" class="modal-body">
+                        <p>Loading summary...</p>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
             <div class="history-section">
                 <div class="history-header">
                     <h2>
@@ -93,6 +122,8 @@
         const statusDot = document.getElementById('status-dot');
         const statusText = document.getElementById('status');
         const MAX_HISTORY_ITEMS = 10;
+        const transcriptionEnabled = {{ 'true' if transcription_enabled else 'false' }};
+        let currentVideoId = null;
 
         // History Management
         function getHistory() {
@@ -229,6 +260,11 @@
                 if (res.ok) {
                     // Save to history on successful stream start
                     saveToHistory(youtube_video_id);
+
+                    // Track current video for transcription
+                    if (transcriptionEnabled) {
+                        currentVideoId = youtube_video_id;
+                    }
                 }
 
                 // Reload audio to pick up new stream
@@ -292,12 +328,161 @@
             }
         }
 
+        // Transcription functions
+        async function fetchTranscriptionStatus() {
+            if (!transcriptionEnabled || !currentVideoId) {
+                return;
+            }
+
+            try {
+                const res = await fetch(`/transcription/status/${currentVideoId}`);
+                const data = await res.json();
+                updateTranscriptionStatus(data);
+            } catch (error) {
+                console.error('Failed to fetch transcription status:', error);
+            }
+        }
+
+        function updateTranscriptionStatus(data) {
+            const container = document.getElementById('transcription-status');
+            if (!container) return;
+
+            const statusIcons = {
+                'pending': '<i class="fas fa-clock"></i>',
+                'checking_dedup': '<i class="fas fa-search"></i>',
+                'transcribing': '<i class="fas fa-microphone"></i>',
+                'summarizing': '<i class="fas fa-brain"></i>',
+                'posting': '<i class="fas fa-upload"></i>',
+                'completed': '<i class="fas fa-check-circle"></i>',
+                'failed': '<i class="fas fa-exclamation-circle"></i>',
+                'skipped': '<i class="fas fa-info-circle"></i>',
+                'not_found': '<i class="fas fa-question-circle"></i>'
+            };
+
+            const statusLabels = {
+                'pending': 'Waiting for audio download to complete...',
+                'checking_dedup': 'Checking for existing note',
+                'transcribing': 'Transcribing audio',
+                'summarizing': 'Generating summary',
+                'posting': 'Posting to Trilium',
+                'completed': 'Completed',
+                'failed': 'Failed',
+                'skipped': 'Already exists in Trilium',
+                'not_found': 'Not started'
+            };
+
+            const status = data.status || 'not_found';
+            const icon = statusIcons[status] || '<i class="fas fa-circle"></i>';
+            const label = statusLabels[status] || status;
+
+            let html = `
+                <div class="transcription-item">
+                    <div class="transcription-info">
+                        ${icon}
+                        <span class="transcription-label">${label}</span>
+                    </div>
+            `;
+
+            // Add action buttons based on status
+            if (status === 'completed' || status === 'skipped') {
+                html += `
+                    <div class="transcription-actions">
+                        <button onclick="viewSummary('${data.video_id}')" class="btn-transcription" title="View Summary">
+                            <i class="fas fa-eye"></i>
+                            <span>View Summary</span>
+                        </button>
+                `;
+
+                if (data.trilium_note_url) {
+                    html += `
+                        <a href="${data.trilium_note_url}" target="_blank" class="btn-transcription" title="Open in Trilium">
+                            <i class="fas fa-external-link-alt"></i>
+                            <span>Open in Trilium</span>
+                        </a>
+                    `;
+                }
+
+                html += `</div>`;
+            } else if (status === 'failed') {
+                html += `
+                    <div class="transcription-error">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <span>${data.error || 'Unknown error'}</span>
+                    </div>
+                `;
+            } else if (status === 'pending' || status === 'transcribing' || status === 'summarizing' || status === 'posting' || status === 'checking_dedup') {
+                html += `
+                    <div class="transcription-progress">
+                        <div class="spinner"></div>
+                    </div>
+                `;
+            }
+
+            html += `</div>`;
+            container.innerHTML = html;
+        }
+
+        async function viewSummary(videoId) {
+            const modal = document.getElementById('summary-modal');
+            const content = document.getElementById('summary-content');
+
+            modal.style.display = 'block';
+            content.innerHTML = '<p>Loading summary...</p>';
+
+            try {
+                const res = await fetch(`/transcription/summary/${videoId}`);
+                const data = await res.json();
+
+                if (data.summary) {
+                    // Format the summary with proper line breaks
+                    const formattedSummary = data.summary.replace(/\n/g, '<br>');
+                    content.innerHTML = `
+                        <div class="summary-text">${formattedSummary}</div>
+                        ${data.trilium_note_url ? `
+                            <div class="summary-footer">
+                                <a href="${data.trilium_note_url}" target="_blank" class="btn-transcription">
+                                    <i class="fas fa-external-link-alt"></i>
+                                    Open full note in Trilium
+                                </a>
+                            </div>
+                        ` : ''}
+                    `;
+                } else {
+                    content.innerHTML = '<p>Summary not available yet</p>';
+                }
+            } catch (error) {
+                console.error('Failed to fetch summary:', error);
+                content.innerHTML = '<p>Failed to load summary</p>';
+            }
+        }
+
+        function closeSummaryModal() {
+            const modal = document.getElementById('summary-modal');
+            modal.style.display = 'none';
+        }
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('summary-modal');
+            if (event.target === modal) {
+                closeSummaryModal();
+            }
+        }
+
         // Poll status every 3 seconds
         setInterval(fetchStatus, 3000);
+
+        // Poll transcription status every 5 seconds
+        if (transcriptionEnabled) {
+            setInterval(fetchTranscriptionStatus, 5000);
+        }
 
         // Initial status fetch and history render
         fetchStatus();
         renderHistory();
+        if (transcriptionEnabled) {
+            fetchTranscriptionStatus();
+        }
     </script>
 </body>
 </html>

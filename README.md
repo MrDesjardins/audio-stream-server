@@ -34,6 +34,83 @@ Change:
 </listen-socket>
 ```
 
+# Transcription Configuration (Optional)
+
+The application supports automatic transcription and summarization of YouTube audio using OpenAI Whisper and ChatGPT/Gemini. Transcripts and summaries are automatically posted to Trilium Notes.
+
+## Quick Setup with .env File
+
+1. Copy the example environment file:
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Edit `.env` and fill in your values:
+   ```bash
+   nano .env
+   ```
+
+3. Required variables for transcription:
+   ```bash
+   TRANSCRIPTION_ENABLED=true
+   OPENAI_API_KEY=sk-...
+   TRILIUM_URL=http://localhost:8080
+   TRILIUM_ETAPI_TOKEN=your_etapi_token_here
+   TRILIUM_PARENT_NOTE_ID=root_note_id_where_summaries_are_stored
+   ```
+
+The application will automatically load settings from `.env` when it starts.
+
+## Getting API Keys
+
+### OpenAI API Key
+1. Go to https://platform.openai.com/api-keys
+2. Create a new API key
+3. Copy the key (starts with `sk-`)
+
+### Gemini API Key (Alternative to OpenAI for summarization)
+1. Go to https://makersuite.google.com/app/apikey
+2. Create a new API key
+3. Copy the key
+
+### Trilium ETAPI Token
+1. Open Trilium Notes
+2. Go to Options → ETAPI
+3. Create a new token or copy existing one
+4. Get the parent note ID where you want summaries stored (right-click note → "Copy Note ID")
+
+### Test Trilium Configuration
+After setting up your `.env` file, test your Trilium connection:
+
+```bash
+uv run test_trilium.py
+```
+
+This will verify:
+- Trilium is reachable at the configured URL
+- ETAPI token is valid
+- Parent note ID exists and is accessible
+
+## Features
+
+When transcription is enabled:
+- Audio is automatically saved while streaming
+- Background worker transcribes audio using OpenAI Whisper
+- Summary is generated using ChatGPT or Gemini
+- Results are posted to Trilium Notes
+- **Caching**: Transcripts and summaries are cached locally to avoid re-processing
+- **Audio retention**: Keeps last 10 audio files for quick retry without re-downloading
+- Deduplication: Videos already in Trilium are skipped
+- UI shows transcription progress and allows viewing summaries
+- Backup: If Trilium is unavailable, transcripts are saved to `/tmp/trilium-backup/`
+
+## Costs
+
+Approximate API costs:
+- Whisper transcription: $0.006 per minute of audio
+- ChatGPT summarization (gpt-4o-mini): ~$0.001-0.01 per summary
+- Gemini summarization (gemini-1.5-flash): Free tier available
+
 # Server configuration
 
 ```sh
@@ -45,11 +122,24 @@ sudo ufw status
 
 # Run
 
+If you're using a `.env` file (recommended):
+
 ```sh
+# Simply run the application - it will read from .env automatically
+uv run main.py
+```
+
+Or pass environment variables on the command line:
+
+```sh
+
 FASTAPI_HOST=127.0.0.1 FASTAPI_API_PORT=8000 uv run main.py
 
+# Network accessible
 FASTAPI_HOST=10.0.0.181 FASTAPI_API_PORT=8000 uv run main.py
 ```
+
+**Note**: Command-line environment variables override values from `.env` file.
 
 # Service
 
