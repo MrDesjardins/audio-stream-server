@@ -1,0 +1,25 @@
+[Unit]
+Description=Audio Stream FastAPI Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=pdesjardins
+WorkingDirectory=/home/pdesjardins/code/audio-stream-server
+
+Environment=FASTAPI_HOST=10.0.0.181
+Environment=FASTAPI_API_PORT=8000
+
+ExecStart=/home/pdesjardins/.local/bin/uv run main.py
+
+Restart=always
+RestartSec=5
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=false
+
+[Install]
+WantedBy=multi-user.target
