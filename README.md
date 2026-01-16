@@ -143,13 +143,21 @@ FASTAPI_HOST=10.0.0.181 FASTAPI_API_PORT=8000 uv run main.py
 
 # Service
 
+The application can run as a systemd service. **The `.env` file will be automatically loaded** when running as a service because it's in the WorkingDirectory.
+
 ```sh
-sudo cp audio-stream.service /etc/systemd/system/audio-stream.service 
+# Make sure your .env file is configured first
+nano .env
+
+# Install and start the service
+sudo cp audio-stream.service /etc/systemd/system/audio-stream.service
 sudo systemctl daemon-reload
 sudo systemctl enable audio-stream
 sudo systemctl start audio-stream
 sudo systemctl status audio-stream
 ```
+
+**Note**: Environment variables in the `.service` file (if uncommented) will override values from `.env`.
 
 # Debug log
 

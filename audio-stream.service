@@ -7,8 +7,10 @@ Wants=network-online.target
 User=pdesjardins
 WorkingDirectory=/home/pdesjardins/code/audio-stream-server
 
-Environment=FASTAPI_HOST=10.0.0.181
-Environment=FASTAPI_API_PORT=8000
+# Environment variables can be defined here, but .env file in WorkingDirectory will be loaded automatically
+# Only override specific values here if needed (these will override .env values)
+# Environment=FASTAPI_HOST=10.0.0.181
+# Environment=FASTAPI_API_PORT=8000
 
 ExecStart=/home/pdesjardins/.local/bin/uv run main.py
 
