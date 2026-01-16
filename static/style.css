@@ -139,6 +139,46 @@ main {
     grid-template-columns: repeat(4, 1fr);
 }
 
+/* Speed Controls */
+.speed-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 12px;
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 12px;
+}
+
+.speed-label {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.7);
+    margin-right: 4px;
+}
+
+.btn-speed {
+    padding: 8px 16px;
+    font-size: 0.85rem;
+    min-width: 50px;
+    background: rgba(138, 43, 226, 0.2);
+    color: #fff;
+    border: 1px solid rgba(138, 43, 226, 0.3);
+}
+
+.btn-speed:hover {
+    background: rgba(138, 43, 226, 0.4);
+    border-color: rgba(138, 43, 226, 0.6);
+    transform: translateY(-1px);
+}
+
+.btn-speed.active {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-color: #667eea;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+}
+
 /* Buttons */
 .btn {
     padding: 14px 20px;
@@ -458,6 +498,24 @@ audio::-webkit-media-controls-panel {
 
     .btn-label {
         font-size: 0.75rem;
+    }
+
+    .speed-controls {
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+
+    .speed-label {
+        width: 100%;
+        text-align: center;
+        margin-bottom: 4px;
+    }
+
+    .btn-speed {
+        padding: 8px 12px;
+        font-size: 0.8rem;
+        flex: 1;
+        min-width: 60px;
     }
 }
 

@@ -71,6 +71,22 @@
                         <span class="btn-label">+15s</span>
                     </button>
                 </div>
+
+                <div class="speed-controls">
+                    <span class="speed-label">Speed:</span>
+                    <button onclick="setSpeed(1.0)" class="btn btn-speed active" id="speed-1x">
+                        <span class="btn-label">1x</span>
+                    </button>
+                    <button onclick="setSpeed(1.2)" class="btn btn-speed" id="speed-1.2x">
+                        <span class="btn-label">1.2x</span>
+                    </button>
+                    <button onclick="setSpeed(1.5)" class="btn btn-speed" id="speed-1.5x">
+                        <span class="btn-label">1.5x</span>
+                    </button>
+                    <button onclick="setSpeed(2.0)" class="btn btn-speed" id="speed-2x">
+                        <span class="btn-label">2x</span>
+                    </button>
+                </div>
             </div>
 
             {% if transcription_enabled %}
@@ -309,6 +325,23 @@
 
         function fastforward() {
             player.currentTime = Math.max(0, player.currentTime + 15);
+        }
+
+        function setSpeed(speed) {
+            player.playbackRate = speed;
+
+            // Update active button styling
+            document.querySelectorAll('.btn-speed').forEach(btn => {
+                btn.classList.remove('active');
+            });
+
+            const speedId = `speed-${speed}x`;
+            const activeBtn = document.getElementById(speedId);
+            if (activeBtn) {
+                activeBtn.classList.add('active');
+            }
+
+            console.log(`Playback speed set to ${speed}x`);
         }
 
         async function updateStatus(message, state) {
