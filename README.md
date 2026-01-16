@@ -50,7 +50,16 @@ The application supports automatic transcription and summarization of YouTube au
    nano .env
    ```
 
-3. Required variables for transcription:
+3. **Important**: Set `FASTAPI_HOST` for network access:
+   ```bash
+   # For network access (recommended):
+   FASTAPI_HOST=0.0.0.0
+
+   # For localhost only:
+   FASTAPI_HOST=127.0.0.1
+   ```
+
+4. Required variables for transcription:
    ```bash
    TRANSCRIPTION_ENABLED=true
    OPENAI_API_KEY=sk-...

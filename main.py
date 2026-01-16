@@ -1,6 +1,7 @@
 # file: youtube_streamer.py
 import os
 import logging
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -8,6 +9,9 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 import subprocess
 import threading
+
+# Load environment variables from .env file FIRST
+load_dotenv()
 
 # Import transcription modules
 from config import get_config
@@ -24,7 +28,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Configurable host and port
+# Configurable host and port (loaded after load_dotenv())
 host = os.environ.get("FASTAPI_HOST", "127.0.0.1")
 api_port = int(os.environ.get("FASTAPI_API_PORT", 8000))
 
