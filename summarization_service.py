@@ -11,9 +11,10 @@ logger = logging.getLogger(__name__)
 
 SUMMARY_PROMPT_TEMPLATE = """You are summarizing a YouTube video transcript. Please provide:
 
-1. A concise 2-3 sentence overview of the main topic
-2. Key points discussed (3-5 bullet points)
-3. Any important conclusions or takeaways
+1. A clear and informative title for the video (max 60 characters)
+2. A concise 2-3 sentence overview of the main topic
+3. Key points discussed (5-15 bullet points depending on length)
+4. Any important conclusions or takeaways
 
 Keep the summary clear, well-structured, and informative.
 
@@ -72,7 +73,7 @@ def _summarize_with_openai(transcript: str, video_id: str) -> str:
                 }
             ],
             temperature=0.7,
-            max_tokens=500
+            max_tokens=1000
         )
 
         summary = response.choices[0].message.content
