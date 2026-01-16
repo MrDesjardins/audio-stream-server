@@ -188,12 +188,16 @@ def stream_audio(request: Request):
 
 @app.get("/")
 def index(request: Request):
+    # Use the request's host header to get the actual server address clients use
+    # This handles 0.0.0.0 binding correctly
+    server_host = request.url.hostname
     logger.info(f"📄 Index page requested by {request.client.host}")
-    logger.info(f"   Template will render with host={host}, api_port={api_port}")
-    logger.info(f"   Audio player URL will be: http://{host}:{api_port}/mystream")
+    logger.info(f"   Request URL: {request.url}")
+    logger.info(f"   Server hostname from request: {server_host}")
+    logger.info(f"   Audio player URL will be: http://{server_host}:{api_port}/mystream")
     return templates.TemplateResponse("index.html", {
         "request": request,
-        "host": host,
+        "host": server_host,  # Use the hostname from the request, not the bind address
         "api_port": api_port,
         "transcription_enabled": config.transcription_enabled
     })
