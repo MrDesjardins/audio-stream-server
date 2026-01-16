@@ -46,6 +46,8 @@
                     <p id="status">Status: idle</p>
                 </div>
 
+                <!-- Stream URL: http://{{ host }}:{{ api_port }}/mystream -->
+                <!-- If you see 127.0.0.1 above, check your .env file FASTAPI_HOST setting -->
                 <audio id="player" controls>
                     <source src="http://{{ host }}:{{ api_port }}/mystream" type="audio/mpeg">
                     Your browser does not support audio.
@@ -268,9 +270,14 @@
                 }
 
                 // Reload audio to pick up new stream
-                player.src = 'http://{{ host }}:{{ api_port }}/mystream';
+                const streamUrl = 'http://{{ host }}:{{ api_port }}/mystream';
+                console.log('🎵 Setting audio player source to:', streamUrl);
+                player.src = streamUrl;
                 player.load();
-                player.play().catch(e => console.log(e));
+                player.play().catch(e => {
+                    console.error('❌ Audio playback failed:', e);
+                    console.log('   Stream URL:', streamUrl);
+                });
             } catch (error) {
                 updateStatus('Failed to start stream', 'error');
                 console.error(error);

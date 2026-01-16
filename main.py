@@ -32,6 +32,14 @@ logger = logging.getLogger(__name__)
 host = os.environ.get("FASTAPI_HOST", "127.0.0.1")
 api_port = int(os.environ.get("FASTAPI_API_PORT", 8000))
 
+# Log the server configuration immediately
+logger.info(f"=" * 60)
+logger.info(f"SERVER CONFIGURATION")
+logger.info(f"FASTAPI_HOST: {host}")
+logger.info(f"FASTAPI_API_PORT: {api_port}")
+logger.info(f"Stream URL will be: http://{host}:{api_port}/mystream")
+logger.info(f"=" * 60)
+
 app = FastAPI()
 
 # Load configuration
@@ -117,10 +125,13 @@ def start_youtube_stream(youtube_video_id: str):
 
 @app.post("/stream")
 def stream_video(request: StreamRequest):
+    logger.info(f"🎬 /stream requested for video: {request.youtube_video_id}")
+    logger.info(f"   Client should connect to: http://{host}:{api_port}/mystream")
     global ffmpeg_thread, current_process
     with process_lock:
         # Stop existing stream if any
         if current_process:
+            logger.info(f"   Stopping existing stream")
             current_process.terminate()
             current_process = None
 
@@ -165,15 +176,21 @@ def get_status():
 
 
 @app.get("/mystream")
-def stream_audio():
+def stream_audio(request: Request):
     """Serve current ffmpeg stdout as audio"""
+    logger.info(f"🎵 /mystream accessed by {request.client.host}:{request.client.port}")
     if current_process is None:
+        logger.warning(f"❌ No active stream when /mystream was accessed")
         raise HTTPException(status_code=400, detail="No active stream")
+    logger.info(f"✓ Streaming audio to client")
     return StreamingResponse(current_process.stdout, media_type="audio/mpeg")
 
 
 @app.get("/")
 def index(request: Request):
+    logger.info(f"📄 Index page requested by {request.client.host}")
+    logger.info(f"   Template will render with host={host}, api_port={api_port}")
+    logger.info(f"   Audio player URL will be: http://{host}:{api_port}/mystream")
     return templates.TemplateResponse("index.html", {
         "request": request,
         "host": host,
@@ -286,5 +303,11 @@ def get_summary(video_id: str):
 
 if __name__ == "__main__":
     import uvicorn
-    print(f"Starting API on {host}:{api_port}")
+    print("=" * 70)
+    print(f"🚀 STARTING AUDIO STREAM SERVER")
+    print(f"   Host: {host}")
+    print(f"   Port: {api_port}")
+    print(f"   Stream URL: http://{host}:{api_port}/mystream")
+    print(f"   Transcription: {'enabled' if config.transcription_enabled else 'disabled'}")
+    print("=" * 70)
     uvicorn.run("main:app", host=host, port=api_port, reload=True)
