@@ -124,6 +124,49 @@ main {
     opacity: 0.6;
 }
 
+/* Checkbox Group */
+.checkbox-group {
+    margin-bottom: 20px;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    padding: 12px 16px;
+    background: var(--bg-secondary);
+    border: 2px solid var(--border-color);
+    border-radius: 12px;
+    transition: all 0.3s ease;
+}
+
+.checkbox-label:hover {
+    border-color: var(--accent-primary);
+    background: var(--bg-primary);
+}
+
+.checkbox-label input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+    accent-color: var(--accent-primary);
+}
+
+.checkbox-label span {
+    color: var(--text-primary);
+    font-size: 0.95rem;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.checkbox-label span i {
+    color: var(--accent-secondary);
+    font-size: 1rem;
+}
+
 /* Button Groups */
 .button-group,
 .playback-controls {

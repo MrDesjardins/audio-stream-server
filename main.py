@@ -66,9 +66,10 @@ process_lock = threading.Lock()  # Ensure thread safety
 
 class StreamRequest(BaseModel):
     youtube_video_id: str
+    skip_transcription: bool = False
 
 
-def start_youtube_stream(youtube_video_id: str):
+def start_youtube_stream(youtube_video_id: str, skip_transcription: bool = False):
     """Start yt-dlp -> ffmpeg streaming to stdout (and optionally save to file)"""
     global current_process
     url = f"https://www.youtube.com/watch?v={youtube_video_id}"
@@ -82,8 +83,8 @@ def start_youtube_stream(youtube_video_id: str):
       url
     ]
 
-    # If transcription is enabled, save audio to file while streaming
-    if config.transcription_enabled:
+    # If transcription is enabled and not skipped, save audio to file while streaming
+    if config.transcription_enabled and not skip_transcription:
         audio_path = config.get_audio_path(youtube_video_id)
         logger.info(f"Saving audio to {audio_path} while streaming")
 
@@ -117,8 +118,8 @@ def start_youtube_stream(youtube_video_id: str):
     current_process = None
     logger.info(f"Audio download and conversion completed for video {youtube_video_id}")
 
-    # Log the final file size if transcription is enabled
-    if config.transcription_enabled and os.path.exists(audio_path):
+    # Log the final file size if transcription is enabled and not skipped
+    if config.transcription_enabled and not skip_transcription and os.path.exists(audio_path):
         file_size = os.path.getsize(audio_path)
         logger.info(f"Audio file saved: {audio_path} ({file_size / 1024 / 1024:.2f} MB) - transcription job already queued")
 
@@ -135,9 +136,9 @@ def stream_video(request: StreamRequest):
             current_process.terminate()
             current_process = None
 
-        # If transcription is enabled, queue the job immediately
+        # If transcription is enabled and not skipped, queue the job immediately
         # The background worker will wait for the download to complete
-        if config.transcription_enabled:
+        if config.transcription_enabled and not request.skip_transcription:
             try:
                 queue = get_transcription_queue()
                 job = TranscriptionJob(
@@ -148,10 +149,12 @@ def stream_video(request: StreamRequest):
                 logger.info(f"Queued transcription job for {request.youtube_video_id} (will start after download)")
             except Exception as e:
                 logger.error(f"Failed to queue transcription job: {e}")
+        elif config.transcription_enabled and request.skip_transcription:
+            logger.info(f"Transcription skipped for {request.youtube_video_id} (user preference)")
 
         # Start new stream in a thread
         def target():
-            start_youtube_stream(request.youtube_video_id)
+            start_youtube_stream(request.youtube_video_id, request.skip_transcription)
 
         ffmpeg_thread = threading.Thread(target=target, daemon=True)
         ffmpeg_thread.start()

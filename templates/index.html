@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>YouTube Radio</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v=1768628245">
 </head>
 <body>
     <div class="container">
@@ -26,6 +26,22 @@
                         value="YDBYK83smMU"
                     >
                 </div>
+
+                {% if transcription_enabled %}
+                <div class="checkbox-group">
+                    <label for="skip_transcription" class="checkbox-label">
+                        <input
+                            type="checkbox"
+                            id="skip_transcription"
+                            name="skip_transcription"
+                        >
+                        <span>
+                            <i class="fas fa-music"></i>
+                            Skip transcription (for music)
+                        </span>
+                    </label>
+                </div>
+                {% endif %}
 
                 <div class="button-group">
                     <button onclick="startStream()" class="btn btn-primary">
@@ -266,11 +282,15 @@
                 return;
             }
 
+            // Get skip_transcription checkbox value (if it exists)
+            const skipTranscriptionCheckbox = document.getElementById('skip_transcription');
+            const skip_transcription = skipTranscriptionCheckbox ? skipTranscriptionCheckbox.checked : false;
+
             try {
                 const res = await fetch('/stream', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({youtube_video_id})
+                    body: JSON.stringify({youtube_video_id, skip_transcription})
                 });
                 const data = await res.json();
                 updateStatus(data.status || data.detail, res.ok ? 'streaming' : 'error');
@@ -279,9 +299,18 @@
                     // Save to history on successful stream start
                     saveToHistory(youtube_video_id);
 
-                    // Track current video for transcription
+                    // Track current video for transcription (only if not skipped)
                     if (transcriptionEnabled) {
-                        currentVideoId = youtube_video_id;
+                        if (skip_transcription) {
+                            currentVideoId = null;
+                            // Update transcription status to show it was skipped
+                            const container = document.getElementById('transcription-status');
+                            if (container) {
+                                container.innerHTML = '<p class="transcription-idle"><i class="fas fa-music"></i> Transcription skipped for this stream</p>';
+                            }
+                        } else {
+                            currentVideoId = youtube_video_id;
+                        }
                     }
                 }
 
