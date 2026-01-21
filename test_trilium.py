@@ -59,15 +59,15 @@ def test_trilium_connection():
     # Test 3: Try to search notes by attribute (for deduplication)
     print("\nTest 3: Checking if we can search notes by attribute...")
     try:
-        # Search for any note with youtube-id attribute (to test search functionality)
-        search_query = '#youtube-id'
+        # Search for any note with youtube_id attribute (to test search functionality)
+        search_query = '#youtube_id'
         url = config.trilium_url.rstrip('/') + "/etapi/notes"
         params = {"search": search_query}
         response = httpx.get(url, headers=headers, params=params, timeout=5.0)
 
         if response.status_code == 200:
             results = response.json()
-            print(f"✓ Successfully searched notes (found {len(results)} with youtube-id attribute)")
+            print(f"✓ Successfully searched notes (found {len(results)} with youtube_id attribute)")
         else:
             print(f"⚠ Search returned status {response.status_code}")
             print(f"  This might be okay - the deduplication may still work")
@@ -80,7 +80,7 @@ def test_trilium_connection():
     print("=" * 50)
     print("\nNote: The application will:")
     print("- Create notes under the parent note you specified")
-    print("- Add a 'youtube-id' attribute to each note for deduplication")
+    print("- Add a 'youtube_id' attribute to each note for deduplication")
     print("- Only include the summary (not the full transcript)")
     return True
 

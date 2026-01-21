@@ -34,16 +34,16 @@ def check_video_exists(video_id: str) -> Optional[Dict[str, str]]:
         return None
 
     try:
-        logger.info(f"Searching for existing note with youtube-id={video_id}")
+        logger.info(f"Searching for existing note with youtube_id={video_id}")
 
         headers = {
             "Authorization": config.trilium_etapi_token,
             "Content-Type": "application/json"
         }
 
-        # Search for notes with youtube-id attribute
+        # Search for notes with youtube_id attribute
         # Using the search endpoint to find notes by attribute
-        search_query = f'#youtube-id="{video_id}"'
+        search_query = f'#youtube_id="{video_id}"'
         url = _build_url(config.trilium_url, "etapi/notes")
 
         # Try to search using query parameter
@@ -73,7 +73,7 @@ def check_video_exists(video_id: str) -> Optional[Dict[str, str]]:
 
 def create_trilium_note(video_id: str, transcript: str, summary: str) -> Dict[str, str]:
     """
-    Create a new note in Trilium with the summary and youtube-id attribute.
+    Create a new note in Trilium with the summary and youtube_id attribute.
 
     Args:
         video_id: The YouTube video ID
@@ -133,11 +133,11 @@ def create_trilium_note(video_id: str, transcript: str, summary: str) -> Dict[st
 
         logger.info(f"Created Trilium note: {note_id}")
 
-        # Step 2: Add the youtube-id attribute to the note
+        # Step 2: Add the youtube_id attribute to the note
         attribute_payload = {
             "noteId": note_id,
             "type": "label",
-            "name": "youtube-id",
+            "name": "youtube_id",
             "value": video_id
         }
 
@@ -145,12 +145,11 @@ def create_trilium_note(video_id: str, transcript: str, summary: str) -> Dict[st
         attr_response = httpx.post(attribute_url, headers=headers, json=attribute_payload, timeout=30.0)
         attr_response.raise_for_status()
 
-        logger.info(f"Added youtube-id attribute to note {note_id}")
+        logger.info(f"Added youtube_id attribute to note {note_id}")
 
         # Construct note URL - hash fragment should be appended directly
         note_url = f"{config.trilium_url.rstrip('/')}/#root/{note_id}"
-        logger.info(f"Successfully created Trilium note: {note_id} with youtube-id attribute")
-
+        logger.info(f"Successfully created Trilium note: {note_id} with youtube_id attribute")
         return {
             "noteId": note_id,
             "url": note_url

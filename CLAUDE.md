@@ -301,7 +301,7 @@ GEMINI_API_KEY=...                         # if SUMMARY_PROVIDER=gemini
 - Title: `YouTube: {video_id}`
 - Type: text/html
 - Contains: Summary only (not full transcript)
-- Attribute: `youtube-id = {video_id}` (for deduplication)
+- Attribute: `youtube_id = {video_id}` (for deduplication)
 
 **Content Layout**:
 - Markdown-formatted summary converted to HTML
@@ -321,7 +321,7 @@ GEMINI_API_KEY=...                         # if SUMMARY_PROVIDER=gemini
 
 **Implementation**:
 1. **Create Note**: `POST /etapi/create-note` with parentNoteId, title, type, mime, and content
-2. **Add Attribute**: `POST /etapi/attributes` with noteId, type=label, name=youtube-id, value=video_id
+2. **Add Attribute**: `POST /etapi/attributes` with noteId, type=label, name=youtube_id, value=video_id
 
 **Why Two Steps**: The `/etapi/create-note` endpoint does not accept an `attributes` field in the request body. Attributes must be added separately after note creation.
 
@@ -332,8 +332,8 @@ GEMINI_API_KEY=...                         # if SUMMARY_PROVIDER=gemini
 **Rationale**: Avoid re-transcribing videos already processed
 
 **Implementation** (using Trilium attributes):
-1. Each note created has a `youtube-id` attribute with the video ID (added in step 2 of note creation)
-2. Before transcribing, search Trilium: `GET /etapi/notes?search=#youtube-id="{video_id}"`
+1. Each note created has a `youtube_id` attribute with the video ID (added in step 2 of note creation)
+2. Before transcribing, search Trilium: `GET /etapi/notes?search=#youtube_id="{video_id}"`
 3. If found, return existing note ID and URL
 4. If not found, proceed with transcription
 
