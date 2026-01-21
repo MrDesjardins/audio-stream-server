@@ -37,7 +37,7 @@ def check_video_exists(video_id: str) -> Optional[Dict[str, str]]:
         logger.info(f"Searching for existing note with youtube_id={video_id}")
 
         headers = {
-            "Authorization": config.trilium_etapi_token,
+            "Authorization": f"Bearer {config.trilium_etapi_token}",
             "Content-Type": "application/json"
         }
 
