@@ -56,10 +56,15 @@ Note: The application expects `yt-dlp` to be at `/usr/local/bin/yt-dlp` (see mai
 audio-stream-server/
 ├── main.py                     # FastAPI server and API endpoints
 ├── config.py                   # Configuration management
+├── database_service.py         # SQLite database operations for play history
+├── youtube_utils.py            # YouTube video info fetching (titles, URL parsing)
 ├── background_tasks.py         # Background worker for transcription
 ├── transcription_service.py    # OpenAI Whisper integration
 ├── summarization_service.py    # ChatGPT/Gemini integration
 ├── trilium_service.py          # Trilium Notes ETAPI integration
+├── migrate_database.py         # Database migration script
+├── setup.sh                    # Initial setup script
+├── update.sh                   # Update and restart script
 ├── templates/
 │   └── index.html              # Jinja2 HTML template (mobile-friendly)
 └── static/
@@ -84,11 +89,22 @@ audio-stream-server/
 ### API Endpoints
 
 **Streaming Endpoints**:
-- `POST /stream` - Start streaming a YouTube video (accepts JSON: `{youtube_video_id: string}`)
+- `POST /stream` - Start streaming a YouTube video (accepts JSON: `{youtube_video_id: string, skip_transcription: bool}`)
 - `POST /stop` - Stop the current stream
 - `GET /status` - Check if streaming or idle
 - `GET /mystream` - The actual audio stream (audio/mpeg)
 - `GET /` - Web interface (HTML)
+
+**History Endpoints**:
+- `GET /history` - Get last 10 played videos with titles and play counts
+- `POST /history/clear` - Clear all play history
+
+**Queue Endpoints**:
+- `POST /queue/add` - Add a video to the queue
+- `GET /queue` - Get current queue
+- `DELETE /queue/{queue_id}` - Remove specific item from queue
+- `POST /queue/next` - Remove current item and get next item
+- `POST /queue/clear` - Clear entire queue
 
 **Transcription Endpoints** (when `TRANSCRIPTION_ENABLED=true`):
 - `GET /transcription/status/{video_id}` - Get transcription status, note URL, and summary
@@ -104,12 +120,46 @@ audio-stream-server/
   - `https://youtu.be/VIDEO_ID`
   - URLs with additional parameters (timestamps, playlists, etc.)
 
-**Local History**:
-- Browser localStorage tracks last 10 played videos
-- Each history item shows video ID and relative timestamp
+**Play History**:
+- SQLite database tracks play history with persistent storage
+- Displays last 10 played videos (ordered by most recently played)
+- Shows YouTube video title (fetched via yt-dlp)
+- Play count badge shows how many times each video has been played
+- Videos are deduplicated: playing same video increments play_count and updates last_played_at
+- Each history item shows video title, play count (if > 1), and relative timestamp
 - Click any history item to replay
 - Clear history button with confirmation
-- Automatically deduplicates entries (moves to top when replayed)
+
+**Database Schema**:
+```sql
+CREATE TABLE play_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    youtube_id TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    play_count INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,      -- First time played (ISO 8601 UTC)
+    last_played_at TEXT NOT NULL   -- Most recent play (ISO 8601 UTC)
+);
+
+CREATE TABLE queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    youtube_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    position INTEGER NOT NULL,     -- Order in queue
+    created_at TEXT NOT NULL
+);
+```
+
+**Queue System**:
+- Add multiple YouTube videos to a queue before starting playback
+- Queue persists in database (survives page refreshes)
+- Auto-play next track when current track completes
+- "Next" button to skip to next track in queue
+- Visual indicator shows currently playing track
+- Click any queue item to jump to that track
+- Remove individual items from queue
+- Queue items are ordered by position (automatically maintained)
+- Queue survives browser refreshes and allows building playlist before listening session
 
 ### Frontend
 
@@ -355,6 +405,78 @@ GEMINI_API_KEY=...                         # if SUMMARY_PROVIDER=gemini
 - No automatic cleanup of old backup files
 - `MAX_AUDIO_LENGTH_MINUTES` not yet enforced
 - No speaker diarization or timestamped transcripts
+
+## Setup and Updates
+
+### Initial Setup
+
+Run the setup script to install dependencies and initialize the database:
+
+```sh
+./setup.sh
+```
+
+This script will:
+1. Install system dependencies (yt-dlp, ffmpeg, icecast2)
+2. Install uv (Python package manager) if not present
+3. Install Python dependencies via `uv sync`
+4. Initialize the SQLite database with proper schema
+5. Create .env file from .env.example if needed
+
+### Updating the Application
+
+To pull updates from git and restart the service:
+
+```sh
+./update.sh
+```
+
+This script will:
+1. Check if the service is running
+2. Pull latest changes from main branch
+3. Update Python dependencies via `uv sync`
+4. Check and install missing system dependencies
+5. Run database migrations (migrate_database.py)
+6. Update database schema (init_database)
+7. Restart the systemd service if it was running
+
+### Database Migrations
+
+The `migrate_database.py` script handles schema changes for existing databases:
+- Automatically detects old schema (without play_count)
+- Creates backup before migration
+- Migrates data by consolidating duplicate video entries
+- Counts total plays for each video
+- Preserves first play time (created_at) and most recent play time (last_played_at)
+- Updates indexes for optimal query performance
+
+**Manual migration**:
+```sh
+uv run python migrate_database.py
+```
+
+### Trilium Notes Title Migration
+
+If you have existing Trilium notes with old-style titles ("YouTube: {video_id}"), you can update them to use actual video titles:
+
+**Dry run (preview changes without applying)**:
+```sh
+uv run python migrate_trilium_titles.py --dry-run
+```
+
+**Apply changes**:
+```sh
+uv run python migrate_trilium_titles.py
+```
+
+The script will:
+1. Fetch all child notes under your configured parent note
+2. Find notes with `youtube_id` attribute
+3. Check if title still has old format "YouTube: {video_id}"
+4. Try to get title from database (if video was played)
+5. Fetch title from YouTube if not in database
+6. Update note title with actual video title
+7. Skip notes that already have custom titles
 
 ## Deployment
 

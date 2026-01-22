@@ -124,6 +124,11 @@ class AudioCache:
         except Exception as e:
             logger.error(f"Error during audio cache cleanup: {e}")
 
+    def check_file_exists(self, video_id: str) -> bool:
+        """Check if audio file for a video exists in cache."""
+        audio_file = self.audio_dir / f"{video_id}.mp3"
+        return audio_file.exists()
+    
     def should_keep_file(self, video_id: str) -> bool:
         """
         Check if we should keep the audio file.
@@ -150,5 +155,6 @@ def get_audio_cache() -> AudioCache:
     """Get the global audio cache instance."""
     global _audio_cache
     if _audio_cache is None:
-        _audio_cache = AudioCache(max_files=10)
+        max_files = int(os.environ.get("AUDIO_CACHE_MAX_FILES", "10"))
+        _audio_cache = AudioCache(max_files=max_files)
     return _audio_cache

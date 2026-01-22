@@ -6,6 +6,7 @@ from typing import Optional, Dict
 import httpx
 
 from config import get_config
+from database_service import get_video_title_from_history
 
 logger = logging.getLogger(__name__)
 
@@ -49,11 +50,10 @@ def check_video_exists(video_id: str) -> Optional[Dict[str, str]]:
         # Try to search using query parameter
         params = {"search": search_query}
         response = httpx.get(url, headers=headers, params=params, timeout=10.0)
-
         if response.status_code == 200:
             results = response.json()
             if results and len(results) > 0:
-                note_id = results[0].get("noteId")
+                note_id = results.get("results")[0].get("noteId")
                 logger.info(f"Found existing note for video {video_id}: {note_id}")
                 # Construct note URL - hash fragment should be appended directly
                 note_url = f"{config.trilium_url.rstrip('/')}/#root/{note_id}"
@@ -94,6 +94,12 @@ def create_trilium_note(video_id: str, transcript: str, summary: str) -> Dict[st
     try:
         logger.info(f"Creating Trilium note for video {video_id}")
 
+        # Get video title from database
+        video_title = get_video_title_from_history(video_id)
+        if not video_title:
+            video_title = f"YouTube Video {video_id}"
+            logger.warning(f"No title found in history for {video_id}, using fallback")
+
         # Convert markdown-style formatting to HTML
         summary_html = _markdown_to_html(summary)
 
@@ -115,7 +121,7 @@ def create_trilium_note(video_id: str, transcript: str, summary: str) -> Dict[st
         # Step 1: Create the note (without attributes)
         payload = {
             "parentNoteId": config.trilium_parent_note_id,
-            "title": f"YouTube: {video_id}",
+            "title": video_title,
             "type": "text",
             "mime": "text/html",
             "content": content

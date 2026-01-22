@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>YouTube Radio</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link rel="stylesheet" href="/static/style.css?v=1768628245">
+    <link rel="stylesheet" href="/static/style.css?v=1737497000">
 </head>
 <body>
     <div class="container">
@@ -17,13 +17,13 @@
             <div class="control-section">
                 <div class="input-group">
                     <label for="youtube_video_id">
-                        <i class="fas fa-link"></i> YouTube Video ID or URL
+                        <i class="fas fa-link"></i> Add to Queue - YouTube Video ID or URL
                     </label>
                     <input
                         type="text"
                         id="youtube_video_id"
                         placeholder="Enter YouTube ID or URL"
-                        value="YDBYK83smMU"
+                        value=""
                     >
                 </div>
 
@@ -44,13 +44,32 @@
                 {% endif %}
 
                 <div class="button-group">
-                    <button onclick="startStream()" class="btn btn-primary">
-                        <i class="fas fa-play-circle"></i>
-                        Start Stream
+                    <button onclick="addToQueue()" class="btn btn-primary">
+                        <i class="fas fa-plus-circle"></i>
+                        Add to Queue
                     </button>
-                    <button onclick="stopStream()" class="btn btn-secondary">
-                        <i class="fas fa-stop-circle"></i>
-                        Stop Stream
+                    <button onclick="clearQueue()" class="btn btn-secondary">
+                        <i class="fas fa-trash-alt"></i>
+                        Clear Queue
+                    </button>
+                </div>
+            </div>
+
+            <div class="queue-section">
+                <div class="queue-header">
+                    <h2>
+                        <i class="fas fa-list"></i>
+                        Queue
+                    </h2>
+                    <span id="queue-count" class="queue-count">0 tracks</span>
+                </div>
+                <div id="queue-list" class="queue-list">
+                    <p class="queue-empty">Queue is empty. Add videos above to start!</p>
+                </div>
+                <div class="queue-controls">
+                    <button onclick="playQueue()" class="btn btn-play-queue">
+                        <i class="fas fa-play"></i>
+                        <span>Play Queue</span>
                     </button>
                 </div>
             </div>
@@ -85,6 +104,14 @@
                     <button onclick="fastforward()" class="btn btn-control">
                         <i class="fas fa-forward"></i>
                         <span class="btn-label">+15s</span>
+                    </button>
+                    <button onclick="playNext()" class="btn btn-control btn-next">
+                        <i class="fas fa-step-forward"></i>
+                        <span class="btn-label">Next</span>
+                    </button>
+                    <button onclick="stopStream()" class="btn btn-control btn-stop">
+                        <i class="fas fa-stop"></i>
+                        <span class="btn-label">Stop</span>
                     </button>
                 </div>
 
@@ -140,9 +167,6 @@
                         <i class="fas fa-history"></i>
                         Recent Videos
                     </h2>
-                    <button onclick="clearHistory()" class="btn-clear-history" title="Clear history">
-                        <i class="fas fa-trash-alt"></i>
-                    </button>
                 </div>
                 <div id="history-list" class="history-list">
                     <p class="history-empty">No history yet</p>
@@ -158,51 +182,229 @@
         const MAX_HISTORY_ITEMS = 10;
         const transcriptionEnabled = {{ 'true' if transcription_enabled else 'false' }};
         let currentVideoId = null;
+        let currentQueueId = null;
+        let isPlaying = false;
 
-        // History Management
-        function getHistory() {
+        // Queue Management
+        async function fetchQueue() {
             try {
-                const history = localStorage.getItem('youtube_history');
-                return history ? JSON.parse(history) : [];
+                const res = await fetch('/queue');
+                const data = await res.json();
+                return data.queue || [];
             } catch (e) {
-                console.error('Error reading history:', e);
+                console.error('Error fetching queue:', e);
                 return [];
             }
         }
 
-        function saveToHistory(videoId) {
+        async function addToQueue() {
+            const input = document.getElementById('youtube_video_id').value;
+
+            if (!input.trim()) {
+                updateStatus('Please enter a YouTube ID or URL', 'error');
+                return;
+            }
+
+            const youtube_video_id = extractVideoId(input);
+
+            if (!youtube_video_id) {
+                updateStatus('Invalid YouTube ID or URL', 'error');
+                return;
+            }
+
+            const skipTranscriptionCheckbox = document.getElementById('skip_transcription');
+            const skip_transcription = skipTranscriptionCheckbox ? skipTranscriptionCheckbox.checked : false;
+
             try {
-                let history = getHistory();
+                updateStatus('Adding to queue...', 'streaming');
 
-                // Remove duplicate if exists
-                history = history.filter(item => item.id !== videoId);
-
-                // Add to beginning with timestamp
-                history.unshift({
-                    id: videoId,
-                    timestamp: Date.now()
+                const res = await fetch('/queue/add', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({youtube_video_id, skip_transcription})
                 });
+                const data = await res.json();
 
-                // Keep only last MAX_HISTORY_ITEMS
-                history = history.slice(0, MAX_HISTORY_ITEMS);
+                if (res.ok) {
+                    updateStatus('Added to queue: ' + data.title, 'streaming');
+                    document.getElementById('youtube_video_id').value = '';
+                    await renderQueue();
+                } else {
+                    updateStatus('Failed to add to queue', 'error');
+                }
+            } catch (error) {
+                updateStatus('Failed to add to queue', 'error');
+                console.error(error);
+            }
+        }
 
-                localStorage.setItem('youtube_history', JSON.stringify(history));
-                renderHistory();
+        async function clearQueue() {
+            if (!confirm('Clear all items from queue?')) {
+                return;
+            }
+
+            try {
+                await fetch('/queue/clear', {method: 'POST'});
+                await renderQueue();
+                updateStatus('Queue cleared', 'idle');
             } catch (e) {
-                console.error('Error saving to history:', e);
+                console.error('Error clearing queue:', e);
             }
         }
 
-        function clearHistory() {
+        async function removeFromQueue(queueId) {
+            try {
+                await fetch(`/queue/${queueId}`, {method: 'DELETE'});
+                await renderQueue();
+            } catch (e) {
+                console.error('Error removing from queue:', e);
+            }
+        }
+
+        async function playQueue() {
+            const queue = await fetchQueue();
+
+            if (queue.length === 0) {
+                updateStatus('Queue is empty', 'error');
+                return;
+            }
+
+            // Start streaming the first item
+            const firstItem = queue[0];
+            await startStreamFromQueue(firstItem.youtube_id, firstItem.id);
+        }
+
+        async function playNext() {
+            try {
+                const res = await fetch('/queue/next', {method: 'POST'});
+                const data = await res.json();
+
+                if (data.status === 'queue_empty') {
+                    updateStatus('Queue is empty', 'idle');
+                    player.pause();
+                    isPlaying = false;
+                    await renderQueue();
+                    return;
+                }
+
+                if (data.status === 'next') {
+                    await startStreamFromQueue(data.youtube_id, data.queue_id);
+                    await renderQueue();
+                }
+            } catch (error) {
+                console.error('Error playing next:', error);
+                updateStatus('Failed to play next', 'error');
+            }
+        }
+
+        async function startStreamFromQueue(youtube_video_id, queue_id) {
+            const skipTranscriptionCheckbox = document.getElementById('skip_transcription');
+            const skip_transcription = skipTranscriptionCheckbox ? skipTranscriptionCheckbox.checked : false;
+
+            try {
+                const res = await fetch('/stream', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({youtube_video_id, skip_transcription})
+                });
+                const data = await res.json();
+                updateStatus(data.status || data.detail, res.ok ? 'streaming' : 'error');
+
+                if (res.ok) {
+                    currentVideoId = youtube_video_id;
+                    currentQueueId = queue_id;
+                    isPlaying = true;
+
+                    // Update history
+                    await renderHistory();
+                    await renderQueue();
+
+                    // Setup transcription tracking if enabled
+                    if (transcriptionEnabled && !skip_transcription) {
+                        currentVideoId = youtube_video_id;
+                    }
+
+                    // Reload audio
+                    const streamUrl = 'http://{{ host }}:{{ api_port }}/mystream';
+                    player.src = streamUrl;
+                    player.load();
+                    player.play().catch(e => {
+                        console.error('Audio playback failed:', e);
+                    });
+                }
+            } catch (error) {
+                updateStatus('Failed to start stream', 'error');
+                console.error(error);
+            }
+        }
+
+        async function renderQueue() {
+            const queueContainer = document.getElementById('queue-list');
+            const queueCountEl = document.getElementById('queue-count');
+            const queue = await fetchQueue();
+
+            queueCountEl.textContent = `${queue.length} track${queue.length !== 1 ? 's' : ''}`;
+
+            if (queue.length === 0) {
+                queueContainer.innerHTML = '<p class="queue-empty">Queue is empty. Add videos above to start!</p>';
+                return;
+            }
+
+            queueContainer.innerHTML = queue.map((item, index) => {
+                const isCurrentlyPlaying = currentQueueId === item.id;
+                const positionBadge = `<span class="queue-position">${index + 1}</span>`;
+
+                return `
+                    <div class="queue-item ${isCurrentlyPlaying ? 'queue-item-playing' : ''}"
+                         onclick="${isCurrentlyPlaying ? '' : `startStreamFromQueue('${item.youtube_id}', ${item.id})`}">
+                        <div class="queue-info">
+                            ${positionBadge}
+                            <i class="fab fa-youtube"></i>
+                            <span class="queue-title">${escapeHtml(item.title)}</span>
+                            ${isCurrentlyPlaying ? '<i class="fas fa-volume-up queue-playing-icon"></i>' : ''}
+                        </div>
+                        <button onclick="event.stopPropagation(); removeFromQueue(${item.id})"
+                                class="btn-remove-queue"
+                                title="Remove from queue">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Auto-play next track when current track ends
+        player.addEventListener('ended', async function() {
+            console.log('Track ended, playing next...');
+            await playNext();
+        });
+
+        // History Management
+        async function fetchHistory() {
+            try {
+                const res = await fetch('/history');
+                const data = await res.json();
+                return data.history || [];
+            } catch (e) {
+                console.error('Error fetching history:', e);
+                return [];
+            }
+        }
+
+        async function clearHistory() {
             if (confirm('Are you sure you want to clear all history?')) {
-                localStorage.removeItem('youtube_history');
-                renderHistory();
+                try {
+                    await fetch('/history/clear', {method: 'POST'});
+                    await renderHistory();
+                } catch (e) {
+                    console.error('Error clearing history:', e);
+                }
             }
         }
 
-        function renderHistory() {
+        async function renderHistory() {
             const historyContainer = document.getElementById('history-list');
-            const history = getHistory();
+            const history = await fetchHistory();
 
             if (history.length === 0) {
                 historyContainer.innerHTML = '<p class="history-empty">No history yet</p>';
@@ -210,16 +412,17 @@
             }
 
             historyContainer.innerHTML = history.map(item => {
-                const date = new Date(item.timestamp);
-                const timeAgo = getTimeAgo(item.timestamp);
+                const timeAgo = getTimeAgo(item.last_played_at);
+                const playCountBadge = item.play_count > 1 ? `<span class="play-count-badge">${item.play_count}×</span>` : '';
 
                 return `
-                    <div class="history-item" onclick="loadFromHistory('${item.id}')">
+                    <div class="history-item" onclick="loadFromHistory('${item.youtube_id}')">
                         <div class="history-info">
                             <i class="fab fa-youtube"></i>
-                            <span class="history-id">${item.id}</span>
+                            <span class="history-title">${escapeHtml(item.title)}</span>
                         </div>
                         <div class="history-meta">
+                            ${playCountBadge}
                             <span class="history-time">${timeAgo}</span>
                             <i class="fas fa-play-circle"></i>
                         </div>
@@ -228,7 +431,8 @@
             }).join('');
         }
 
-        function getTimeAgo(timestamp) {
+        function getTimeAgo(isoTimestamp) {
+            const timestamp = new Date(isoTimestamp).getTime();
             const seconds = Math.floor((Date.now() - timestamp) / 1000);
 
             if (seconds < 60) return 'Just now';
@@ -236,6 +440,12 @@
             if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
             if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
             return new Date(timestamp).toLocaleDateString();
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         }
 
         function loadFromHistory(videoId) {
@@ -296,8 +506,8 @@
                 updateStatus(data.status || data.detail, res.ok ? 'streaming' : 'error');
 
                 if (res.ok) {
-                    // Save to history on successful stream start
-                    saveToHistory(youtube_video_id);
+                    // Re-render history to show the new entry
+                    renderHistory();
 
                     // Track current video for transcription (only if not skipped)
                     if (transcriptionEnabled) {
@@ -330,6 +540,12 @@
         }
 
         async function stopStream() {
+            // Pause the player first
+            player.pause();
+            isPlaying = false;
+            currentQueueId = null;
+
+            // Then call server to stop the stream
             try {
                 const res = await fetch('/stop', {method: 'POST'});
                 const data = await res.json();
@@ -338,6 +554,9 @@
                 updateStatus('Failed to stop stream', 'error');
                 console.error(error);
             }
+
+            // Update queue display
+            await renderQueue();
         }
 
         function pauseAudio() {
@@ -546,8 +765,9 @@
             setInterval(fetchTranscriptionStatus, 5000);
         }
 
-        // Initial status fetch and history render
+        // Initial status fetch, queue, and history render
         fetchStatus();
+        renderQueue();
         renderHistory();
         if (transcriptionEnabled) {
             fetchTranscriptionStatus();
