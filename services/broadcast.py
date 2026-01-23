@@ -36,15 +36,10 @@ class StreamBroadcaster:
     def _read_and_broadcast(self, process):
         """Read from process stdout and send to all clients (runs in background thread)."""
         chunk_size = 8192
+        import time
         try:
             logger.info("Broadcaster: Starting to read from process")
             while self.active:
-                # Check if process is still running
-                poll_result = process.poll()
-                if poll_result is not None:
-                    logger.info(f"Broadcaster: Process ended with code {poll_result}")
-                    break
-
                 # Read available data (use read1 to avoid blocking for full chunk_size)
                 try:
                     # read1() reads at least 1 byte up to chunk_size without blocking for full size
@@ -58,8 +53,16 @@ class StreamBroadcaster:
                     break
 
                 if not chunk:
-                    logger.info("Broadcaster: No more data from process")
-                    break
+                    # read1() can return empty bytes when no data is available yet
+                    # Only break if the process has actually finished
+                    poll_result = process.poll()
+                    if poll_result is not None:
+                        logger.info(f"Broadcaster: Process ended with code {poll_result}, no more data")
+                        break
+                    # Process still running, just no data available right now
+                    # Sleep briefly and continue
+                    time.sleep(0.01)
+                    continue
 
                 with self.lock:
                     # Add to buffer for late-joining clients
