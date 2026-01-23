@@ -8,7 +8,7 @@ from enum import Enum
 from queue import Queue, Empty
 from typing import Optional, Dict
 
-from cache_service import get_transcript_cache, get_audio_cache
+from services.cache import get_transcript_cache, get_audio_cache
 
 logger = logging.getLogger(__name__)
 
@@ -128,9 +128,9 @@ class TranscriptionWorker:
 
     def _worker_loop(self) -> None:
         """Main worker loop."""
-        from transcription_service import transcribe_audio
-        from summarization_service import summarize_transcript
-        from trilium_service import check_video_exists, create_trilium_note
+        from services.transcription import transcribe_audio
+        from services.summarization import summarize_transcript
+        from services.trilium import check_video_exists, create_trilium_note
 
         logger.info("Worker loop started")
 

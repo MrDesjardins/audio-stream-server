@@ -54,21 +54,30 @@ Note: The application expects `yt-dlp` to be at `/usr/local/bin/yt-dlp` (see mai
 
 ```
 audio-stream-server/
-├── main.py                     # FastAPI server and API endpoints
+├── main.py                     # FastAPI app initialization and configuration
 ├── config.py                   # Configuration management
-├── database_service.py         # SQLite database operations for play history
-├── youtube_utils.py            # YouTube video info fetching (titles, URL parsing)
-├── background_tasks.py         # Background worker for transcription
-├── transcription_service.py    # OpenAI Whisper integration
-├── summarization_service.py    # ChatGPT/Gemini integration
-├── trilium_service.py          # Trilium Notes ETAPI integration
+├── routes/                     # API route handlers
+│   ├── stream.py               # Streaming, playback, and history routes
+│   ├── queue.py                # Queue management routes
+│   └── transcription.py        # Transcription status and summary routes
+├── services/                   # Core business logic
+│   ├── broadcast.py            # Multi-client streaming broadcaster
+│   ├── streaming.py            # yt-dlp and ffmpeg pipeline
+│   ├── database.py             # SQLite operations (history, queue)
+│   ├── youtube.py              # YouTube video info fetching
+│   ├── cache.py                # Audio and transcript caching
+│   ├── background_tasks.py     # Background worker for transcription
+│   ├── transcription.py        # OpenAI Whisper integration
+│   ├── summarization.py        # ChatGPT/Gemini integration
+│   └── trilium.py              # Trilium Notes ETAPI integration
 ├── migrate_database.py         # Database migration script
 ├── setup.sh                    # Initial setup script
 ├── update.sh                   # Update and restart script
 ├── templates/
 │   └── index.html              # Jinja2 HTML template (mobile-friendly)
 └── static/
-    └── style.css               # Blue-violet dark theme styles
+    ├── style.css               # Neumorphic dark theme styles
+    └── fonts/                  # Inter font family (self-hosted)
 ```
 
 ### Core Components
@@ -77,10 +86,15 @@ audio-stream-server/
 1. Client sends YouTube video ID via `/stream` endpoint
 2. `yt-dlp` extracts best audio from YouTube → stdout
 3. `ffmpeg` converts audio to MP3 → stdout
-4. FastAPI streams ffmpeg output to clients via `/mystream` endpoint
-5. HTML5 audio player consumes the stream
+4. `StreamBroadcaster` reads from ffmpeg and broadcasts to all connected clients
+5. Multiple clients can stream simultaneously via `/mystream` endpoint
+6. HTML5 audio player consumes the stream
 
 **Process Management**:
+- `StreamBroadcaster`: Manages multi-client streaming with replay buffer
+  - Maintains last 100 chunks (~800KB) for reconnecting clients
+  - Each client gets their own queue of audio chunks
+  - Reconnecting clients receive buffered content immediately
 - `current_process` (global): Holds the active ffmpeg process
 - `ffmpeg_thread` (global): Background thread running the streaming pipeline
 - `process_lock` (threading.Lock): Ensures thread-safe access to global state

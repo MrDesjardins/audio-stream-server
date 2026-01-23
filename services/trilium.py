@@ -6,7 +6,7 @@ from typing import Optional, Dict
 import httpx
 
 from config import get_config
-from database_service import get_video_title_from_history
+from services.database import get_video_title_from_history
 
 logger = logging.getLogger(__name__)
 
@@ -50,17 +50,38 @@ def check_video_exists(video_id: str) -> Optional[Dict[str, str]]:
         # Try to search using query parameter
         params = {"search": search_query}
         response = httpx.get(url, headers=headers, params=params, timeout=10.0)
-        if response.status_code == 200:
-            results = response.json()
-            if results and len(results) > 0:
-                note_id = results.get("results")[0].get("noteId")
-                logger.info(f"Found existing note for video {video_id}: {note_id}")
-                # Construct note URL - hash fragment should be appended directly
-                note_url = f"{config.trilium_url.rstrip('/')}/#root/{note_id}"
-                return {
-                    "noteId": note_id,
-                    "url": note_url
-                }
+        response.raise_for_status()
+
+        results = response.json()
+
+        # The search endpoint returns a list directly (or might have "results" key)
+        # Handle both possible response formats
+        if isinstance(results, dict) and "results" in results:
+            # Response is {"results": [...]}
+            note_list = results.get("results", [])
+        elif isinstance(results, list):
+            # Response is directly a list
+            note_list = results
+        else:
+            logger.warning(f"Unexpected search response format: {type(results)}")
+            note_list = []
+
+        if note_list and len(note_list) > 0:
+            # Get the first result
+            first_note = note_list[0]
+            note_id = first_note.get("noteId")
+
+            if not note_id:
+                logger.warning(f"Found search result but no noteId in response: {first_note}")
+                return None
+
+            logger.info(f"Found existing note for video {video_id}: {note_id}")
+            # Construct note URL - hash fragment should be appended directly
+            note_url = f"{config.trilium_url.rstrip('/')}/#root/{note_id}"
+            return {
+                "noteId": note_id,
+                "url": note_url
+            }
 
         logger.info(f"No existing note found for video {video_id}")
         return None
