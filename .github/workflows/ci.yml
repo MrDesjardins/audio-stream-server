@@ -1,0 +1,165 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    name: Test & Coverage
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+        cache: 'pip'
+
+    - name: Install uv package manager
+      run: |
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ffmpeg
+
+    - name: Verify ffmpeg installation
+      run: ffmpeg -version
+
+    - name: Install Python dependencies
+      run: |
+        uv sync --extra test
+
+    - name: Run linter (optional)
+      continue-on-error: true
+      run: |
+        uv run python -m pip install ruff || true
+        uv run ruff check . || true
+
+    - name: Run tests with coverage
+      run: |
+        uv run pytest \
+          --cov=services \
+          --cov=routes \
+          --cov=main \
+          --cov=config \
+          --cov-report=xml \
+          --cov-report=term \
+          --cov-report=html \
+          --cov-report=json \
+          --junitxml=junit.xml \
+          -v
+
+    - name: Generate coverage comment for PR
+      if: github.event_name == 'pull_request'
+      uses: MishaKav/pytest-coverage-comment@main
+      with:
+        pytest-coverage-path: coverage.xml
+        junitxml-path: junit.xml
+        title: Coverage Report
+        badge-title: Coverage
+        hide-badge: false
+        hide-report: false
+        create-new-comment: false
+        hide-comment: false
+        report-only-changed-files: false
+        remove-link-from-badge: false
+
+    - name: Extract coverage percentage
+      id: coverage
+      run: |
+        COVERAGE=$(uv run python -c "import json; data=json.load(open('coverage.json')); print(f\"{data['totals']['percent_covered']:.1f}\")")
+        echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
+        echo "## Coverage: ${COVERAGE}%" >> $GITHUB_STEP_SUMMARY
+
+    - name: Upload coverage to Codecov (optional)
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      uses: codecov/codecov-action@v4
+      continue-on-error: true
+      with:
+        files: ./coverage.xml
+        flags: unittests
+        name: codecov-upload
+        fail_ci_if_error: false
+      env:
+        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+    - name: Store coverage reports
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-reports-${{ github.sha }}
+        path: |
+          coverage.xml
+          coverage.json
+          htmlcov/
+          junit.xml
+        retention-days: 30
+
+    - name: Check coverage threshold
+      run: |
+        COVERAGE=$(uv run python -c "import json; data=json.load(open('coverage.json')); print(data['totals']['percent_covered'])")
+        echo "Current coverage: ${COVERAGE}%"
+        if (( $(echo "$COVERAGE < 60" | bc -l) )); then
+          echo "::warning::Coverage is below 60% (current: ${COVERAGE}%)"
+        elif (( $(echo "$COVERAGE < 80" | bc -l) )); then
+          echo "::warning::Coverage is below target 80% (current: ${COVERAGE}%)"
+        else
+          echo "::notice::Coverage meets target! (${COVERAGE}%)"
+        fi
+
+    - name: Generate test summary
+      if: always()
+      run: |
+        echo "## Test Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Coverage:** ${{ steps.coverage.outputs.percentage }}%" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Coverage by Module" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        uv run coverage report --skip-empty >> $GITHUB_STEP_SUMMARY || true
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "📊 [View detailed HTML coverage report](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
+
+  lint:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install uv
+      run: |
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+    - name: Install linting tools
+      run: |
+        uv pip install --system ruff black isort mypy
+
+    - name: Run ruff
+      run: |
+        ruff check . --output-format=github || true
+
+    - name: Check formatting with black
+      run: |
+        black --check . || true
+
+    - name: Check import sorting
+      run: |
+        isort --check-only . || true

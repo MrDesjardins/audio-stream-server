@@ -10,8 +10,33 @@ Audio Stream Server is a FastAPI application that streams audio from YouTube vid
 
 ### Install Dependencies
 ```sh
+# Production dependencies
 uv sync
+
+# Development dependencies (includes testing tools)
+uv sync --extra test
 ```
+
+### Running Tests
+
+```sh
+# Run all tests with coverage
+uv run pytest
+
+# Run specific test file
+uv run pytest tests/services/test_database.py
+
+# Run without coverage (faster)
+uv run pytest --no-cov
+
+# Use the test runner script
+./run_tests.sh all        # All tests with coverage
+./run_tests.sh fast       # Fast mode (no coverage)
+./run_tests.sh services   # Only service tests
+./run_tests.sh routes     # Only route tests
+```
+
+See [TESTING.md](./TESTING.md) for comprehensive testing documentation.
 
 ### Run the Application
 
@@ -521,6 +546,42 @@ If running on a network:
 sudo ufw allow 8000/tcp
 sudo ufw allow 8001/tcp
 sudo ufw reload
+```
+
+## Continuous Integration
+
+### GitHub Actions Workflows
+
+The project includes automated testing with coverage reporting:
+
+**Main Workflow (`ci.yml`)** - No setup required:
+- Runs on every push and PR
+- Executes full test suite
+- Generates coverage reports
+- Posts coverage to PR comments
+- Shows results in Actions summary
+
+**Usage**:
+```bash
+# Just push your code - CI runs automatically
+git push origin main
+```
+
+**View Results**:
+- PR comments show coverage details
+- Actions tab shows test results
+- Download HTML coverage reports from artifacts
+
+See [.github/workflows/README.md](.github/workflows/README.md) for detailed CI/CD documentation.
+
+### Adding Badges to README
+
+```markdown
+# Tests status
+![Tests](https://github.com/YOUR_USERNAME/audio-stream-server/actions/workflows/ci.yml/badge.svg)
+
+# Optional: Codecov (requires setup)
+[![codecov](https://codecov.io/gh/YOUR_USERNAME/audio-stream-server/branch/main/graph/badge.svg)](https://codecov.io/gh/YOUR_USERNAME/audio-stream-server)
 ```
 
 ## Known Constraints
