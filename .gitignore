@@ -1,5 +1,53 @@
+# Virtual environment
 .venv
+venv/
+env/
+
+# Python
 *.pyc
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment
 .env
+.env.local
+
+# Database
 *.db
 *.db.backup_*
+audio_history.db
+
+# Test coverage
+.coverage
+.coverage.*
+coverage.xml
+coverage.json
+htmlcov/
+.pytest_cache/
+junit.xml
+.tox/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+/tmp/
+
+# Audio files
+*.mp3
+*.wav
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
