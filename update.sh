@@ -61,7 +61,7 @@ echo "----------------------------------------"
 uv run python migrate_database.py
 
 # Then initialize/update schema (creates tables if they don't exist)
-uv run python -c "from database_service import init_database; init_database(); print('Database schema updated successfully')"
+uv run python -c "from services.database import init_database; init_database(); print('Database schema updated successfully')"
 
 echo ""
 echo "Step 5: Restarting service..."

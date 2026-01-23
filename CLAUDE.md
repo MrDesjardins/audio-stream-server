@@ -451,8 +451,10 @@ This script will:
 3. Update Python dependencies via `uv sync`
 4. Check and install missing system dependencies
 5. Run database migrations (migrate_database.py)
-6. Update database schema (init_database)
+6. Update database schema (`services.database.init_database`)
 7. Restart the systemd service if it was running
+
+**Note**: After the refactoring to use `services/` and `routes/` folders, imports have been updated to use the new module paths (e.g., `from services.database import init_database`).
 
 ### Database Migrations
 

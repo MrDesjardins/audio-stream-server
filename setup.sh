@@ -44,7 +44,7 @@ echo ""
 echo "Step 4: Initializing database..."
 echo "----------------------------------------"
 # Run Python script to initialize database
-uv run python -c "from database_service import init_database; init_database(); print('Database initialized successfully')"
+uv run python -c "from services.database import init_database; init_database(); print('Database initialized successfully')"
 
 echo ""
 echo "Step 5: Environment configuration..."
