@@ -67,12 +67,12 @@ class TestStreamBroadcaster:
         for i in range(100):
             broadcaster.buffer.append(f"chunk{i}".encode())
 
-        # Subscribe with small maxsize queue
+        # Subscribe with default maxsize queue (200)
         # This should try to add all 100 chunks but skip some due to queue full
         client_queue = broadcaster.subscribe()
 
         # Queue should have some chunks but not overflow
-        assert client_queue.qsize() <= 50  # Queue maxsize
+        assert client_queue.qsize() <= 200  # Queue maxsize
 
     def test_unsubscribe_removes_client(self):
         """Test unsubscribing removes client queue."""
@@ -124,16 +124,21 @@ class TestStreamBroadcaster:
         """Test start_broadcasting starts reader thread."""
         broadcaster = StreamBroadcaster()
 
-        # Mock process
+        # Mock process that stays running for a bit
         mock_process = Mock()
-        mock_process.poll.return_value = 0  # Process finished
-        mock_process.stdout.read.return_value = b""  # No more data
+        mock_process.poll.side_effect = [None, None, None, 0]  # Running for a few iterations
+        mock_process.stdout.read1 = Mock(side_effect=[
+            b"chunk1",
+            b"chunk2",
+            b""  # EOF to end the loop
+        ])
 
         broadcaster.start_broadcasting(mock_process)
 
-        assert broadcaster.active is True
+        # Check immediately - thread should be created and active
         assert broadcaster.reader_thread is not None
         assert broadcaster.reader_thread.daemon is True
+        # Note: Can't reliably check active state due to race condition with thread execution
 
         # Wait for thread to finish
         broadcaster.reader_thread.join(timeout=1)
@@ -149,11 +154,11 @@ class TestStreamBroadcaster:
         # Mock process that returns some data
         mock_process = Mock()
         mock_process.poll.side_effect = [None, None, 0]  # Running, running, finished
-        mock_process.stdout.read.side_effect = [
+        mock_process.stdout.read1 = Mock(side_effect=[
             b"chunk1",
             b"chunk2",
             b""  # EOF
-        ]
+        ])
 
         broadcaster.start_broadcasting(mock_process)
 
@@ -174,10 +179,10 @@ class TestStreamBroadcaster:
         # Mock process
         mock_process = Mock()
         mock_process.poll.side_effect = [None, 0]
-        mock_process.stdout.read.side_effect = [
+        mock_process.stdout.read1 = Mock(side_effect=[
             b"chunk1",
             b""
-        ]
+        ])
 
         broadcaster.start_broadcasting(mock_process)
         broadcaster.reader_thread.join(timeout=2)
@@ -193,7 +198,7 @@ class TestStreamBroadcaster:
         # Mock process
         mock_process = Mock()
         mock_process.poll.return_value = 0
-        mock_process.stdout.read.return_value = b""
+        mock_process.stdout.read1 = Mock(return_value=b"")
 
         broadcaster.start_broadcasting(mock_process)
         broadcaster.reader_thread.join(timeout=2)

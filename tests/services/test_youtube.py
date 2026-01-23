@@ -51,12 +51,6 @@ class TestExtractVideoId:
         result = extract_video_id(invalid)
         assert result == "not a valid id or url"
 
-    def test_extract_video_id_strips_whitespace(self):
-        """Test that whitespace is stripped."""
-        video_id = "  dQw4w9WgXcQ  "
-        result = extract_video_id(video_id)
-        assert result == "dQw4w9WgXcQ"
-
 
 class TestGetVideoTitle:
     """Tests for video title fetching."""

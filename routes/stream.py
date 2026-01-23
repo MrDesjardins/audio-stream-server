@@ -165,7 +165,7 @@ async def stream_audio(request: Request):
 def get_play_history(limit: int = 10):
     """Get play history from database."""
     try:
-        history = get_history(limit)
+        history = get_history(limit=limit)
         return JSONResponse({"history": history})
     except Exception as e:
         logger.error(f"Error fetching history: {e}")

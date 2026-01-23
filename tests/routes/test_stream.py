@@ -188,9 +188,8 @@ class TestMyStreamEndpoint:
         assert response.status_code == 400
         assert "No active stream" in response.json()["detail"]
 
-    @pytest.mark.asyncio
     @patch('routes.stream.broadcaster')
-    async def test_mystream_active_stream(self, mock_broadcaster, client):
+    def test_mystream_active_stream(self, mock_broadcaster, client):
         """Test streaming when active."""
         # Mock active broadcaster
         mock_broadcaster.is_active.return_value = True
@@ -200,7 +199,7 @@ class TestMyStreamEndpoint:
         mock_queue.get = Mock(side_effect=[b"chunk1", b"chunk2", None])
         mock_broadcaster.subscribe.return_value = mock_queue
 
-        response = client.get("/mystream", stream=True)
+        response = client.get("/mystream")
 
         # Should get streaming response
         assert response.status_code == 200
