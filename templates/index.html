@@ -184,6 +184,19 @@
         let currentVideoId = null;
         let currentQueueId = null;
         let isPlaying = false;
+        let currentTrackTitle = null;
+        const defaultTitle = 'YouTube Radio';
+
+        // Update browser window title
+        function updateWindowTitle(title) {
+            if (title) {
+                document.title = `${title} - YouTube Radio`;
+                currentTrackTitle = title;
+            } else {
+                document.title = defaultTitle;
+                currentTrackTitle = null;
+            }
+        }
 
         // Queue Management
         async function fetchQueue() {
@@ -283,6 +296,7 @@
                     updateStatus('Queue is empty', 'idle');
                     player.pause();
                     isPlaying = false;
+                    updateWindowTitle(null);  // Reset title when queue is empty
                     await renderQueue();
                     return;
                 }
@@ -314,6 +328,13 @@
                     currentVideoId = youtube_video_id;
                     currentQueueId = queue_id;
                     isPlaying = true;
+
+                    // Update browser window title with track name
+                    const queue = await fetchQueue();
+                    const currentItem = queue.find(item => item.id === queue_id);
+                    if (currentItem) {
+                        updateWindowTitle(currentItem.title);
+                    }
 
                     // Update history
                     await renderHistory();
@@ -507,7 +528,14 @@
 
                 if (res.ok) {
                     // Re-render history to show the new entry
-                    renderHistory();
+                    await renderHistory();
+
+                    // Update browser window title with track name from history
+                    const history = await fetchHistory();
+                    const currentTrack = history.find(item => item.youtube_id === youtube_video_id);
+                    if (currentTrack) {
+                        updateWindowTitle(currentTrack.title);
+                    }
 
                     // Track current video for transcription (only if not skipped)
                     if (transcriptionEnabled) {
@@ -544,6 +572,9 @@
             player.pause();
             isPlaying = false;
             currentQueueId = null;
+
+            // Reset browser window title
+            updateWindowTitle(null);
 
             // Then call server to stop the stream
             try {
