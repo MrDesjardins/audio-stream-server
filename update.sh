@@ -57,8 +57,9 @@ fi
 echo ""
 echo "Step 4: Migrating database schema..."
 echo "----------------------------------------"
-# Run migration first (handles schema changes for existing databases)
+# Run migrations (handles schema changes for existing databases)
 uv run python migrate_database.py
+uv run python migrate_add_metadata.py
 
 # Then initialize/update schema (creates tables if they don't exist)
 uv run python -c "from services.database import init_database; init_database(); print('Database schema updated successfully')"

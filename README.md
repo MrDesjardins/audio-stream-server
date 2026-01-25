@@ -124,7 +124,6 @@ Approximate API costs:
 
 ```sh
 sudo ufw allow 8000/tcp
-sudo ufw allow 8001/tcp
 sudo ufw reload
 sudo ufw status
 ```
@@ -163,6 +162,8 @@ sudo cp audio-stream.service /etc/systemd/system/audio-stream.service
 sudo systemctl daemon-reload
 sudo systemctl enable audio-stream
 sudo systemctl start audio-stream
+sudo systemctl restart audio-stream
+sudo systemctl stop audio-stream
 sudo systemctl status audio-stream
 ```
 
@@ -171,5 +172,6 @@ sudo systemctl status audio-stream
 # Debug log
 
 ```sh
-journalctl -u audio-stream -f
+journalctl -u audio-stream -n 100 -f
 ```
+

@@ -8,15 +8,15 @@ logger = logging.getLogger(__name__)
 YT_DLP_PATH = "/usr/local/bin/yt-dlp"
 
 
-def get_video_title(youtube_id: str) -> Optional[str]:
+def get_video_metadata(youtube_id: str) -> Optional[dict]:
     """
-    Fetch the title of a YouTube video using yt-dlp.
+    Fetch metadata for a YouTube video using yt-dlp.
 
     Args:
         youtube_id: YouTube video ID
 
     Returns:
-        The video title if successful, None otherwise
+        Dictionary with title, channel, and thumbnail_url if successful, None otherwise
     """
     try:
         url = f"https://www.youtube.com/watch?v={youtube_id}"
@@ -31,22 +31,61 @@ def get_video_title(youtube_id: str) -> Optional[str]:
 
         if result.returncode == 0:
             video_info = json.loads(result.stdout)
+
+            # Extract title
             title = video_info.get("title", "Unknown Title")
-            logger.info(f"Fetched title for {youtube_id}: {title}")
-            return title
+
+            # Extract channel name (try multiple fields)
+            channel = (
+                video_info.get("channel") or
+                video_info.get("uploader") or
+                video_info.get("creator") or
+                "Unknown Channel"
+            )
+
+            # YouTube thumbnail URL
+            # Use standard YouTube thumbnail URLs (always available)
+            # Try maxresdefault (1280x720) first, but it's not always available
+            # More reliable: hqdefault (480x360) or sddefault (640x480)
+            thumbnail_url = f"https://i.ytimg.com/vi/{youtube_id}/hqdefault.jpg"
+
+            metadata = {
+                "title": title,
+                "channel": channel,
+                "thumbnail_url": thumbnail_url
+            }
+
+            logger.info(f"Fetched metadata for {youtube_id}: {title} by {channel}")
+            return metadata
         else:
             logger.error(f"yt-dlp failed for {youtube_id}: {result.stderr}")
             return None
 
     except subprocess.TimeoutExpired:
-        logger.error(f"Timeout fetching title for {youtube_id}")
+        logger.error(f"Timeout fetching metadata for {youtube_id}")
         return None
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse yt-dlp output for {youtube_id}: {e}")
         return None
     except Exception as e:
-        logger.error(f"Error fetching title for {youtube_id}: {e}")
+        logger.error(f"Error fetching metadata for {youtube_id}: {e}")
         return None
+
+
+def get_video_title(youtube_id: str) -> Optional[str]:
+    """
+    Fetch the title of a YouTube video using yt-dlp.
+
+    This is a compatibility wrapper around get_video_metadata.
+
+    Args:
+        youtube_id: YouTube video ID
+
+    Returns:
+        The video title if successful, None otherwise
+    """
+    metadata = get_video_metadata(youtube_id)
+    return metadata["title"] if metadata else None
 
 
 def extract_video_id(url_or_id: str) -> str:

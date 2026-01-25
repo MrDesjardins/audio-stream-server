@@ -37,6 +37,8 @@ def init_database():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 youtube_id TEXT NOT NULL UNIQUE,
                 title TEXT NOT NULL,
+                channel TEXT,
+                thumbnail_url TEXT,
                 play_count INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL,
                 last_played_at TEXT NOT NULL
@@ -61,6 +63,8 @@ def init_database():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 youtube_id TEXT NOT NULL,
                 title TEXT NOT NULL,
+                channel TEXT,
+                thumbnail_url TEXT,
                 position INTEGER NOT NULL,
                 created_at TEXT NOT NULL
             )
@@ -75,13 +79,15 @@ def init_database():
         logger.info(f"Database initialized at {DB_PATH}")
 
 
-def add_to_history(youtube_id: str, title: str) -> int:
+def add_to_history(youtube_id: str, title: str, channel: Optional[str] = None, thumbnail_url: Optional[str] = None) -> int:
     """
     Add a video to play history or increment play count if it already exists.
 
     Args:
         youtube_id: YouTube video ID
         title: Video title
+        channel: Channel name (optional)
+        thumbnail_url: Thumbnail URL (optional)
 
     Returns:
         The ID of the record
@@ -93,13 +99,15 @@ def add_to_history(youtube_id: str, title: str) -> int:
 
         # Use UPSERT: Insert if new, update if exists
         cursor.execute("""
-            INSERT INTO play_history (youtube_id, title, play_count, created_at, last_played_at)
-            VALUES (?, ?, 1, ?, ?)
+            INSERT INTO play_history (youtube_id, title, channel, thumbnail_url, play_count, created_at, last_played_at)
+            VALUES (?, ?, ?, ?, 1, ?, ?)
             ON CONFLICT(youtube_id) DO UPDATE SET
                 title = excluded.title,
+                channel = excluded.channel,
+                thumbnail_url = excluded.thumbnail_url,
                 play_count = play_count + 1,
                 last_played_at = excluded.last_played_at
-        """, (youtube_id, title, timestamp, timestamp))
+        """, (youtube_id, title, channel, thumbnail_url, timestamp, timestamp))
 
         # Get the record ID
         cursor.execute("SELECT id, play_count FROM play_history WHERE youtube_id = ?", (youtube_id,))
@@ -124,7 +132,7 @@ def get_history(limit: int = 10) -> List[Dict]:
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT id, youtube_id, title, play_count, created_at, last_played_at
+            SELECT id, youtube_id, title, channel, thumbnail_url, play_count, created_at, last_played_at
             FROM play_history
             ORDER BY last_played_at DESC
             LIMIT ?
@@ -167,13 +175,15 @@ def clear_history():
 
 # Queue management functions
 
-def add_to_queue(youtube_id: str, title: str) -> int:
+def add_to_queue(youtube_id: str, title: str, channel: Optional[str] = None, thumbnail_url: Optional[str] = None) -> int:
     """
     Add a video to the end of the queue.
 
     Args:
         youtube_id: YouTube video ID
         title: Video title
+        channel: Channel name (optional)
+        thumbnail_url: Thumbnail URL (optional)
 
     Returns:
         The ID of the inserted queue item
@@ -189,9 +199,9 @@ def add_to_queue(youtube_id: str, title: str) -> int:
         next_position = (max_pos + 1) if max_pos is not None else 0
 
         cursor.execute("""
-            INSERT INTO queue (youtube_id, title, position, created_at)
-            VALUES (?, ?, ?, ?)
-        """, (youtube_id, title, next_position, timestamp))
+            INSERT INTO queue (youtube_id, title, channel, thumbnail_url, position, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (youtube_id, title, channel, thumbnail_url, next_position, timestamp))
 
         record_id = cursor.lastrowid
         logger.info(f"Added to queue (position {next_position}): {title} ({youtube_id})")
@@ -208,7 +218,7 @@ def get_queue() -> List[Dict]:
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT id, youtube_id, title, position, created_at
+            SELECT id, youtube_id, title, channel, thumbnail_url, position, created_at
             FROM queue
             ORDER BY position ASC
         """)
@@ -227,7 +237,7 @@ def get_next_in_queue() -> Optional[Dict]:
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT id, youtube_id, title, position, created_at
+            SELECT id, youtube_id, title, channel, thumbnail_url, position, created_at
             FROM queue
             ORDER BY position ASC
             LIMIT 1

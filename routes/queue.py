@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from services.database import add_to_queue, get_queue, get_next_in_queue, remove_from_queue, clear_queue
-from services.youtube import get_video_title, extract_video_id
+from services.youtube import get_video_title, get_video_metadata, extract_video_id
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -22,11 +22,19 @@ def add_video_to_queue(request: QueueRequest):
     """Add a video to the queue."""
     try:
         video_id = extract_video_id(request.youtube_video_id)
-        video_title = get_video_title(video_id)
-        if not video_title:
-            video_title = f"YouTube Video {video_id}"
+        metadata = get_video_metadata(video_id)
 
-        queue_id = add_to_queue(video_id, video_title)
+        if metadata:
+            queue_id = add_to_queue(
+                video_id,
+                metadata["title"],
+                metadata.get("channel"),
+                metadata.get("thumbnail_url")
+            )
+            video_title = metadata["title"]
+        else:
+            video_title = f"YouTube Video {video_id}"
+            queue_id = add_to_queue(video_id, video_title)
 
         return JSONResponse({
             "status": "added",

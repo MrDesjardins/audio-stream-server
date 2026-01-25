@@ -12,7 +12,7 @@ from config import get_config
 from services.background_tasks import get_transcription_queue, TranscriptionJob
 from services.streaming import start_youtube_stream
 from services.database import add_to_history, get_history, clear_history
-from services.youtube import get_video_title, extract_video_id
+from services.youtube import get_video_metadata, extract_video_id
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -45,17 +45,25 @@ def stream_video(request: StreamRequest):
 
     logger.info(f"🎬 /stream requested for video: {video_id}")
 
-    # Fetch video title and save to database
+    # Fetch video metadata and save to database
     try:
-        video_title = get_video_title(video_id)
-        if video_title:
-            add_to_history(video_id, video_title)
-            logger.info(f"Added to history: {video_title}")
+        metadata = get_video_metadata(video_id)
+        if metadata:
+            add_to_history(
+                video_id,
+                metadata["title"],
+                metadata.get("channel"),
+                metadata.get("thumbnail_url")
+            )
+            logger.info(f"Added to history: {metadata['title']} by {metadata.get('channel')}")
+            video_title = metadata["title"]
         else:
             add_to_history(video_id, f"YouTube Video {video_id}")
-            logger.warning(f"Could not fetch title for {video_id}, using fallback")
+            logger.warning(f"Could not fetch metadata for {video_id}, using fallback")
+            video_title = f"YouTube Video {video_id}"
     except Exception as e:
         logger.error(f"Error saving to history: {e}")
+        video_title = f"YouTube Video {video_id}"
 
     global ffmpeg_thread, current_process, broadcaster
     with process_lock:

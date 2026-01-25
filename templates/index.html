@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,6 +8,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="/static/style.css?v=1737497000">
 </head>
+
 <body>
     <div class="container">
         <header>
@@ -19,22 +21,13 @@
                     <label for="youtube_video_id">
                         <i class="fas fa-link"></i> Add to Queue - YouTube Video ID or URL
                     </label>
-                    <input
-                        type="text"
-                        id="youtube_video_id"
-                        placeholder="Enter YouTube ID or URL"
-                        value=""
-                    >
+                    <input type="text" id="youtube_video_id" placeholder="Enter YouTube ID or URL" value="">
                 </div>
 
                 {% if transcription_enabled %}
                 <div class="checkbox-group">
                     <label for="skip_transcription" class="checkbox-label">
-                        <input
-                            type="checkbox"
-                            id="skip_transcription"
-                            name="skip_transcription"
-                        >
+                        <input type="checkbox" id="skip_transcription" name="skip_transcription">
                         <span>
                             <i class="fas fa-music"></i>
                             Skip transcription (for music)
@@ -233,8 +226,8 @@
 
                 const res = await fetch('/queue/add', {
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({youtube_video_id, skip_transcription})
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ youtube_video_id, skip_transcription })
                 });
                 const data = await res.json();
 
@@ -257,7 +250,7 @@
             }
 
             try {
-                await fetch('/queue/clear', {method: 'POST'});
+                await fetch('/queue/clear', { method: 'POST' });
                 await renderQueue();
                 updateStatus('Queue cleared', 'idle');
             } catch (e) {
@@ -267,7 +260,7 @@
 
         async function removeFromQueue(queueId) {
             try {
-                await fetch(`/queue/${queueId}`, {method: 'DELETE'});
+                await fetch(`/queue/${queueId}`, { method: 'DELETE' });
                 await renderQueue();
             } catch (e) {
                 console.error('Error removing from queue:', e);
@@ -289,7 +282,7 @@
 
         async function playNext() {
             try {
-                const res = await fetch('/queue/next', {method: 'POST'});
+                const res = await fetch('/queue/next', { method: 'POST' });
                 const data = await res.json();
 
                 if (data.status === 'queue_empty') {
@@ -318,8 +311,8 @@
             try {
                 const res = await fetch('/stream', {
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({youtube_video_id, skip_transcription})
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ youtube_video_id, skip_transcription })
                 });
                 const data = await res.json();
                 updateStatus(data.status || data.detail, res.ok ? 'streaming' : 'error');
@@ -334,6 +327,19 @@
                     const currentItem = queue.find(item => item.id === queue_id);
                     if (currentItem) {
                         updateWindowTitle(currentItem.title);
+                        // Update MediaSession metadata for car displays
+                        if ('mediaSession' in navigator && currentItem.thumbnail_url) {
+                            navigator.mediaSession.metadata = new MediaMetadata({
+                                title: currentItem.title,
+                                artist: currentItem.channel || 'YouTube',
+                                album: 'YouTube Radio',
+                                artwork: [
+                                    { src: currentItem.thumbnail_url, sizes: '512x512', type: 'image/jpeg' },
+                                    { src: currentItem.thumbnail_url, sizes: '256x256', type: 'image/jpeg' },
+                                    { src: currentItem.thumbnail_url, sizes: '128x128', type: 'image/jpeg' }
+                                ]
+                            });
+                        }
                     }
 
                     // Update history
@@ -395,7 +401,7 @@
         }
 
         // Auto-play next track when current track ends
-        player.addEventListener('ended', async function() {
+        player.addEventListener('ended', async function () {
             console.log('Track ended, playing next...');
             await playNext();
         });
@@ -415,7 +421,7 @@
         async function clearHistory() {
             if (confirm('Are you sure you want to clear all history?')) {
                 try {
-                    await fetch('/history/clear', {method: 'POST'});
+                    await fetch('/history/clear', { method: 'POST' });
                     await renderHistory();
                 } catch (e) {
                     console.error('Error clearing history:', e);
@@ -520,8 +526,8 @@
             try {
                 const res = await fetch('/stream', {
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({youtube_video_id, skip_transcription})
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ youtube_video_id, skip_transcription })
                 });
                 const data = await res.json();
                 updateStatus(data.status || data.detail, res.ok ? 'streaming' : 'error');
@@ -535,6 +541,20 @@
                     const currentTrack = history.find(item => item.youtube_id === youtube_video_id);
                     if (currentTrack) {
                         updateWindowTitle(currentTrack.title);
+
+                        // Update MediaSession metadata for car displays
+                        if ('mediaSession' in navigator && currentTrack.thumbnail_url) {
+                            navigator.mediaSession.metadata = new MediaMetadata({
+                                title: currentTrack.title,
+                                artist: currentTrack.channel || 'YouTube',
+                                album: 'YouTube Radio',
+                                artwork: [
+                                    { src: currentTrack.thumbnail_url, sizes: '512x512', type: 'image/jpeg' },
+                                    { src: currentTrack.thumbnail_url, sizes: '256x256', type: 'image/jpeg' },
+                                    { src: currentTrack.thumbnail_url, sizes: '128x128', type: 'image/jpeg' }
+                                ]
+                            });
+                        }
                     }
 
                     // Track current video for transcription (only if not skipped)
@@ -578,7 +598,7 @@
 
             // Then call server to stop the stream
             try {
-                const res = await fetch('/stop', {method: 'POST'});
+                const res = await fetch('/stop', { method: 'POST' });
                 const data = await res.json();
                 updateStatus(data.status || data.detail, 'idle');
             } catch (error) {
@@ -781,7 +801,7 @@
         }
 
         // Close modal when clicking outside
-        window.onclick = function(event) {
+        window.onclick = function (event) {
             const modal = document.getElementById('summary-modal');
             if (event.target === modal) {
                 closeSummaryModal();
@@ -805,4 +825,5 @@
         }
     </script>
 </body>
+
 </html>
