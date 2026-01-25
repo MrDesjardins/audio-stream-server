@@ -41,6 +41,7 @@ env = os.environ.get("ENV", "production")
 # Log server configuration
 logger.info("=" * 60)
 logger.info("SERVER CONFIGURATION")
+logger.info(f"ENV: {env}")
 logger.info(f"FASTAPI_HOST: {host}")
 logger.info(f"FASTAPI_API_PORT: {api_port}")
 logger.info(f"Stream URL will be: http://{host}:{api_port}/mystream")
