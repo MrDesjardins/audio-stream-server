@@ -6,12 +6,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>YouTube Radio</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link rel="stylesheet" href="/static/style.css?v=1737497000">
+    <link rel="stylesheet" href="/static/style.css?v=1737847300">
 </head>
 
 <body>
     <div class="container">
         <header>
+            <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
+                <i class="fas fa-moon" id="theme-icon"></i>
+            </button>
             <h1><i class="fab fa-youtube"></i> Private YouTube Radio</h1>
         </header>
 
@@ -179,6 +182,68 @@
         let isPlaying = false;
         let currentTrackTitle = null;
         const defaultTitle = 'YouTube Radio';
+
+        // Theme Management
+        function getSystemTheme() {
+            return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        }
+
+        function initTheme() {
+            const savedTheme = localStorage.getItem('theme');
+            const themeIcon = document.getElementById('theme-icon');
+
+            if (savedTheme) {
+                document.documentElement.setAttribute('data-theme', savedTheme);
+                updateThemeIcon(savedTheme);
+            } else {
+                const systemTheme = getSystemTheme();
+                updateThemeIcon(systemTheme);
+            }
+        }
+
+        function toggleTheme() {
+            const currentTheme = document.documentElement.getAttribute('data-theme');
+            const systemTheme = getSystemTheme();
+            let newTheme;
+
+            if (!currentTheme) {
+                // First toggle: switch from system default to opposite
+                newTheme = systemTheme === 'light' ? 'dark' : 'light';
+            } else if (currentTheme === systemTheme) {
+                // Currently matching system, switch to opposite
+                newTheme = systemTheme === 'light' ? 'dark' : 'light';
+            } else {
+                // Currently opposite of system, go back to system (remove override)
+                document.documentElement.removeAttribute('data-theme');
+                localStorage.removeItem('theme');
+                updateThemeIcon(systemTheme);
+                return;
+            }
+
+            document.documentElement.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            updateThemeIcon(newTheme);
+        }
+
+        function updateThemeIcon(theme) {
+            const themeIcon = document.getElementById('theme-icon');
+            if (theme === 'light') {
+                themeIcon.className = 'fas fa-moon';
+            } else {
+                themeIcon.className = 'fas fa-sun';
+            }
+        }
+
+        // Listen for system theme changes
+        window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', (e) => {
+            const savedTheme = localStorage.getItem('theme');
+            if (!savedTheme) {
+                updateThemeIcon(e.matches ? 'light' : 'dark');
+            }
+        });
+
+        // Initialize theme on page load
+        initTheme();
 
         // Update browser window title
         function updateWindowTitle(title) {

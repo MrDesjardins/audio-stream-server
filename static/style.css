@@ -39,6 +39,7 @@
     box-sizing: border-box;
 }
 
+/* Dark theme (default) */
 :root {
     /* Neumorphic Dark Palette */
     --bg-primary: #1e1e2e;
@@ -79,6 +80,90 @@
         -2px -2px 4px var(--shadow-light);
 }
 
+/* Light theme (when system preference is light OR manually set) */
+@media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+        /* Neumorphic Light Palette */
+        --bg-primary: #e8e8f0;
+        --bg-elevated: #f0f0f5;
+        --bg-depressed: #d8d8e0;
+
+        /* Accent Colors */
+        --accent-primary: #7c3aed;
+        --accent-secondary: #8b5cf6;
+        --accent-glow: rgba(124, 58, 237, 0.2);
+
+        /* Text Colors */
+        --text-primary: #1e1e2e;
+        --text-secondary: #4a4a5e;
+        --text-muted: #6b6b80;
+
+        /* Status Colors */
+        --success-color: #059669;
+        --error-color: #dc2626;
+        --warning-color: #d97706;
+
+        /* Neumorphic Shadows */
+        --shadow-light: rgba(255, 255, 255, 0.8);
+        --shadow-dark: rgba(0, 0, 0, 0.15);
+
+        /* Neumorphic Effects */
+        --neu-raised:
+            6px 6px 12px var(--shadow-dark),
+            -6px -6px 12px var(--shadow-light);
+        --neu-raised-sm:
+            3px 3px 6px var(--shadow-dark),
+            -3px -3px 6px var(--shadow-light);
+        --neu-pressed:
+            inset 4px 4px 8px var(--shadow-dark),
+            inset -4px -4px 8px var(--shadow-light);
+        --neu-flat:
+            2px 2px 4px var(--shadow-dark),
+            -2px -2px 4px var(--shadow-light);
+    }
+}
+
+/* Manual light theme override */
+:root[data-theme="light"] {
+    /* Neumorphic Light Palette */
+    --bg-primary: #e8e8f0;
+    --bg-elevated: #f0f0f5;
+    --bg-depressed: #d8d8e0;
+
+    /* Accent Colors */
+    --accent-primary: #7c3aed;
+    --accent-secondary: #8b5cf6;
+    --accent-glow: rgba(124, 58, 237, 0.2);
+
+    /* Text Colors */
+    --text-primary: #1e1e2e;
+    --text-secondary: #4a4a5e;
+    --text-muted: #6b6b80;
+
+    /* Status Colors */
+    --success-color: #059669;
+    --error-color: #dc2626;
+    --warning-color: #d97706;
+
+    /* Neumorphic Shadows */
+    --shadow-light: rgba(255, 255, 255, 0.8);
+    --shadow-dark: rgba(0, 0, 0, 0.15);
+
+    /* Neumorphic Effects */
+    --neu-raised:
+        6px 6px 12px var(--shadow-dark),
+        -6px -6px 12px var(--shadow-light);
+    --neu-raised-sm:
+        3px 3px 6px var(--shadow-dark),
+        -3px -3px 6px var(--shadow-light);
+    --neu-pressed:
+        inset 4px 4px 8px var(--shadow-dark),
+        inset -4px -4px 8px var(--shadow-light);
+    --neu-flat:
+        2px 2px 4px var(--shadow-dark),
+        -2px -2px 4px var(--shadow-light);
+}
+
 body {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     background: var(--bg-primary);
@@ -103,6 +188,7 @@ body {
 header {
     text-align: center;
     padding: 24px 0;
+    position: relative;
 }
 
 header h1 {
@@ -126,6 +212,44 @@ header h1 i {
     -webkit-text-fill-color: transparent;
     background-clip: text;
     filter: drop-shadow(0 0 8px rgba(255, 0, 0, 0.3));
+}
+
+/* Theme Toggle Button */
+.theme-toggle {
+    position: absolute;
+    top: 24px;
+    right: 0;
+    background: var(--bg-elevated);
+    border: none;
+    border-radius: 12px;
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--accent-secondary);
+    font-size: 1.2rem;
+    box-shadow: var(--neu-raised-sm);
+    transition: all 0.3s ease;
+}
+
+.theme-toggle:hover {
+    box-shadow: var(--neu-raised);
+    transform: translateY(-2px);
+}
+
+.theme-toggle:active {
+    transform: translateY(0);
+    box-shadow: var(--neu-pressed);
+}
+
+.theme-toggle i {
+    transition: transform 0.3s ease;
+}
+
+.theme-toggle:hover i {
+    transform: rotate(180deg);
 }
 
 /* Main Content */
@@ -602,6 +726,17 @@ audio {
     box-shadow: var(--neu-pressed);
 }
 
+/* Light theme audio controls - use filter for Firefox compatibility */
+@media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) audio {
+        filter: invert(1) hue-rotate(180deg);
+    }
+}
+
+:root[data-theme="light"] audio {
+    filter: invert(1) hue-rotate(180deg);
+}
+
 /* Playback Controls */
 .playback-controls {
     display: grid;
@@ -1020,6 +1155,16 @@ audio {
     animation: fadeIn 0.3s ease;
 }
 
+@media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) .modal {
+        background: rgba(232, 232, 240, 0.95);
+    }
+}
+
+:root[data-theme="light"] .modal {
+    background: rgba(232, 232, 240, 0.95);
+}
+
 @keyframes fadeIn {
     from { opacity: 0; }
     to { opacity: 1; }
@@ -1059,6 +1204,16 @@ audio {
     justify-content: space-between;
     padding: 24px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+@media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) .modal-header {
+        border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    }
+}
+
+:root[data-theme="light"] .modal-header {
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
 }
 
 .modal-header h2 {
@@ -1116,6 +1271,16 @@ audio {
     padding-top: 20px;
     border-top: 1px solid rgba(255, 255, 255, 0.05);
     text-align: center;
+}
+
+@media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) .summary-footer {
+        border-top: 1px solid rgba(0, 0, 0, 0.08);
+    }
+}
+
+:root[data-theme="light"] .summary-footer {
+    border-top: 1px solid rgba(0, 0, 0, 0.08);
 }
 
 /* Responsive Design */
