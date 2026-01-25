@@ -2,6 +2,7 @@
 import os
 import logging
 import threading
+import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
@@ -24,17 +25,18 @@ from routes.transcription import router as transcription_router
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler('/tmp/audio-transcription.log'),
-        logging.StreamHandler()
-    ]
+        logging.FileHandler("/tmp/audio-transcription.log"),
+        logging.StreamHandler(),
+    ],
 )
 logger = logging.getLogger(__name__)
 
 # Configurable host and port
 host = os.environ.get("FASTAPI_HOST", "127.0.0.1")
 api_port = int(os.environ.get("FASTAPI_API_PORT", 8000))
+env = os.environ.get("ENV", "production")
 
 # Log server configuration
 logger.info("=" * 60)
@@ -84,22 +86,32 @@ def index(request: Request):
     """Serve the main HTML page."""
     server_host = request.url.hostname
     logger.info(f"📄 Index page requested by {request.client.host}")
-    logger.info(f"   Audio player URL will be: http://{server_host}:{api_port}/mystream")
-    return templates.TemplateResponse("index.html", {
-        "request": request,
-        "host": server_host,
-        "api_port": api_port,
-        "transcription_enabled": config.transcription_enabled
-    })
+    logger.info(
+        f"   Audio player URL will be: http://{server_host}:{api_port}/mystream"
+    )
+    return templates.TemplateResponse(
+        "index.html",
+        {
+            "request": request,
+            "host": server_host,
+            "api_port": api_port,
+            "transcription_enabled": config.transcription_enabled,
+        },
+    )
 
 
 if __name__ == "__main__":
-    import uvicorn
+    is_reloading_on_file_change = env == "development"
     print("=" * 70)
     print("🚀 STARTING AUDIO STREAM SERVER")
+    print(f"   Environment: {env}")
     print(f"   Host: {host}")
     print(f"   Port: {api_port}")
     print(f"   Stream URL: http://{host}:{api_port}/mystream")
-    print(f"   Transcription: {'enabled' if config.transcription_enabled else 'disabled'}")
+    print(
+        f"   Transcription: {'enabled' if config.transcription_enabled else 'disabled'}"
+    )
     print("=" * 70)
-    uvicorn.run("main:app", host=host, port=api_port, reload=True)
+    uvicorn.run(
+        "main:app", host=host, port=api_port, reload=is_reloading_on_file_change
+    )
