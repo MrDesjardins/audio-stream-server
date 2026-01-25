@@ -3,7 +3,9 @@ import logging
 import os
 import threading
 import time
+import random
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from enum import Enum
 from queue import Queue, Empty
 from typing import Optional, Dict
@@ -36,6 +38,7 @@ class TranscriptionJob:
     trilium_note_url: Optional[str] = None
     summary: Optional[str] = None
     transcript: Optional[str] = None
+    completed_at: Optional[datetime] = None  # Timestamp when job completed/failed/skipped
 
 
 class TranscriptionQueue:
@@ -45,6 +48,7 @@ class TranscriptionQueue:
         self.queue: Queue[TranscriptionJob] = Queue()
         self.jobs: Dict[str, TranscriptionJob] = {}
         self.lock = threading.Lock()
+        self.max_job_age_hours = 24  # Keep jobs for 24 hours
 
     def add_job(self, job: TranscriptionJob) -> None:
         """Add a job to the queue."""
@@ -82,6 +86,12 @@ class TranscriptionQueue:
             if video_id in self.jobs:
                 job = self.jobs[video_id]
                 job.status = status
+
+                # Set timestamp on completion
+                if status in [JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.SKIPPED]:
+                    job.completed_at = datetime.utcnow()
+
+                # Update other fields
                 if error:
                     job.error = error
                 if trilium_note_id:
@@ -93,6 +103,27 @@ class TranscriptionQueue:
                 if transcript:
                     job.transcript = transcript
                 logger.info(f"Updated job {video_id} status to {status}")
+
+        # Periodically clean up old jobs (10% chance)
+        if random.random() < 0.1:
+            self._cleanup_old_jobs()
+
+    def _cleanup_old_jobs(self):
+        """Remove jobs older than max_age."""
+        now = datetime.utcnow()
+        cutoff = now - timedelta(hours=self.max_job_age_hours)
+
+        with self.lock:
+            to_remove = []
+            for video_id, job in self.jobs.items():
+                if job.completed_at and job.completed_at < cutoff:
+                    to_remove.append(video_id)
+
+            for video_id in to_remove:
+                del self.jobs[video_id]
+
+            if to_remove:
+                logger.info(f"Cleaned up {len(to_remove)} old transcription job(s)")
 
     def get_job_status(self, video_id: str) -> Optional[TranscriptionJob]:
         """Get the status of a specific job."""

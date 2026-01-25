@@ -79,12 +79,10 @@ def start_youtube_stream(youtube_video_id: str, skip_transcription: bool, broadc
         ffmpeg_proc = subprocess.Popen(ffmpeg_cmd, stdout=subprocess.PIPE)
 
     # Start broadcasting to clients
+    # The broadcaster will monitor the process and stop automatically when it completes
     broadcaster.start_broadcasting(ffmpeg_proc)
 
-    logger.info(f"Waiting for audio download and conversion to complete for video {youtube_video_id}...")
-    ffmpeg_proc.wait()
-    broadcaster.stop()
-    logger.info(f"Audio download and conversion completed for video {youtube_video_id}")
+    logger.info(f"Started streaming audio for video {youtube_video_id}")
 
     # Log the final file size if transcription is enabled and not skipped
     if config.transcription_enabled and not skip_transcription and os.path.exists(audio_path):

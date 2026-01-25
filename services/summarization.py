@@ -13,7 +13,7 @@ SUMMARY_PROMPT_TEMPLATE = """You are summarizing a YouTube video transcript. Ple
 
 1. A clear and informative title for the video (max 60 characters)
 2. A concise 2-3 sentence overview of the main topic
-3. Key points discussed (5-15 bullet points depending on length)
+3. Key points discussed: 5-15 bullet points depending of the number of topics/laws/concepts/ideas/points covered
 4. Any important conclusions or takeaways
 
 Keep the summary clear, well-structured, and informative.

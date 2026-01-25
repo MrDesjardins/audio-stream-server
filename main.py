@@ -1,7 +1,10 @@
 # file: youtube_streamer.py
 import os
+import sys
 import logging
 import threading
+import signal
+import atexit
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
@@ -72,6 +75,65 @@ templates = Jinja2Templates(directory="templates")
 # Initialize global state for streaming
 process_lock = threading.Lock()
 broadcaster = StreamBroadcaster()
+
+# Shutdown state tracking
+_shutdown_called = False
+_shutdown_lock = threading.Lock()
+
+
+def shutdown_handler(signum=None, frame=None):
+    """Gracefully shutdown streaming and background tasks."""
+    global _shutdown_called
+
+    # Prevent duplicate shutdown calls
+    with _shutdown_lock:
+        if _shutdown_called:
+            return
+        _shutdown_called = True
+
+    logger.info("Shutdown signal received, cleaning up...")
+
+    # Stop broadcaster
+    if broadcaster:
+        broadcaster.stop()
+
+    # Terminate streaming process with timeout
+    with process_lock:
+        # Access the stream state from the routes module
+        try:
+            from routes.stream import get_stream_state
+            state = get_stream_state()
+            if hasattr(state, '_current_process') and state._current_process:
+                proc = state._current_process
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except Exception:
+                    proc.kill()
+        except Exception as e:
+            logger.warning(f"Error accessing stream state during shutdown: {e}")
+
+    # Stop background worker if transcription enabled
+    if config.transcription_enabled:
+        try:
+            from services.background_tasks import get_transcription_queue
+            queue = get_transcription_queue()
+            if hasattr(queue, 'stop'):
+                queue.stop()
+        except Exception as e:
+            logger.warning(f"Error stopping transcription queue: {e}")
+
+    logger.info("Shutdown complete")
+
+    # Exit the process if called by signal handler
+    if signum is not None:
+        sys.exit(0)
+
+
+# Register shutdown handlers
+signal.signal(signal.SIGINT, shutdown_handler)
+signal.signal(signal.SIGTERM, shutdown_handler)
+atexit.register(shutdown_handler)
 
 # Initialize stream router with global state
 init_stream_globals(process_lock, broadcaster)

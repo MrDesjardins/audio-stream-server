@@ -1,8 +1,10 @@
 import sqlite3
 import logging
+import threading
 from datetime import datetime
 from typing import List, Optional, Dict
 from contextlib import contextmanager
+from queue import Queue, Empty
 import os
 
 logger = logging.getLogger(__name__)
@@ -10,20 +12,80 @@ logger = logging.getLogger(__name__)
 DB_PATH = os.getenv("DATABASE_PATH", "./audio_history.db")
 
 
+class ConnectionPool:
+    """Thread-safe SQLite connection pool."""
+
+    def __init__(self, db_path: str, max_connections: int = 5):
+        self.db_path = db_path
+        self.pool = Queue(maxsize=max_connections)
+        self.lock = threading.Lock()
+
+        # Pre-create connections
+        for _ in range(max_connections):
+            conn = self._create_connection()
+            self.pool.put(conn)
+
+    def _create_connection(self):
+        """Create a new database connection."""
+        conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        # Enable WAL mode for better concurrency
+        conn.execute("PRAGMA journal_mode=WAL")
+        return conn
+
+    @contextmanager
+    def get_connection(self):
+        """Get a connection from the pool."""
+        try:
+            conn = self.pool.get(timeout=5)
+            temp_conn = False
+        except Empty:
+            # Pool exhausted, create temporary connection
+            logger.warning("Connection pool exhausted, creating temp connection")
+            conn = self._create_connection()
+            temp_conn = True
+
+        try:
+            yield conn
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Database error: {e}")
+            raise
+        finally:
+            if temp_conn:
+                conn.close()
+            else:
+                self.pool.put(conn)
+
+    def close_all(self):
+        """Close all connections in pool."""
+        while not self.pool.empty():
+            try:
+                conn = self.pool.get_nowait()
+                conn.close()
+            except Empty:
+                break
+
+
+# Global pool instance
+_db_pool = None
+
+
+def get_db_pool():
+    """Get database connection pool singleton."""
+    global _db_pool
+    if _db_pool is None:
+        _db_pool = ConnectionPool(DB_PATH)
+    return _db_pool
+
+
 @contextmanager
 def get_db_connection():
-    """Context manager for database connections."""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    try:
+    """Context manager for database connections (updated to use pool)."""
+    pool = get_db_pool()
+    with pool.get_connection() as conn:
         yield conn
-        conn.commit()
-    except Exception as e:
-        conn.rollback()
-        logger.error(f"Database error: {e}")
-        raise
-    finally:
-        conn.close()
 
 
 def init_database():

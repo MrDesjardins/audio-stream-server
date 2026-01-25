@@ -16,7 +16,8 @@ __pycache__/
 # Database
 *.db
 *.db.backup_*
-audio_history.db
+audio_history.db*
+
 
 # Test coverage
 .coverage

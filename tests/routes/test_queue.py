@@ -19,13 +19,17 @@ def client():
 class TestAddToQueueEndpoint:
     """Tests for /queue/add endpoint."""
 
-    @patch('routes.queue.get_video_title')
+    @patch('routes.queue.get_video_metadata')
     @patch('routes.queue.extract_video_id')
     @patch('routes.queue.add_to_queue')
-    def test_add_to_queue_success(self, mock_add, mock_extract, mock_get_title, client):
+    def test_add_to_queue_success(self, mock_add, mock_extract, mock_get_metadata, client):
         """Test successfully adding video to queue."""
         mock_extract.return_value = "test123"
-        mock_get_title.return_value = "Test Video Title"
+        mock_get_metadata.return_value = {
+            "title": "Test Video Title",
+            "channel": "Test Channel",
+            "thumbnail_url": "https://example.com/thumb.jpg"
+        }
         mock_add.return_value = 1
 
         response = client.post("/queue/add", json={"youtube_video_id": "test123"})
@@ -37,13 +41,17 @@ class TestAddToQueueEndpoint:
         assert data["youtube_id"] == "test123"
         assert data["title"] == "Test Video Title"
 
-    @patch('routes.queue.get_video_title')
+    @patch('routes.queue.get_video_metadata')
     @patch('routes.queue.extract_video_id')
     @patch('routes.queue.add_to_queue')
-    def test_add_to_queue_with_url(self, mock_add, mock_extract, mock_get_title, client):
+    def test_add_to_queue_with_url(self, mock_add, mock_extract, mock_get_metadata, client):
         """Test adding video with URL instead of ID."""
         mock_extract.return_value = "extracted123"
-        mock_get_title.return_value = "Video Title"
+        mock_get_metadata.return_value = {
+            "title": "Video Title",
+            "channel": "Test Channel",
+            "thumbnail_url": "https://example.com/thumb.jpg"
+        }
         mock_add.return_value = 2
 
         response = client.post("/queue/add", json={
@@ -54,15 +62,15 @@ class TestAddToQueueEndpoint:
         # Verify ID was extracted
         mock_extract.assert_called_with("https://www.youtube.com/watch?v=extracted123")
 
-    @patch('routes.queue.get_video_title')
+    @patch('routes.queue.get_video_metadata')
     @patch('routes.queue.extract_video_id')
     @patch('routes.queue.add_to_queue')
     def test_add_to_queue_no_title_uses_fallback(
-        self, mock_add, mock_extract, mock_get_title, client
+        self, mock_add, mock_extract, mock_get_metadata, client
     ):
         """Test using fallback title when title fetch fails."""
         mock_extract.return_value = "test123"
-        mock_get_title.return_value = None  # Title fetch failed
+        mock_get_metadata.return_value = None  # Metadata fetch failed
         mock_add.return_value = 1
 
         response = client.post("/queue/add", json={"youtube_video_id": "test123"})

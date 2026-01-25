@@ -6,6 +6,9 @@ Handles multi-client streaming with replay buffer for reconnecting clients.
 import logging
 import threading
 import queue
+import select
+import platform
+import time
 from collections import deque
 from typing import List
 
@@ -22,6 +25,8 @@ class StreamBroadcaster:
         self.active = False
         self.reader_thread = None
         self.dropped_chunks_count = {}  # Track dropped chunks per client for rate-limited logging
+        self.last_cleanup = 0  # Track last cleanup time
+        self.cleanup_interval = 60  # Clean up every 60 seconds
 
     def start_broadcasting(self, process):
         """Start reading from process stdout and broadcasting to clients."""
@@ -37,31 +42,46 @@ class StreamBroadcaster:
         """Read from process stdout and send to all clients (runs in background thread)."""
         chunk_size = 8192
         import time
+
+        # Check if we can use select (Unix-like systems)
+        use_select = platform.system() != 'Windows' and hasattr(process.stdout, 'fileno')
+
         try:
             logger.info("Broadcaster: Starting to read from process")
             while self.active:
-                # Read available data (use read1 to avoid blocking for full chunk_size)
-                try:
-                    # read1() reads at least 1 byte up to chunk_size without blocking for full size
-                    if hasattr(process.stdout, 'read1'):
-                        chunk = process.stdout.read1(chunk_size)
-                    else:
-                        # Fallback to regular read
-                        chunk = process.stdout.read(chunk_size)
-                except Exception as e:
-                    logger.error(f"Broadcaster: Error reading from process: {e}")
-                    break
+                chunk = None
+
+                if use_select:
+                    # Use select with 1 second timeout
+                    try:
+                        ready, _, _ = select.select([process.stdout], [], [], 1.0)
+                        if ready:
+                            chunk = process.stdout.read1(chunk_size)
+                        # else: timeout, will check process status below
+                    except Exception as e:
+                        logger.error(f"Broadcaster: Error in select: {e}")
+                        break
+                else:
+                    # Fallback for Windows or non-file-like streams
+                    try:
+                        if hasattr(process.stdout, 'read1'):
+                            chunk = process.stdout.read1(chunk_size)
+                        else:
+                            chunk = process.stdout.read(chunk_size)
+                    except Exception as e:
+                        logger.error(f"Broadcaster: Error reading from process: {e}")
+                        break
 
                 if not chunk:
-                    # read1() can return empty bytes when no data is available yet
-                    # Only break if the process has actually finished
+                    # Check if process ended
                     poll_result = process.poll()
                     if poll_result is not None:
-                        logger.info(f"Broadcaster: Process ended with code {poll_result}, no more data")
+                        logger.info(f"Broadcaster: Process ended with code {poll_result}")
                         break
-                    # Process still running, just no data available right now
-                    # Sleep briefly and continue
-                    time.sleep(0.01)
+
+                    # Process still running but no data
+                    if not use_select:
+                        time.sleep(0.01)  # Only sleep if not using select
                     continue
 
                 with self.lock:
@@ -135,6 +155,12 @@ class StreamBroadcaster:
             self.clients.append(client_queue)
             logger.info(f"Broadcaster: New client subscribed (total clients: {len(self.clients)})")
 
+            # Periodic cleanup of dead clients
+            now = time.time()
+            if now - self.last_cleanup > self.cleanup_interval:
+                self._cleanup_dead_clients()
+                self.last_cleanup = now
+
             # Send buffered chunks to new client so they can catch up
             for chunk in self.buffer:
                 try:
@@ -145,6 +171,20 @@ class StreamBroadcaster:
                     pass
 
         return client_queue
+
+    def _cleanup_dead_clients(self):
+        """Remove client queues that are full (likely disconnected)."""
+        initial_count = len(self.clients)
+
+        # Remove queues that are full (client not consuming)
+        self.clients = [
+            q for q in self.clients
+            if q.qsize() < q.maxsize
+        ]
+
+        removed = initial_count - len(self.clients)
+        if removed > 0:
+            logger.info(f"Cleaned up {removed} dead client queue(s)")
 
     def unsubscribe(self, client_queue: queue.Queue):
         """Unsubscribe a client from the stream."""

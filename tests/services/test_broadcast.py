@@ -1,7 +1,7 @@
 """Tests for broadcast service."""
 import queue
 import time
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock, MagicMock, patch
 import pytest
 from services.broadcast import StreamBroadcaster
 
@@ -143,7 +143,8 @@ class TestStreamBroadcaster:
         # Wait for thread to finish
         broadcaster.reader_thread.join(timeout=1)
 
-    def test_read_and_broadcast_sends_chunks(self):
+    @patch('services.broadcast.platform.system', return_value='Windows')
+    def test_read_and_broadcast_sends_chunks(self, mock_platform):
         """Test that chunks are broadcast to all clients."""
         broadcaster = StreamBroadcaster()
 
@@ -172,7 +173,8 @@ class TestStreamBroadcaster:
         assert client2.get_nowait() == b"chunk1"
         assert client2.get_nowait() == b"chunk2"
 
-    def test_read_and_broadcast_adds_to_buffer(self):
+    @patch('services.broadcast.platform.system', return_value='Windows')
+    def test_read_and_broadcast_adds_to_buffer(self, mock_platform):
         """Test that chunks are added to buffer."""
         broadcaster = StreamBroadcaster(buffer_size=10)
 
@@ -212,6 +214,8 @@ class TestStreamBroadcaster:
 
         # Mock process that raises exception
         mock_process = Mock()
+        # Return empty bytes to trigger poll() check, then raise exception
+        mock_process.stdout.read1.return_value = b""
         mock_process.poll.side_effect = Exception("Read error")
 
         broadcaster.start_broadcasting(mock_process)

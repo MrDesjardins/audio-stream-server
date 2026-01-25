@@ -24,23 +24,93 @@ class StreamRequest(BaseModel):
     skip_transcription: bool = False
 
 
-# Global state (will be set by main.py)
-current_process = None
-ffmpeg_thread = None
-process_lock = None
-broadcaster = None
+class StreamState:
+    """Thread-safe streaming state management."""
+
+    def __init__(self, lock, broadcaster):
+        self._lock = lock
+        self._broadcaster = broadcaster
+        self._current_process = None
+        self._ffmpeg_thread = None
+
+    def start_stream(self, video_id: str, skip_transcription: bool):
+        """Start new stream, stopping existing one."""
+        from services.streaming import start_youtube_stream
+        from services.broadcast import StreamBroadcaster
+
+        with self._lock:
+            # Terminate existing stream
+            if self._current_process:
+                logger.info("Stopping existing stream")
+                self._current_process.terminate()
+                try:
+                    self._current_process.wait(timeout=5)
+                except Exception:
+                    self._current_process.kill()
+
+            # Stop old broadcaster
+            self._broadcaster.stop()
+
+            # Create new broadcaster
+            self._broadcaster = StreamBroadcaster()
+
+            # Start new stream in a thread
+            def target():
+                self._current_process = start_youtube_stream(video_id, skip_transcription, self._broadcaster)
+                with self._lock:
+                    self._current_process = None
+
+            self._ffmpeg_thread = threading.Thread(target=target, daemon=True)
+            self._ffmpeg_thread.start()
+
+            return self._broadcaster
+
+    def stop_stream(self) -> bool:
+        """Stop current stream."""
+        with self._lock:
+            if self._current_process:
+                self._current_process.terminate()
+                try:
+                    self._current_process.wait(timeout=5)
+                except Exception:
+                    self._current_process.kill()
+                self._current_process = None
+                self._broadcaster.stop()
+                return True
+            return False
+
+    def is_streaming(self) -> bool:
+        """Check if currently streaming."""
+        with self._lock:
+            return self._current_process is not None
+
+    @property
+    def broadcaster(self):
+        """Get current broadcaster (read-only)."""
+        return self._broadcaster
+
+
+# Global instance
+_stream_state = None
 
 
 def init_stream_globals(proc_lock, bc):
     """Initialize global state from main.py."""
-    global process_lock, broadcaster
-    process_lock = proc_lock
-    broadcaster = bc
+    global _stream_state
+    _stream_state = StreamState(proc_lock, bc)
+
+
+def get_stream_state() -> StreamState:
+    """Get stream state singleton."""
+    if _stream_state is None:
+        raise RuntimeError("Stream state not initialized")
+    return _stream_state
 
 
 @router.post("/stream")
 def stream_video(request: StreamRequest):
     """Start streaming a YouTube video."""
+    state = get_stream_state()
     video_id = extract_video_id(request.youtube_video_id)
 
     logger.info(f"🎬 /stream requested for video: {video_id}")
@@ -65,77 +135,57 @@ def stream_video(request: StreamRequest):
         logger.error(f"Error saving to history: {e}")
         video_title = f"YouTube Video {video_id}"
 
-    global ffmpeg_thread, current_process, broadcaster
-    with process_lock:
-        # Stop existing stream if any
-        if current_process:
-            logger.info(f"   Stopping existing stream")
-            current_process.terminate()
-            current_process = None
-            broadcaster.stop()
+    # Queue transcription job if enabled
+    if config.transcription_enabled and not request.skip_transcription:
+        try:
+            queue = get_transcription_queue()
+            job = TranscriptionJob(
+                video_id=video_id,
+                audio_path=config.get_audio_path(video_id)
+            )
+            queue.add_job(job)
+            logger.info(f"Queued transcription job for {video_id} (will start after download)")
+        except Exception as e:
+            logger.error(f"Failed to queue transcription job: {e}")
+    elif config.transcription_enabled and request.skip_transcription:
+        logger.info(f"Transcription skipped for {video_id} (user preference)")
 
-        # Create new broadcaster for this stream
-        from services.broadcast import StreamBroadcaster
-        broadcaster = StreamBroadcaster()
+    # Start new stream (handles stopping existing stream internally)
+    state.start_stream(video_id, request.skip_transcription)
 
-        # Queue transcription job if enabled
-        if config.transcription_enabled and not request.skip_transcription:
-            try:
-                queue = get_transcription_queue()
-                job = TranscriptionJob(
-                    video_id=video_id,
-                    audio_path=config.get_audio_path(video_id)
-                )
-                queue.add_job(job)
-                logger.info(f"Queued transcription job for {video_id} (will start after download)")
-            except Exception as e:
-                logger.error(f"Failed to queue transcription job: {e}")
-        elif config.transcription_enabled and request.skip_transcription:
-            logger.info(f"Transcription skipped for {video_id} (user preference)")
-
-        # Start new stream in a thread
-        def target():
-            global current_process
-            current_process = start_youtube_stream(video_id, request.skip_transcription, broadcaster)
-            current_process = None
-
-        ffmpeg_thread = threading.Thread(target=target, daemon=True)
-        ffmpeg_thread.start()
-        return {"status": "stream started", "youtube_video_id": video_id, "title": video_title}
+    return {"status": "stream started", "youtube_video_id": video_id, "title": video_title}
 
 
 @router.post("/stop")
 def stop_stream():
     """Stop the current stream."""
-    global current_process
-    with process_lock:
-        if current_process:
-            current_process.terminate()
-            current_process = None
-            return {"status": "stream stopped"}
-        else:
-            raise HTTPException(status_code=400, detail="No stream running")
+    state = get_stream_state()
+    if state.stop_stream():
+        return {"status": "stream stopped"}
+    raise HTTPException(status_code=400, detail="No stream running")
 
 
 @router.get("/status")
 def get_status():
     """Get the current streaming status."""
-    return {"status": "streaming" if current_process else "idle"}
+    state = get_stream_state()
+    return {"status": "streaming" if state.is_streaming() else "idle"}
 
 
 @router.get("/mystream")
 async def stream_audio(request: Request):
     """Serve current ffmpeg stdout as audio (with multi-client support)."""
+    state = get_stream_state()
     logger.info(f"🎵 /mystream accessed by {request.client.host}:{request.client.port}")
 
-    if not broadcaster.is_active():
+    if not state.broadcaster.is_active():
         logger.warning(f"❌ No active stream when /mystream was accessed")
         raise HTTPException(status_code=400, detail="No active stream")
 
-    logger.info(f"✓ Streaming audio to client (broadcaster active with {len(broadcaster.clients)} clients)")
+    logger.info(f"✓ Streaming audio to client (broadcaster active with {len(state.broadcaster.clients)} clients)")
 
     # Subscribe to broadcaster
-    client_queue = broadcaster.subscribe()
+    client_queue = state.broadcaster.subscribe()
 
     async def stream_generator():
         """Generate stream chunks from broadcaster queue."""
@@ -154,7 +204,7 @@ async def stream_audio(request: Request):
 
                 except queue.Empty:
                     # Timeout waiting for chunk, check if stream is still active
-                    if not broadcaster.is_active():
+                    if not state.broadcaster.is_active():
                         logger.info(f"Stream ended (broadcaster inactive) for client {request.client.host}")
                         break
 
@@ -164,7 +214,7 @@ async def stream_audio(request: Request):
             logger.error(f"Error streaming to client {request.client.host}: {e}")
         finally:
             # Unsubscribe client when done
-            broadcaster.unsubscribe(client_queue)
+            state.broadcaster.unsubscribe(client_queue)
 
     return StreamingResponse(stream_generator(), media_type="audio/mpeg")
 

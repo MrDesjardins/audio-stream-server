@@ -175,6 +175,8 @@ CREATE TABLE play_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     youtube_id TEXT NOT NULL UNIQUE,
     title TEXT NOT NULL,
+    channel TEXT,                  -- Channel/uploader name
+    thumbnail_url TEXT,            -- Video thumbnail URL (best quality)
     play_count INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,      -- First time played (ISO 8601 UTC)
     last_played_at TEXT NOT NULL   -- Most recent play (ISO 8601 UTC)
@@ -184,6 +186,8 @@ CREATE TABLE queue (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     youtube_id TEXT NOT NULL,
     title TEXT NOT NULL,
+    channel TEXT,                  -- Channel/uploader name
+    thumbnail_url TEXT,            -- Video thumbnail URL (best quality)
     position INTEGER NOT NULL,     -- Order in queue
     created_at TEXT NOT NULL
 );
@@ -213,6 +217,13 @@ CREATE TABLE queue (
 - Animated status indicators
 - Touch-friendly controls (min 44px tap targets)
 - Responsive breakpoints: mobile (default), tablet (768px+), desktop
+- MediaSession API integration for rich media controls in car entertainment systems and mobile devices
+
+**MediaSession Integration**:
+- Displays video title, channel name, and thumbnail in external media controls
+- Provides rich metadata to car entertainment systems (tested with Tesla)
+- Shows album art and track information on lock screens and notification panels
+- Automatically updates when tracks change
 
 ### Configuration
 
@@ -483,7 +494,9 @@ This script will:
 
 ### Database Migrations
 
-The `migrate_database.py` script handles schema changes for existing databases:
+The project includes multiple migration scripts for schema updates:
+
+**migrate_database.py** - Original schema migration:
 - Automatically detects old schema (without play_count)
 - Creates backup before migration
 - Migrates data by consolidating duplicate video entries
@@ -491,10 +504,19 @@ The `migrate_database.py` script handles schema changes for existing databases:
 - Preserves first play time (created_at) and most recent play time (last_played_at)
 - Updates indexes for optimal query performance
 
+**migrate_add_metadata.py** - Metadata enhancement migration:
+- Adds `channel` column to play_history and queue tables
+- Adds `thumbnail_url` column to play_history and queue tables
+- Creates backup before migration
+- Required for MediaSession API integration (car displays, lock screens)
+
 **Manual migration**:
 ```sh
 uv run python migrate_database.py
+uv run python migrate_add_metadata.py
 ```
+
+Both migrations run automatically during `./update.sh`.
 
 ### Trilium Notes Title Migration
 
@@ -544,7 +566,6 @@ journalctl -u audio-stream -f
 If running on a network:
 ```sh
 sudo ufw allow 8000/tcp
-sudo ufw allow 8001/tcp
 sudo ufw reload
 ```
 
