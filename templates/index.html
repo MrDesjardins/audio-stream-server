@@ -76,7 +76,7 @@
 
                 <!-- Stream URL: http://{{ host }}:{{ api_port }}/mystream -->
                 <!-- If you see 127.0.0.1 above, check your .env file FASTAPI_HOST setting -->
-                <audio id="player" controls>
+                <audio id="player" controls playsinline preload="auto">
                     <source src="http://{{ host }}:{{ api_port }}/mystream" type="audio/mpeg">
                     Your browser does not support audio.
                 </audio>
@@ -189,6 +189,47 @@
                 document.title = defaultTitle;
                 currentTrackTitle = null;
             }
+        }
+
+        // Set up MediaSession for lock screen and car display controls
+        function setupMediaSession(trackInfo) {
+            if (!('mediaSession' in navigator)) {
+                return;
+            }
+
+            // Set metadata if available
+            if (trackInfo && trackInfo.thumbnail_url) {
+                navigator.mediaSession.metadata = new MediaMetadata({
+                    title: trackInfo.title,
+                    artist: trackInfo.channel || 'YouTube',
+                    album: 'YouTube Radio',
+                    artwork: [
+                        { src: trackInfo.thumbnail_url, sizes: '512x512', type: 'image/jpeg' },
+                        { src: trackInfo.thumbnail_url, sizes: '256x256', type: 'image/jpeg' },
+                        { src: trackInfo.thumbnail_url, sizes: '128x128', type: 'image/jpeg' }
+                    ]
+                });
+            }
+
+            // Set up action handlers for background playback
+            navigator.mediaSession.setActionHandler('play', () => {
+                player.play();
+            });
+            navigator.mediaSession.setActionHandler('pause', () => {
+                player.pause();
+            });
+            navigator.mediaSession.setActionHandler('nexttrack', () => {
+                playNext();
+            });
+            navigator.mediaSession.setActionHandler('previoustrack', () => {
+                rewind();
+            });
+            navigator.mediaSession.setActionHandler('seekbackward', (details) => {
+                player.currentTime = Math.max(0, player.currentTime - (details.seekOffset || 15));
+            });
+            navigator.mediaSession.setActionHandler('seekforward', (details) => {
+                player.currentTime = Math.max(0, player.currentTime + (details.seekOffset || 15));
+            });
         }
 
         // Queue Management
@@ -327,19 +368,7 @@
                     const currentItem = queue.find(item => item.id === queue_id);
                     if (currentItem) {
                         updateWindowTitle(currentItem.title);
-                        // Update MediaSession metadata for car displays
-                        if ('mediaSession' in navigator && currentItem.thumbnail_url) {
-                            navigator.mediaSession.metadata = new MediaMetadata({
-                                title: currentItem.title,
-                                artist: currentItem.channel || 'YouTube',
-                                album: 'YouTube Radio',
-                                artwork: [
-                                    { src: currentItem.thumbnail_url, sizes: '512x512', type: 'image/jpeg' },
-                                    { src: currentItem.thumbnail_url, sizes: '256x256', type: 'image/jpeg' },
-                                    { src: currentItem.thumbnail_url, sizes: '128x128', type: 'image/jpeg' }
-                                ]
-                            });
-                        }
+                        setupMediaSession(currentItem);
                     }
 
                     // Update history
@@ -541,20 +570,7 @@
                     const currentTrack = history.find(item => item.youtube_id === youtube_video_id);
                     if (currentTrack) {
                         updateWindowTitle(currentTrack.title);
-
-                        // Update MediaSession metadata for car displays
-                        if ('mediaSession' in navigator && currentTrack.thumbnail_url) {
-                            navigator.mediaSession.metadata = new MediaMetadata({
-                                title: currentTrack.title,
-                                artist: currentTrack.channel || 'YouTube',
-                                album: 'YouTube Radio',
-                                artwork: [
-                                    { src: currentTrack.thumbnail_url, sizes: '512x512', type: 'image/jpeg' },
-                                    { src: currentTrack.thumbnail_url, sizes: '256x256', type: 'image/jpeg' },
-                                    { src: currentTrack.thumbnail_url, sizes: '128x128', type: 'image/jpeg' }
-                                ]
-                            });
-                        }
+                        setupMediaSession(currentTrack);
                     }
 
                     // Track current video for transcription (only if not skipped)
