@@ -1,4 +1,5 @@
 """Tests for stream routes."""
+
 import asyncio
 import queue as queue_module
 from unittest.mock import Mock, patch, MagicMock, AsyncMock
@@ -18,6 +19,7 @@ def client():
 
     # Initialize globals
     import threading
+
     process_lock = threading.Lock()
     broadcaster = StreamBroadcaster()
     init_stream_globals(process_lock, broadcaster)
@@ -28,13 +30,19 @@ def client():
 class TestStreamEndpoint:
     """Tests for /stream endpoint."""
 
-    @patch('routes.stream.get_video_metadata')
-    @patch('routes.stream.add_to_history')
-    @patch('routes.stream.extract_video_id')
-    @patch('routes.stream.start_youtube_stream')
-    @patch('routes.stream.config')
+    @patch("routes.stream.get_video_metadata")
+    @patch("routes.stream.add_to_history")
+    @patch("routes.stream.extract_video_id")
+    @patch("routes.stream.start_youtube_stream")
+    @patch("routes.stream.config")
     def test_stream_endpoint_success(
-        self, mock_config, mock_start_stream, mock_extract, mock_add_history, mock_get_metadata, client
+        self,
+        mock_config,
+        mock_start_stream,
+        mock_extract,
+        mock_add_history,
+        mock_get_metadata,
+        client,
     ):
         """Test successful stream start."""
         # Mock config
@@ -45,7 +53,7 @@ class TestStreamEndpoint:
         mock_get_metadata.return_value = {
             "title": "Test Video",
             "channel": "Test Channel",
-            "thumbnail_url": "https://example.com/thumb.jpg"
+            "thumbnail_url": "https://example.com/thumb.jpg",
         }
         mock_add_history.return_value = 1
         mock_start_stream.return_value = Mock()
@@ -58,9 +66,9 @@ class TestStreamEndpoint:
         assert data["youtube_video_id"] == "test123"
         assert data["title"] == "Test Video"
 
-    @patch('routes.stream.get_video_metadata')
-    @patch('routes.stream.extract_video_id')
-    @patch('routes.stream.config')
+    @patch("routes.stream.get_video_metadata")
+    @patch("routes.stream.extract_video_id")
+    @patch("routes.stream.config")
     def test_stream_endpoint_with_url(self, mock_config, mock_extract, mock_get_metadata, client):
         """Test streaming with YouTube URL."""
         mock_config.transcription_enabled = False
@@ -68,22 +76,22 @@ class TestStreamEndpoint:
         mock_get_metadata.return_value = {
             "title": "Video Title",
             "channel": "Test Channel",
-            "thumbnail_url": "https://example.com/thumb.jpg"
+            "thumbnail_url": "https://example.com/thumb.jpg",
         }
 
-        response = client.post("/stream", json={
-            "youtube_video_id": "https://www.youtube.com/watch?v=extractedID"
-        })
+        response = client.post(
+            "/stream", json={"youtube_video_id": "https://www.youtube.com/watch?v=extractedID"}
+        )
 
         assert response.status_code == 200
         # Verify video ID was extracted
         mock_extract.assert_called_with("https://www.youtube.com/watch?v=extractedID")
 
-    @patch('routes.stream.get_video_metadata')
-    @patch('routes.stream.add_to_history')
-    @patch('routes.stream.extract_video_id')
-    @patch('routes.stream.get_transcription_queue')
-    @patch('routes.stream.config')
+    @patch("routes.stream.get_video_metadata")
+    @patch("routes.stream.add_to_history")
+    @patch("routes.stream.extract_video_id")
+    @patch("routes.stream.get_transcription_queue")
+    @patch("routes.stream.config")
     def test_stream_endpoint_with_transcription(
         self, mock_config, mock_queue, mock_extract, mock_add_history, mock_get_metadata, client
     ):
@@ -95,7 +103,7 @@ class TestStreamEndpoint:
         mock_get_metadata.return_value = {
             "title": "Test Video",
             "channel": "Test Channel",
-            "thumbnail_url": "https://example.com/thumb.jpg"
+            "thumbnail_url": "https://example.com/thumb.jpg",
         }
 
         # Mock transcription queue
@@ -103,18 +111,17 @@ class TestStreamEndpoint:
         mock_queue_obj.add_job = Mock()
         mock_queue.return_value = mock_queue_obj
 
-        response = client.post("/stream", json={
-            "youtube_video_id": "test123",
-            "skip_transcription": False
-        })
+        response = client.post(
+            "/stream", json={"youtube_video_id": "test123", "skip_transcription": False}
+        )
 
         assert response.status_code == 200
         # Verify transcription job was queued
         mock_queue_obj.add_job.assert_called_once()
 
-    @patch('routes.stream.get_video_metadata')
-    @patch('routes.stream.extract_video_id')
-    @patch('routes.stream.config')
+    @patch("routes.stream.get_video_metadata")
+    @patch("routes.stream.extract_video_id")
+    @patch("routes.stream.config")
     def test_stream_endpoint_skip_transcription(
         self, mock_config, mock_extract, mock_get_metadata, client
     ):
@@ -125,13 +132,12 @@ class TestStreamEndpoint:
         mock_get_metadata.return_value = {
             "title": "Test Video",
             "channel": "Test Channel",
-            "thumbnail_url": "https://example.com/thumb.jpg"
+            "thumbnail_url": "https://example.com/thumb.jpg",
         }
 
-        response = client.post("/stream", json={
-            "youtube_video_id": "test123",
-            "skip_transcription": True
-        })
+        response = client.post(
+            "/stream", json={"youtube_video_id": "test123", "skip_transcription": True}
+        )
 
         assert response.status_code == 200
 
@@ -139,7 +145,7 @@ class TestStreamEndpoint:
 class TestStopEndpoint:
     """Tests for /stop endpoint."""
 
-    @patch('routes.stream.get_stream_state')
+    @patch("routes.stream.get_stream_state")
     def test_stop_no_stream_running(self, mock_get_state, client):
         """Test stop when no stream is running."""
         # Mock state that returns False (no stream)
@@ -152,7 +158,7 @@ class TestStopEndpoint:
         assert response.status_code == 400
         assert "No stream running" in response.json()["detail"]
 
-    @patch('routes.stream.get_stream_state')
+    @patch("routes.stream.get_stream_state")
     def test_stop_success(self, mock_get_state, client):
         """Test successfully stopping stream."""
         # Mock state that returns True (stream stopped)
@@ -173,7 +179,7 @@ class TestStopEndpoint:
 class TestStatusEndpoint:
     """Tests for /status endpoint."""
 
-    @patch('routes.stream.get_stream_state')
+    @patch("routes.stream.get_stream_state")
     def test_status_idle(self, mock_get_state, client):
         """Test status when idle."""
         # Mock state that returns False (not streaming)
@@ -187,7 +193,7 @@ class TestStatusEndpoint:
         data = response.json()
         assert data["status"] == "idle"
 
-    @patch('routes.stream.get_stream_state')
+    @patch("routes.stream.get_stream_state")
     def test_status_streaming(self, mock_get_state, client):
         """Test status when streaming."""
         # Mock state that returns True (streaming)
@@ -206,7 +212,7 @@ class TestMyStreamEndpoint:
     """Tests for /mystream endpoint."""
 
     @pytest.mark.asyncio
-    @patch('routes.stream.get_stream_state')
+    @patch("routes.stream.get_stream_state")
     async def test_mystream_no_active_stream(self, mock_get_state, client):
         """Test accessing stream when none is active."""
         # Mock state with inactive broadcaster
@@ -221,7 +227,7 @@ class TestMyStreamEndpoint:
         assert response.status_code == 400
         assert "No active stream" in response.json()["detail"]
 
-    @patch('routes.stream.get_stream_state')
+    @patch("routes.stream.get_stream_state")
     def test_mystream_active_stream(self, mock_get_state, client):
         """Test streaming when active."""
         # Mock active broadcaster
@@ -248,7 +254,7 @@ class TestMyStreamEndpoint:
 class TestHistoryEndpoints:
     """Tests for history endpoints."""
 
-    @patch('routes.stream.get_history')
+    @patch("routes.stream.get_history")
     def test_get_history_success(self, mock_get_history, client):
         """Test getting play history."""
         mock_get_history.return_value = [
@@ -258,7 +264,7 @@ class TestHistoryEndpoints:
                 "title": "Test Video",
                 "play_count": 2,
                 "created_at": "2024-01-01T00:00:00",
-                "last_played_at": "2024-01-02T00:00:00"
+                "last_played_at": "2024-01-02T00:00:00",
             }
         ]
 
@@ -270,7 +276,7 @@ class TestHistoryEndpoints:
         assert len(data["history"]) == 1
         assert data["history"][0]["youtube_id"] == "test123"
 
-    @patch('routes.stream.get_history')
+    @patch("routes.stream.get_history")
     def test_get_history_with_limit(self, mock_get_history, client):
         """Test getting history with custom limit."""
         mock_get_history.return_value = []
@@ -281,7 +287,7 @@ class TestHistoryEndpoints:
         # Verify limit was passed
         mock_get_history.assert_called_with(limit=5)
 
-    @patch('routes.stream.clear_history')
+    @patch("routes.stream.clear_history")
     def test_clear_history_success(self, mock_clear, client):
         """Test clearing history."""
         response = client.post("/history/clear")

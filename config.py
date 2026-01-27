@@ -1,4 +1,5 @@
 """Configuration management for audio stream server with transcription."""
+
 import os
 from typing import Optional
 from dataclasses import dataclass
@@ -46,24 +47,21 @@ class Config:
             # Server settings
             fastapi_host=os.getenv("FASTAPI_HOST", "127.0.0.1"),
             fastapi_port=int(os.getenv("FASTAPI_API_PORT", "8000")),
-
             # Transcription settings
             transcription_enabled=transcription_enabled,
             openai_api_key=os.getenv("OPENAI_API_KEY"),
             temp_audio_dir=os.getenv("TEMP_AUDIO_DIR", "/tmp/audio-transcriptions"),
             max_audio_length_minutes=int(os.getenv("MAX_AUDIO_LENGTH_MINUTES", "60")),
-
             # Summarization settings
             summary_provider=os.getenv("SUMMARY_PROVIDER", "openai").lower(),
             gemini_api_key=os.getenv("GEMINI_API_KEY"),
-
             # Trilium settings
             trilium_url=os.getenv("TRILIUM_URL"),
             trilium_etapi_token=os.getenv("TRILIUM_ETAPI_TOKEN"),
             trilium_parent_note_id=os.getenv("TRILIUM_PARENT_NOTE_ID"),
-
             # Book suggestions settings
-            book_suggestions_enabled=os.getenv("BOOK_SUGGESTIONS_ENABLED", "false").lower() == "true",
+            book_suggestions_enabled=os.getenv("BOOK_SUGGESTIONS_ENABLED", "false").lower()
+            == "true",
             books_to_analyze=int(os.getenv("BOOKS_TO_ANALYZE", "10")),
             suggestions_count=int(os.getenv("SUGGESTIONS_COUNT", "4")),
             suggestions_ai_provider=os.getenv("SUGGESTIONS_AI_PROVIDER", "openai").lower(),
@@ -95,7 +93,9 @@ class Config:
             if not self.gemini_api_key:
                 errors.append("GEMINI_API_KEY is required when SUMMARY_PROVIDER=gemini")
         else:
-            errors.append(f"Invalid SUMMARY_PROVIDER: {self.summary_provider}. Must be 'openai' or 'gemini'")
+            errors.append(
+                f"Invalid SUMMARY_PROVIDER: {self.summary_provider}. Must be 'openai' or 'gemini'"
+            )
 
         # Check Trilium configuration
         if not self.trilium_url:
@@ -119,7 +119,9 @@ class Config:
         if not self.trilium_etapi_token:
             errors.append("TRILIUM_ETAPI_TOKEN is required when BOOK_SUGGESTIONS_ENABLED=true")
         if not self.trilium_parent_note_id:
-            errors.append("TRILIUM_PARENT_NOTE_ID is required when BOOK_SUGGESTIONS_ENABLED=true (used to find recent audiobook summaries)")
+            errors.append(
+                "TRILIUM_PARENT_NOTE_ID is required when BOOK_SUGGESTIONS_ENABLED=true (used to find recent audiobook summaries)"
+            )
 
         # Check AI provider configuration
         if self.suggestions_ai_provider == "openai":
@@ -129,10 +131,14 @@ class Config:
             if not self.gemini_api_key:
                 errors.append("GEMINI_API_KEY is required when SUGGESTIONS_AI_PROVIDER=gemini")
         else:
-            errors.append(f"Invalid SUGGESTIONS_AI_PROVIDER: {self.suggestions_ai_provider}. Must be 'openai' or 'gemini'")
+            errors.append(
+                f"Invalid SUGGESTIONS_AI_PROVIDER: {self.suggestions_ai_provider}. Must be 'openai' or 'gemini'"
+            )
 
         if errors:
-            error_msg = "Book suggestions configuration validation failed:\n  - " + "\n  - ".join(errors)
+            error_msg = "Book suggestions configuration validation failed:\n  - " + "\n  - ".join(
+                errors
+            )
             raise ValueError(error_msg)
 
     def get_audio_path(self, video_id: str) -> str:

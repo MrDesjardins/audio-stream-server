@@ -1,4 +1,5 @@
 """Audio transcription using OpenAI Whisper API."""
+
 import logging
 import os
 import subprocess
@@ -37,7 +38,7 @@ def compress_audio_for_whisper(audio_path: str) -> str:
     logger.info(f"Compressing audio file {audio_path} for Whisper (1.5x speed, saves API costs)")
 
     # Create temporary file for compressed audio
-    temp_fd, temp_path = tempfile.mkstemp(suffix='.mp3', prefix='whisper_compressed_')
+    temp_fd, temp_path = tempfile.mkstemp(suffix=".mp3", prefix="whisper_compressed_")
     os.close(temp_fd)
 
     try:
@@ -46,22 +47,26 @@ def compress_audio_for_whisper(audio_path: str) -> str:
         # Whisper can handle sped-up audio very well
         compress_cmd = [
             "ffmpeg",
-            "-i", audio_path,
-            "-filter:a", "atempo=1.5",  # Speed up by 1.5x (33% file size reduction)
-            "-map", "0:a",
-            "-ac", "1",              # Convert to mono
-            "-b:a", "32k",           # Low bitrate for small file size
-            "-ar", "16000",          # Lower sample rate (16kHz is fine for speech)
-            "-f", "mp3",
-            "-y",                    # Overwrite output file
-            temp_path
+            "-i",
+            audio_path,
+            "-filter:a",
+            "atempo=1.5",  # Speed up by 1.5x (33% file size reduction)
+            "-map",
+            "0:a",
+            "-ac",
+            "1",  # Convert to mono
+            "-b:a",
+            "32k",  # Low bitrate for small file size
+            "-ar",
+            "16000",  # Lower sample rate (16kHz is fine for speech)
+            "-f",
+            "mp3",
+            "-y",  # Overwrite output file
+            temp_path,
         ]
 
         result = subprocess.run(
-            compress_cmd,
-            capture_output=True,
-            text=True,
-            timeout=300  # 5 minute timeout
+            compress_cmd, capture_output=True, text=True, timeout=300  # 5 minute timeout
         )
 
         if result.returncode != 0:
@@ -139,13 +144,13 @@ def transcribe_audio(audio_path: str, retries: int = 3) -> str:
     try:
         for attempt in range(retries):
             try:
-                logger.info(f"Transcribing audio file: {file_to_transcribe} (attempt {attempt + 1}/{retries})")
+                logger.info(
+                    f"Transcribing audio file: {file_to_transcribe} (attempt {attempt + 1}/{retries})"
+                )
 
                 with open(file_to_transcribe, "rb") as audio_file:
                     response = client.audio.transcriptions.create(
-                        model="whisper-1",
-                        file=audio_file,
-                        response_format="text"
+                        model="whisper-1", file=audio_file, response_format="text"
                     )
 
                 transcript = response if isinstance(response, str) else response.text
@@ -158,7 +163,7 @@ def transcribe_audio(audio_path: str, retries: int = 3) -> str:
 
                 if attempt < retries - 1:
                     # Exponential backoff
-                    wait_time = 2 ** attempt
+                    wait_time = 2**attempt
                     logger.info(f"Retrying in {wait_time} seconds...")
                     time.sleep(wait_time)
                 else:

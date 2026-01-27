@@ -1,4 +1,5 @@
 """Tests for book suggestions service."""
+
 import pytest
 from unittest.mock import Mock, patch, AsyncMock, MagicMock
 from services.book_suggestions import (
@@ -7,7 +8,7 @@ from services.book_suggestions import (
     generate_suggestions_gemini,
     parse_suggestions,
     filter_already_played,
-    get_audiobook_suggestions
+    get_audiobook_suggestions,
 )
 
 
@@ -31,8 +32,8 @@ def mock_config():
 class TestGetRecentBooksFromTrilium:
     """Tests for fetching books from Trilium."""
 
-    @patch('services.book_suggestions.httpx.AsyncClient')
-    @patch('services.book_suggestions.config')
+    @patch("services.book_suggestions.httpx.AsyncClient")
+    @patch("services.book_suggestions.config")
     async def test_fetch_books_success(self, mock_config_module, mock_client_class, mock_config):
         """Test successful audiobook fetching from parent note children."""
         mock_config_module.trilium_url = mock_config.trilium_url
@@ -42,10 +43,7 @@ class TestGetRecentBooksFromTrilium:
         # Mock children response
         mock_children_response = Mock()
         mock_children_response.status_code = 200
-        mock_children_response.json.return_value = [
-            {"noteId": "note1"},
-            {"noteId": "note2"}
-        ]
+        mock_children_response.json.return_value = [{"noteId": "note1"}, {"noteId": "note2"}]
 
         # Mock note detail responses
         mock_note1_response = Mock()
@@ -54,7 +52,7 @@ class TestGetRecentBooksFromTrilium:
             "noteId": "note1",
             "title": "Atomic Habits - Audiobook Summary",
             "type": "text",
-            "dateModified": "2024-01-15T10:00:00Z"
+            "dateModified": "2024-01-15T10:00:00Z",
         }
 
         mock_note2_response = Mock()
@@ -63,16 +61,14 @@ class TestGetRecentBooksFromTrilium:
             "noteId": "note2",
             "title": "Deep Work - Audiobook Summary",
             "type": "text",
-            "dateModified": "2024-01-10T10:00:00Z"
+            "dateModified": "2024-01-10T10:00:00Z",
         }
 
         # Setup mock client
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(side_effect=[
-            mock_children_response,
-            mock_note1_response,
-            mock_note2_response
-        ])
+        mock_client.get = AsyncMock(
+            side_effect=[mock_children_response, mock_note1_response, mock_note2_response]
+        )
         mock_client.__aenter__.return_value = mock_client
         mock_client.__aexit__.return_value = None
         mock_client_class.return_value = mock_client
@@ -87,8 +83,8 @@ class TestGetRecentBooksFromTrilium:
         # Verify sorted by most recent first
         assert books[0]["dateModified"] > books[1]["dateModified"]
 
-    @patch('services.book_suggestions.httpx.AsyncClient')
-    @patch('services.book_suggestions.config')
+    @patch("services.book_suggestions.httpx.AsyncClient")
+    @patch("services.book_suggestions.config")
     async def test_fetch_books_empty(self, mock_config_module, mock_client_class, mock_config):
         """Test when no children found in parent note."""
         mock_config_module.trilium_url = mock_config.trilium_url
@@ -110,8 +106,8 @@ class TestGetRecentBooksFromTrilium:
 
         assert len(books) == 0
 
-    @patch('services.book_suggestions.httpx.AsyncClient')
-    @patch('services.book_suggestions.config')
+    @patch("services.book_suggestions.httpx.AsyncClient")
+    @patch("services.book_suggestions.config")
     async def test_fetch_books_error(self, mock_config_module, mock_client_class, mock_config):
         """Test error handling."""
         mock_config_module.trilium_url = mock_config.trilium_url
@@ -132,8 +128,8 @@ class TestGetRecentBooksFromTrilium:
 class TestGenerateSuggestionsOpenAI:
     """Tests for OpenAI suggestion generation."""
 
-    @patch('services.book_suggestions.OpenAI')
-    @patch('services.book_suggestions.config')
+    @patch("services.book_suggestions.OpenAI")
+    @patch("services.book_suggestions.config")
     def test_generate_suggestions_success(self, mock_config_module, mock_openai_class, mock_config):
         """Test successful suggestion generation."""
         mock_config_module.openai_api_key = mock_config.openai_api_key
@@ -163,8 +159,8 @@ URL: https://www.youtube.com/watch?v=jNQXAC9IVRw
         assert suggestions[0]["author"] == "James Clear"
         assert suggestions[0]["video_id"] == "dQw4w9WgXcQ"
 
-    @patch('services.book_suggestions.OpenAI')
-    @patch('services.book_suggestions.config')
+    @patch("services.book_suggestions.OpenAI")
+    @patch("services.book_suggestions.config")
     def test_generate_suggestions_error(self, mock_config_module, mock_openai_class, mock_config):
         """Test error handling in OpenAI generation."""
         mock_config_module.openai_api_key = mock_config.openai_api_key
@@ -182,10 +178,12 @@ class TestGenerateSuggestionsGemini:
     """Tests for Gemini suggestion generation."""
 
     @pytest.mark.skip(reason="Gemini library not always available in test environment")
-    @patch('google.generativeai.GenerativeModel')
-    @patch('google.generativeai.configure')
-    @patch('services.book_suggestions.config')
-    def test_generate_suggestions_success(self, mock_config_module, mock_configure, mock_model_class, mock_config):
+    @patch("google.generativeai.GenerativeModel")
+    @patch("google.generativeai.configure")
+    @patch("services.book_suggestions.config")
+    def test_generate_suggestions_success(
+        self, mock_config_module, mock_configure, mock_model_class, mock_config
+    ):
         """Test successful Gemini suggestion generation."""
         mock_config_module.gemini_api_key = mock_config.gemini_api_key
 
@@ -210,9 +208,11 @@ URL: https://www.youtube.com/watch?v=BvWB7B8tXD8
         assert suggestions[0]["video_id"] == "BvWB7B8tXD8"
 
     @pytest.mark.skip(reason="Gemini library not always available in test environment")
-    @patch('google.generativeai.configure')
-    @patch('services.book_suggestions.config')
-    def test_generate_suggestions_import_error(self, mock_config_module, mock_configure, mock_config):
+    @patch("google.generativeai.configure")
+    @patch("services.book_suggestions.config")
+    def test_generate_suggestions_import_error(
+        self, mock_config_module, mock_configure, mock_config
+    ):
         """Test handling when Gemini library has error."""
         mock_config_module.gemini_api_key = mock_config.gemini_api_key
 
@@ -277,18 +277,18 @@ URL: https://www.youtube.com/watch?v=dQw4w9WgXcQ
 class TestFilterAlreadyPlayed:
     """Tests for filtering played audiobooks."""
 
-    @patch('services.database.get_history')
+    @patch("services.database.get_history")
     async def test_filter_played(self, mock_get_history):
         """Test filtering out already played videos."""
         mock_get_history.return_value = [
             {"youtube_id": "abc123", "title": "Played Video 1"},
-            {"youtube_id": "def456", "title": "Played Video 2"}
+            {"youtube_id": "def456", "title": "Played Video 2"},
         ]
 
         suggestions = [
             {"video_id": "abc123", "title": "Already Played"},
             {"video_id": "xyz789", "title": "New Video"},
-            {"video_id": "uvw012", "title": "Another New Video"}
+            {"video_id": "uvw012", "title": "Another New Video"},
         ]
 
         filtered = await filter_already_played(suggestions)
@@ -297,24 +297,24 @@ class TestFilterAlreadyPlayed:
         assert filtered[0]["video_id"] == "xyz789"
         assert filtered[1]["video_id"] == "uvw012"
 
-    @patch('services.database.get_history')
+    @patch("services.database.get_history")
     async def test_filter_all_played(self, mock_get_history):
         """Test when all suggestions already played."""
         mock_get_history.return_value = [
             {"youtube_id": "abc123", "title": "Video 1"},
-            {"youtube_id": "def456", "title": "Video 2"}
+            {"youtube_id": "def456", "title": "Video 2"},
         ]
 
         suggestions = [
             {"video_id": "abc123", "title": "Video 1"},
-            {"video_id": "def456", "title": "Video 2"}
+            {"video_id": "def456", "title": "Video 2"},
         ]
 
         filtered = await filter_already_played(suggestions)
 
         assert len(filtered) == 0
 
-    @patch('services.database.get_history')
+    @patch("services.database.get_history")
     async def test_filter_error_handling(self, mock_get_history):
         """Test error handling in filter."""
         mock_get_history.side_effect = Exception("Database error")
@@ -331,10 +331,10 @@ class TestFilterAlreadyPlayed:
 class TestGetAudiobookSuggestions:
     """Tests for main suggestion workflow."""
 
-    @patch('services.book_suggestions.filter_already_played')
-    @patch('services.book_suggestions.generate_suggestions_openai')
-    @patch('services.book_suggestions.get_recent_books_from_trilium')
-    @patch('services.book_suggestions.config')
+    @patch("services.book_suggestions.filter_already_played")
+    @patch("services.book_suggestions.generate_suggestions_openai")
+    @patch("services.book_suggestions.get_recent_books_from_trilium")
+    @patch("services.book_suggestions.config")
     async def test_full_workflow_success(
         self, mock_config_module, mock_get_books, mock_generate, mock_filter, mock_config
     ):
@@ -347,13 +347,13 @@ class TestGetAudiobookSuggestions:
         # Mock books
         mock_get_books.return_value = [
             {"title": "Book 1", "noteId": "n1"},
-            {"title": "Book 2", "noteId": "n2"}
+            {"title": "Book 2", "noteId": "n2"},
         ]
 
         # Mock suggestions
         mock_suggestions = [
             {"title": "Suggestion 1", "video_id": "vid1", "youtube_url": "url1"},
-            {"title": "Suggestion 2", "video_id": "vid2", "youtube_url": "url2"}
+            {"title": "Suggestion 2", "video_id": "vid2", "youtube_url": "url2"},
         ]
         mock_generate.return_value = mock_suggestions
 
@@ -369,7 +369,7 @@ class TestGetAudiobookSuggestions:
         mock_get_books.assert_called_once()
         mock_generate.assert_called_once()
 
-    @patch('services.book_suggestions.config')
+    @patch("services.book_suggestions.config")
     async def test_disabled_feature(self, mock_config_module, mock_config):
         """Test when feature is disabled."""
         mock_config_module.book_suggestions_enabled = False
@@ -378,8 +378,8 @@ class TestGetAudiobookSuggestions:
 
         assert len(result) == 0
 
-    @patch('services.book_suggestions.get_recent_books_from_trilium')
-    @patch('services.book_suggestions.config')
+    @patch("services.book_suggestions.get_recent_books_from_trilium")
+    @patch("services.book_suggestions.config")
     async def test_no_books_found(self, mock_config_module, mock_get_books, mock_config):
         """Test when no books found in Trilium."""
         mock_config_module.book_suggestions_enabled = True

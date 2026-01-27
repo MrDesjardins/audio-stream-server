@@ -1,6 +1,7 @@
 """
 Transcription routes.
 """
+
 import os
 import logging
 from fastapi import APIRouter, HTTPException
@@ -24,23 +25,27 @@ def get_transcription_status(video_id: str):
         job = queue.get_job_status(video_id)
 
         if job is None:
-            return JSONResponse({
-                "video_id": video_id,
-                "status": "not_found",
-                "error": None,
-                "trilium_note_id": None,
-                "trilium_note_url": None,
-                "summary": None
-            })
+            return JSONResponse(
+                {
+                    "video_id": video_id,
+                    "status": "not_found",
+                    "error": None,
+                    "trilium_note_id": None,
+                    "trilium_note_url": None,
+                    "summary": None,
+                }
+            )
 
-        return JSONResponse({
-            "video_id": video_id,
-            "status": job.status.value,
-            "error": job.error,
-            "trilium_note_id": job.trilium_note_id,
-            "trilium_note_url": job.trilium_note_url,
-            "summary": job.summary
-        })
+        return JSONResponse(
+            {
+                "video_id": video_id,
+                "status": job.status.value,
+                "error": job.error,
+                "trilium_note_id": job.trilium_note_id,
+                "trilium_note_url": job.trilium_note_url,
+                "summary": job.summary,
+            }
+        )
 
     except Exception as e:
         logger.error(f"Error getting transcription status: {e}")
@@ -58,21 +63,15 @@ def start_transcription(video_id: str):
     if not os.path.exists(audio_path):
         raise HTTPException(
             status_code=404,
-            detail=f"Audio file not found for video {video_id}. Please stream the video first."
+            detail=f"Audio file not found for video {video_id}. Please stream the video first.",
         )
 
     try:
         queue = get_transcription_queue()
-        job = TranscriptionJob(
-            video_id=video_id,
-            audio_path=audio_path
-        )
+        job = TranscriptionJob(video_id=video_id, audio_path=audio_path)
         queue.add_job(job)
 
-        return JSONResponse({
-            "status": "queued",
-            "video_id": video_id
-        })
+        return JSONResponse({"status": "queued", "video_id": video_id})
 
     except Exception as e:
         logger.error(f"Error starting transcription: {e}")
@@ -90,22 +89,28 @@ def get_summary(video_id: str):
         job = queue.get_job_status(video_id)
 
         if job is None:
-            raise HTTPException(status_code=404, detail=f"No transcription found for video {video_id}")
+            raise HTTPException(
+                status_code=404, detail=f"No transcription found for video {video_id}"
+            )
 
         if job.status not in [JobStatus.COMPLETED, JobStatus.SKIPPED]:
-            return JSONResponse({
+            return JSONResponse(
+                {
+                    "video_id": video_id,
+                    "status": job.status.value,
+                    "summary": None,
+                    "error": "Transcription not yet completed",
+                }
+            )
+
+        return JSONResponse(
+            {
                 "video_id": video_id,
                 "status": job.status.value,
-                "summary": None,
-                "error": "Transcription not yet completed"
-            })
-
-        return JSONResponse({
-            "video_id": video_id,
-            "status": job.status.value,
-            "summary": job.summary,
-            "trilium_note_url": job.trilium_note_url
-        })
+                "summary": job.summary,
+                "trilium_note_url": job.trilium_note_url,
+            }
+        )
 
     except HTTPException:
         raise

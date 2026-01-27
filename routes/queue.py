@@ -1,11 +1,18 @@
 """
 Queue management routes.
 """
+
 import logging
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from services.database import add_to_queue, get_queue, get_next_in_queue, remove_from_queue, clear_queue
+from services.database import (
+    add_to_queue,
+    get_queue,
+    get_next_in_queue,
+    remove_from_queue,
+    clear_queue,
+)
 from services.youtube import get_video_title, get_video_metadata, extract_video_id
 from config import get_config
 
@@ -28,22 +35,16 @@ def add_video_to_queue(request: QueueRequest):
 
         if metadata:
             queue_id = add_to_queue(
-                video_id,
-                metadata["title"],
-                metadata.get("channel"),
-                metadata.get("thumbnail_url")
+                video_id, metadata["title"], metadata.get("channel"), metadata.get("thumbnail_url")
             )
             video_title = metadata["title"]
         else:
             video_title = f"YouTube Video {video_id}"
             queue_id = add_to_queue(video_id, video_title)
 
-        return JSONResponse({
-            "status": "added",
-            "queue_id": queue_id,
-            "youtube_id": video_id,
-            "title": video_title
-        })
+        return JSONResponse(
+            {"status": "added", "queue_id": queue_id, "youtube_id": video_id, "title": video_title}
+        )
     except Exception as e:
         logger.error(f"Error adding to queue: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -83,29 +84,25 @@ def play_next_in_queue():
         next_item = get_next_in_queue()
 
         if not next_item:
-            return JSONResponse({
-                "status": "queue_empty",
-                "message": "No more items in queue"
-            })
+            return JSONResponse({"status": "queue_empty", "message": "No more items in queue"})
 
         # Remove the current first item
-        remove_from_queue(next_item['id'])
+        remove_from_queue(next_item["id"])
 
         # Get the new first item (which was second)
         next_item = get_next_in_queue()
 
         if not next_item:
-            return JSONResponse({
-                "status": "queue_empty",
-                "message": "No more items in queue"
-            })
+            return JSONResponse({"status": "queue_empty", "message": "No more items in queue"})
 
-        return JSONResponse({
-            "status": "next",
-            "youtube_id": next_item['youtube_id'],
-            "title": next_item['title'],
-            "queue_id": next_item['id']
-        })
+        return JSONResponse(
+            {
+                "status": "next",
+                "youtube_id": next_item["youtube_id"],
+                "title": next_item["title"],
+                "queue_id": next_item["id"],
+            }
+        )
     except Exception as e:
         logger.error(f"Error playing next in queue: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -131,7 +128,7 @@ async def generate_and_queue_suggestions():
     if not config.book_suggestions_enabled:
         raise HTTPException(
             status_code=400,
-            detail="Book suggestions feature is disabled. Set BOOK_SUGGESTIONS_ENABLED=true in .env"
+            detail="Book suggestions feature is disabled. Set BOOK_SUGGESTIONS_ENABLED=true in .env",
         )
 
     try:
@@ -143,11 +140,13 @@ async def generate_and_queue_suggestions():
         suggestions = await get_audiobook_suggestions()
 
         if not suggestions:
-            return JSONResponse({
-                "status": "no_suggestions",
-                "message": "No suggestions could be generated. Check logs for details.",
-                "added": []
-            })
+            return JSONResponse(
+                {
+                    "status": "no_suggestions",
+                    "message": "No suggestions could be generated. Check logs for details.",
+                    "added": [],
+                }
+            )
 
         # Add suggestions to queue
         added = []
@@ -165,44 +164,48 @@ async def generate_and_queue_suggestions():
                         video_id,
                         metadata["title"],
                         metadata.get("channel"),
-                        metadata.get("thumbnail_url")
+                        metadata.get("thumbnail_url"),
                     )
-                    added.append({
-                        "queue_id": queue_id,
-                        "video_id": video_id,
-                        "title": metadata["title"],
-                        "suggested_title": suggestion["title"],
-                        "author": suggestion.get("author", "Unknown")
-                    })
+                    added.append(
+                        {
+                            "queue_id": queue_id,
+                            "video_id": video_id,
+                            "title": metadata["title"],
+                            "suggested_title": suggestion["title"],
+                            "author": suggestion.get("author", "Unknown"),
+                        }
+                    )
                     logger.info(f"Added suggestion to queue: {metadata['title']}")
                 else:
                     # Fall back to AI-provided title
                     queue_id = add_to_queue(
-                        video_id,
-                        f"{suggestion['title']} by {suggestion.get('author', 'Unknown')}"
+                        video_id, f"{suggestion['title']} by {suggestion.get('author', 'Unknown')}"
                     )
-                    added.append({
-                        "queue_id": queue_id,
-                        "video_id": video_id,
-                        "title": suggestion["title"],
-                        "author": suggestion.get("author", "Unknown")
-                    })
-                    logger.warning(f"Could not fetch YouTube metadata for {video_id}, using AI title")
+                    added.append(
+                        {
+                            "queue_id": queue_id,
+                            "video_id": video_id,
+                            "title": suggestion["title"],
+                            "author": suggestion.get("author", "Unknown"),
+                        }
+                    )
+                    logger.warning(
+                        f"Could not fetch YouTube metadata for {video_id}, using AI title"
+                    )
 
             except Exception as e:
                 logger.error(f"Failed to add suggestion to queue: {e}")
-                failed.append({
-                    "title": suggestion.get("title", "Unknown"),
-                    "error": str(e)
-                })
+                failed.append({"title": suggestion.get("title", "Unknown"), "error": str(e)})
 
-        return JSONResponse({
-            "status": "success",
-            "message": f"Added {len(added)} audiobook suggestions to queue",
-            "added": added,
-            "failed": failed,
-            "total_suggestions": len(suggestions)
-        })
+        return JSONResponse(
+            {
+                "status": "success",
+                "message": f"Added {len(added)} audiobook suggestions to queue",
+                "added": added,
+                "failed": failed,
+                "total_suggestions": len(suggestions),
+            }
+        )
 
     except Exception as e:
         logger.error(f"Error generating suggestions: {e}", exc_info=True)

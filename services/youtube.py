@@ -26,7 +26,7 @@ def get_video_metadata(youtube_id: str) -> Optional[dict]:
             [YT_DLP_PATH, "--dump-json", "--no-playlist", url],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=10,
         )
 
         if result.returncode == 0:
@@ -37,10 +37,10 @@ def get_video_metadata(youtube_id: str) -> Optional[dict]:
 
             # Extract channel name (try multiple fields)
             channel = (
-                video_info.get("channel") or
-                video_info.get("uploader") or
-                video_info.get("creator") or
-                "Unknown Channel"
+                video_info.get("channel")
+                or video_info.get("uploader")
+                or video_info.get("creator")
+                or "Unknown Channel"
             )
 
             # YouTube thumbnail URL
@@ -49,11 +49,7 @@ def get_video_metadata(youtube_id: str) -> Optional[dict]:
             # More reliable: hqdefault (480x360) or sddefault (640x480)
             thumbnail_url = f"https://i.ytimg.com/vi/{youtube_id}/hqdefault.jpg"
 
-            metadata = {
-                "title": title,
-                "channel": channel,
-                "thumbnail_url": thumbnail_url
-            }
+            metadata = {"title": title, "channel": channel, "thumbnail_url": thumbnail_url}
 
             logger.info(f"Fetched metadata for {youtube_id}: {title} by {channel}")
             return metadata

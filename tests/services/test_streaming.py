@@ -1,4 +1,5 @@
 """Tests for streaming service."""
+
 import os
 from unittest.mock import Mock, patch, MagicMock
 import pytest
@@ -33,11 +34,17 @@ def mock_audio_cache():
 class TestStartYoutubeStream:
     """Tests for start_youtube_stream function."""
 
-    @patch('services.streaming.subprocess.Popen')
-    @patch('services.streaming.get_audio_cache')
-    @patch('services.streaming.config')
+    @patch("services.streaming.subprocess.Popen")
+    @patch("services.streaming.get_audio_cache")
+    @patch("services.streaming.config")
     def test_stream_without_cache_no_transcription(
-        self, mock_config_module, mock_get_cache, mock_popen, mock_broadcaster, mock_config, mock_audio_cache
+        self,
+        mock_config_module,
+        mock_get_cache,
+        mock_popen,
+        mock_broadcaster,
+        mock_config,
+        mock_audio_cache,
     ):
         """Test streaming from YouTube without cache and transcription disabled."""
         # Setup mocks
@@ -53,7 +60,9 @@ class TestStartYoutubeStream:
         mock_popen.side_effect = [mock_yt_proc, mock_ffmpeg_proc]
 
         # Call function
-        result = start_youtube_stream("test123", skip_transcription=False, broadcaster=mock_broadcaster)
+        result = start_youtube_stream(
+            "test123", skip_transcription=False, broadcaster=mock_broadcaster
+        )
 
         # Verify yt-dlp command
         assert mock_popen.call_count == 2
@@ -81,13 +90,19 @@ class TestStartYoutubeStream:
         # Verify return value
         assert result == mock_ffmpeg_proc
 
-    @patch('services.streaming.subprocess.Popen')
-    @patch('services.streaming.get_audio_cache')
-    @patch('services.streaming.config')
-    @patch('services.streaming.logger')
+    @patch("services.streaming.subprocess.Popen")
+    @patch("services.streaming.get_audio_cache")
+    @patch("services.streaming.config")
+    @patch("services.streaming.logger")
     def test_stream_without_cache_with_transcription(
-        self, mock_logger, mock_config_module, mock_get_cache, mock_popen,
-        mock_broadcaster, mock_config, mock_audio_cache
+        self,
+        mock_logger,
+        mock_config_module,
+        mock_get_cache,
+        mock_popen,
+        mock_broadcaster,
+        mock_config,
+        mock_audio_cache,
     ):
         """Test streaming from YouTube with transcription enabled."""
         # Setup mocks
@@ -103,7 +118,9 @@ class TestStartYoutubeStream:
         mock_popen.side_effect = [mock_yt_proc, mock_ffmpeg_proc]
 
         # Call function
-        result = start_youtube_stream("test123", skip_transcription=False, broadcaster=mock_broadcaster)
+        result = start_youtube_stream(
+            "test123", skip_transcription=False, broadcaster=mock_broadcaster
+        )
 
         # Verify ffmpeg command uses tee for dual output
         ffmpeg_cmd_call = mock_popen.call_args_list[1]
@@ -124,15 +141,23 @@ class TestStartYoutubeStream:
         # Verify return value
         assert result == mock_ffmpeg_proc
 
-    @patch('services.streaming.subprocess.Popen')
-    @patch('services.streaming.get_audio_cache')
-    @patch('services.streaming.config')
-    @patch('services.streaming.os.path.exists')
-    @patch('services.streaming.os.path.getsize')
-    @patch('services.streaming.logger')
+    @patch("services.streaming.subprocess.Popen")
+    @patch("services.streaming.get_audio_cache")
+    @patch("services.streaming.config")
+    @patch("services.streaming.os.path.exists")
+    @patch("services.streaming.os.path.getsize")
+    @patch("services.streaming.logger")
     def test_stream_with_file_size_logging(
-        self, mock_logger, mock_getsize, mock_exists, mock_config_module,
-        mock_get_cache, mock_popen, mock_broadcaster, mock_config, mock_audio_cache
+        self,
+        mock_logger,
+        mock_getsize,
+        mock_exists,
+        mock_config_module,
+        mock_get_cache,
+        mock_popen,
+        mock_broadcaster,
+        mock_config,
+        mock_audio_cache,
     ):
         """Test that file size is logged when transcription saves audio."""
         # Setup mocks
@@ -155,13 +180,19 @@ class TestStartYoutubeStream:
         log_calls = [call[0][0] for call in mock_logger.info.call_args_list]
         assert any("Audio file saved:" in msg and "5.00 MB" in msg for msg in log_calls)
 
-    @patch('services.streaming.subprocess.Popen')
-    @patch('services.streaming.get_audio_cache')
-    @patch('services.streaming.config')
-    @patch('services.streaming.logger')
+    @patch("services.streaming.subprocess.Popen")
+    @patch("services.streaming.get_audio_cache")
+    @patch("services.streaming.config")
+    @patch("services.streaming.logger")
     def test_stream_from_cache(
-        self, mock_logger, mock_config_module, mock_get_cache, mock_popen,
-        mock_broadcaster, mock_config, mock_audio_cache
+        self,
+        mock_logger,
+        mock_config_module,
+        mock_get_cache,
+        mock_popen,
+        mock_broadcaster,
+        mock_config,
+        mock_audio_cache,
     ):
         """Test streaming from cached file."""
         # Setup mocks - file exists in cache
@@ -175,7 +206,9 @@ class TestStartYoutubeStream:
         mock_popen.return_value = mock_ffmpeg_proc
 
         # Call function
-        result = start_youtube_stream("test123", skip_transcription=False, broadcaster=mock_broadcaster)
+        result = start_youtube_stream(
+            "test123", skip_transcription=False, broadcaster=mock_broadcaster
+        )
 
         # Verify only ffmpeg was called (no yt-dlp)
         assert mock_popen.call_count == 1
@@ -199,12 +232,17 @@ class TestStartYoutubeStream:
         # Verify return value
         assert result == mock_ffmpeg_proc
 
-    @patch('services.streaming.subprocess.Popen')
-    @patch('services.streaming.get_audio_cache')
-    @patch('services.streaming.config')
+    @patch("services.streaming.subprocess.Popen")
+    @patch("services.streaming.get_audio_cache")
+    @patch("services.streaming.config")
     def test_stream_skip_transcription(
-        self, mock_config_module, mock_get_cache, mock_popen,
-        mock_broadcaster, mock_config, mock_audio_cache
+        self,
+        mock_config_module,
+        mock_get_cache,
+        mock_popen,
+        mock_broadcaster,
+        mock_config,
+        mock_audio_cache,
     ):
         """Test streaming with skip_transcription=True uses standard ffmpeg command."""
         # Setup mocks
@@ -219,7 +257,9 @@ class TestStartYoutubeStream:
         mock_popen.side_effect = [mock_yt_proc, mock_ffmpeg_proc]
 
         # Call function with skip_transcription=True
-        result = start_youtube_stream("test123", skip_transcription=True, broadcaster=mock_broadcaster)
+        result = start_youtube_stream(
+            "test123", skip_transcription=True, broadcaster=mock_broadcaster
+        )
 
         # Verify ffmpeg command does NOT use tee (since transcription is skipped)
         ffmpeg_cmd_call = mock_popen.call_args_list[1]
@@ -231,12 +271,17 @@ class TestStartYoutubeStream:
         # Verify broadcaster was started
         mock_broadcaster.start_broadcasting.assert_called_once()
 
-    @patch('services.streaming.subprocess.Popen')
-    @patch('services.streaming.get_audio_cache')
-    @patch('services.streaming.config')
+    @patch("services.streaming.subprocess.Popen")
+    @patch("services.streaming.get_audio_cache")
+    @patch("services.streaming.config")
     def test_subprocess_buffer_sizes(
-        self, mock_config_module, mock_get_cache, mock_popen,
-        mock_broadcaster, mock_config, mock_audio_cache
+        self,
+        mock_config_module,
+        mock_get_cache,
+        mock_popen,
+        mock_broadcaster,
+        mock_config,
+        mock_audio_cache,
     ):
         """Test that subprocess calls use large buffer sizes."""
         # Setup mocks
@@ -255,8 +300,8 @@ class TestStartYoutubeStream:
 
         # Verify yt-dlp uses large buffer
         yt_call_kwargs = mock_popen.call_args_list[0][1]
-        assert yt_call_kwargs['bufsize'] == 64 * 1024 * 1024  # 64MB
+        assert yt_call_kwargs["bufsize"] == 64 * 1024 * 1024  # 64MB
 
         # Verify ffmpeg uses large buffer
         ffmpeg_call_kwargs = mock_popen.call_args_list[1][1]
-        assert ffmpeg_call_kwargs['bufsize'] == 64 * 1024 * 1024  # 64MB
+        assert ffmpeg_call_kwargs["bufsize"] == 64 * 1024 * 1024  # 64MB

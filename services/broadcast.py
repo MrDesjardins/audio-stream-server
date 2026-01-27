@@ -3,6 +3,7 @@ Audio stream broadcasting service.
 
 Handles multi-client streaming with replay buffer for reconnecting clients.
 """
+
 import logging
 import threading
 import queue
@@ -10,7 +11,7 @@ import select
 import platform
 import time
 from collections import deque
-from typing import List
+from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -19,22 +20,24 @@ class StreamBroadcaster:
     """Broadcasts audio stream to multiple clients with replay buffer."""
 
     def __init__(self, buffer_size: int = 300):
-        self.clients: List[queue.Queue] = []
-        self.buffer = deque(maxlen=buffer_size)  # Keep last N chunks for reconnecting clients (~2.4MB at 8KB chunks)
+        self.clients: List[queue.Queue[bytes]] = []
+        self.buffer: deque[bytes] = deque(
+            maxlen=buffer_size
+        )  # Keep last N chunks for reconnecting clients (~2.4MB at 8KB chunks)
         self.lock = threading.Lock()
         self.active = False
-        self.reader_thread = None
-        self.dropped_chunks_count = {}  # Track dropped chunks per client for rate-limited logging
-        self.last_cleanup = 0  # Track last cleanup time
+        self.reader_thread: Optional[threading.Thread] = None
+        self.dropped_chunks_count: dict[int, int] = (
+            {}
+        )  # Track dropped chunks per client for rate-limited logging
+        self.last_cleanup: float = 0  # Track last cleanup time
         self.cleanup_interval = 60  # Clean up every 60 seconds
 
     def start_broadcasting(self, process):
         """Start reading from process stdout and broadcasting to clients."""
         self.active = True
         self.reader_thread = threading.Thread(
-            target=self._read_and_broadcast,
-            args=(process,),
-            daemon=True
+            target=self._read_and_broadcast, args=(process,), daemon=True
         )
         self.reader_thread.start()
 
@@ -44,7 +47,7 @@ class StreamBroadcaster:
         import time
 
         # Check if we can use select (Unix-like systems)
-        use_select = platform.system() != 'Windows' and hasattr(process.stdout, 'fileno')
+        use_select = platform.system() != "Windows" and hasattr(process.stdout, "fileno")
 
         try:
             logger.info("Broadcaster: Starting to read from process")
@@ -64,7 +67,7 @@ class StreamBroadcaster:
                 else:
                     # Fallback for Windows or non-file-like streams
                     try:
-                        if hasattr(process.stdout, 'read1'):
+                        if hasattr(process.stdout, "read1"):
                             chunk = process.stdout.read1(chunk_size)
                         else:
                             chunk = process.stdout.read(chunk_size)
@@ -104,7 +107,9 @@ class StreamBroadcaster:
                             # Client queue is full even after timeout
                             # Track dropped chunks and only log periodically to avoid spam
                             client_id = id(client_queue)
-                            self.dropped_chunks_count[client_id] = self.dropped_chunks_count.get(client_id, 0) + 1
+                            self.dropped_chunks_count[client_id] = (
+                                self.dropped_chunks_count.get(client_id, 0) + 1
+                            )
 
                             # Log warning only on first drop and every 100 drops after that
                             dropped_count = self.dropped_chunks_count[client_id]
@@ -145,11 +150,11 @@ class StreamBroadcaster:
             self.active = False
             logger.info("Broadcaster: Stopped")
 
-    def subscribe(self) -> queue.Queue:
+    def subscribe(self) -> queue.Queue[bytes]:
         """Subscribe a new client to the stream."""
         # Increase queue size to prevent dropping chunks for slow clients
         # 500 chunks * 8KB = ~4MB buffer per client (allows better buffering for network issues)
-        client_queue = queue.Queue(maxsize=500)
+        client_queue: queue.Queue[bytes] = queue.Queue(maxsize=500)
 
         with self.lock:
             self.clients.append(client_queue)
@@ -177,16 +182,13 @@ class StreamBroadcaster:
         initial_count = len(self.clients)
 
         # Remove queues that are full (client not consuming)
-        self.clients = [
-            q for q in self.clients
-            if q.qsize() < q.maxsize
-        ]
+        self.clients = [q for q in self.clients if q.qsize() < q.maxsize]
 
         removed = initial_count - len(self.clients)
         if removed > 0:
             logger.info(f"Cleaned up {removed} dead client queue(s)")
 
-    def unsubscribe(self, client_queue: queue.Queue):
+    def unsubscribe(self, client_queue: queue.Queue[bytes]):
         """Unsubscribe a client from the stream."""
         with self.lock:
             if client_queue in self.clients:

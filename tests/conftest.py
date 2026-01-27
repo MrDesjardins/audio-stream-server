@@ -1,4 +1,5 @@
 """Pytest configuration and fixtures."""
+
 import os
 import sys
 import tempfile
@@ -31,20 +32,20 @@ def mock_config():
 @pytest.fixture
 def temp_db():
     """Temporary SQLite database for testing."""
-    with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as f:
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
         db_path = f.name
 
     # Set environment variable for database
-    original_db = os.environ.get('DATABASE_PATH')
-    os.environ['DATABASE_PATH'] = db_path
+    original_db = os.environ.get("DATABASE_PATH")
+    os.environ["DATABASE_PATH"] = db_path
 
     yield db_path
 
     # Cleanup
     if original_db:
-        os.environ['DATABASE_PATH'] = original_db
+        os.environ["DATABASE_PATH"] = original_db
     else:
-        os.environ.pop('DATABASE_PATH', None)
+        os.environ.pop("DATABASE_PATH", None)
 
     if os.path.exists(db_path):
         os.unlink(db_path)
@@ -95,12 +96,14 @@ The video discusses important topics."""
 @pytest.fixture
 def mock_httpx_response():
     """Mock httpx response."""
+
     def _make_response(status_code=200, json_data=None):
         response = Mock()
         response.status_code = status_code
         response.json = Mock(return_value=json_data or {})
         response.raise_for_status = Mock()
         return response
+
     return _make_response
 
 
@@ -129,8 +132,11 @@ def app_client():
     # Import main app (need to mock initialization)
     from unittest.mock import patch
 
-    with patch('services.database.init_database'), \
-         patch('services.background_tasks.init_background_tasks'):
+    with (
+        patch("services.database.init_database"),
+        patch("services.background_tasks.init_background_tasks"),
+    ):
         from main import app
+
         client = TestClient(app)
         yield client

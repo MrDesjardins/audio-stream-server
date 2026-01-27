@@ -1,4 +1,5 @@
 """Tests for YouTube service."""
+
 import json
 import subprocess
 from unittest.mock import Mock, patch, MagicMock
@@ -55,16 +56,13 @@ class TestExtractVideoId:
 class TestGetVideoTitle:
     """Tests for video title fetching."""
 
-    @patch('services.youtube.subprocess.run')
+    @patch("services.youtube.subprocess.run")
     def test_get_video_title_success(self, mock_run):
         """Test successfully getting video title."""
         # Mock successful yt-dlp response
         mock_result = Mock()
         mock_result.returncode = 0
-        mock_result.stdout = json.dumps({
-            "title": "Test Video Title",
-            "id": "dQw4w9WgXcQ"
-        })
+        mock_result.stdout = json.dumps({"title": "Test Video Title", "id": "dQw4w9WgXcQ"})
         mock_run.return_value = mock_result
 
         title = get_video_title("dQw4w9WgXcQ")
@@ -77,7 +75,7 @@ class TestGetVideoTitle:
         assert "--dump-json" in call_args[0][0]
         assert "--no-playlist" in call_args[0][0]
 
-    @patch('services.youtube.subprocess.run')
+    @patch("services.youtube.subprocess.run")
     def test_get_video_title_failure(self, mock_run):
         """Test handling yt-dlp failure."""
         # Mock failed yt-dlp response
@@ -90,7 +88,7 @@ class TestGetVideoTitle:
 
         assert title is None
 
-    @patch('services.youtube.subprocess.run')
+    @patch("services.youtube.subprocess.run")
     def test_get_video_title_invalid_json(self, mock_run):
         """Test handling invalid JSON response."""
         # Mock yt-dlp returning invalid JSON
@@ -103,7 +101,7 @@ class TestGetVideoTitle:
 
         assert title is None
 
-    @patch('services.youtube.subprocess.run')
+    @patch("services.youtube.subprocess.run")
     def test_get_video_title_timeout(self, mock_run):
         """Test handling subprocess timeout."""
         # Mock subprocess timeout
@@ -113,23 +111,20 @@ class TestGetVideoTitle:
 
         assert title is None
 
-    @patch('services.youtube.subprocess.run')
+    @patch("services.youtube.subprocess.run")
     def test_get_video_title_no_title_field(self, mock_run):
         """Test handling response without title field."""
         # Mock response without title
         mock_result = Mock()
         mock_result.returncode = 0
-        mock_result.stdout = json.dumps({
-            "id": "dQw4w9WgXcQ",
-            "description": "Some description"
-        })
+        mock_result.stdout = json.dumps({"id": "dQw4w9WgXcQ", "description": "Some description"})
         mock_run.return_value = mock_result
 
         title = get_video_title("dQw4w9WgXcQ")
 
         assert title == "Unknown Title"
 
-    @patch('services.youtube.subprocess.run')
+    @patch("services.youtube.subprocess.run")
     def test_get_video_title_exception(self, mock_run):
         """Test handling general exception."""
         # Mock subprocess raising exception

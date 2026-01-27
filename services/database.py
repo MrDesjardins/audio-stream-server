@@ -17,7 +17,7 @@ class ConnectionPool:
 
     def __init__(self, db_path: str, max_connections: int = 5):
         self.db_path = db_path
-        self.pool = Queue(maxsize=max_connections)
+        self.pool: Queue[sqlite3.Connection] = Queue(maxsize=max_connections)
         self.lock = threading.Lock()
 
         # Pre-create connections
@@ -141,7 +141,9 @@ def init_database():
         logger.info(f"Database initialized at {DB_PATH}")
 
 
-def add_to_history(youtube_id: str, title: str, channel: Optional[str] = None, thumbnail_url: Optional[str] = None) -> int:
+def add_to_history(
+    youtube_id: str, title: str, channel: Optional[str] = None, thumbnail_url: Optional[str] = None
+) -> int:
     """
     Add a video to play history or increment play count if it already exists.
 
@@ -160,7 +162,8 @@ def add_to_history(youtube_id: str, title: str, channel: Optional[str] = None, t
         cursor = conn.cursor()
 
         # Use UPSERT: Insert if new, update if exists
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO play_history (youtube_id, title, channel, thumbnail_url, play_count, created_at, last_played_at)
             VALUES (?, ?, ?, ?, 1, ?, ?)
             ON CONFLICT(youtube_id) DO UPDATE SET
@@ -169,13 +172,17 @@ def add_to_history(youtube_id: str, title: str, channel: Optional[str] = None, t
                 thumbnail_url = excluded.thumbnail_url,
                 play_count = play_count + 1,
                 last_played_at = excluded.last_played_at
-        """, (youtube_id, title, channel, thumbnail_url, timestamp, timestamp))
+        """,
+            (youtube_id, title, channel, thumbnail_url, timestamp, timestamp),
+        )
 
         # Get the record ID
-        cursor.execute("SELECT id, play_count FROM play_history WHERE youtube_id = ?", (youtube_id,))
+        cursor.execute(
+            "SELECT id, play_count FROM play_history WHERE youtube_id = ?", (youtube_id,)
+        )
         row = cursor.fetchone()
-        record_id = row['id']
-        play_count = row['play_count']
+        record_id = row["id"]
+        play_count = row["play_count"]
 
         logger.info(f"Updated history: {title} ({youtube_id}) - Play count: {play_count}")
         return record_id
@@ -193,12 +200,15 @@ def get_history(limit: int = 10) -> List[Dict]:
     """
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT id, youtube_id, title, channel, thumbnail_url, play_count, created_at, last_played_at
             FROM play_history
             ORDER BY last_played_at DESC
             LIMIT ?
-        """, (limit,))
+        """,
+            (limit,),
+        )
 
         rows = cursor.fetchall()
         return [dict(row) for row in rows]
@@ -216,15 +226,18 @@ def get_video_title_from_history(youtube_id: str) -> Optional[str]:
     """
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT title
             FROM play_history
             WHERE youtube_id = ?
             LIMIT 1
-        """, (youtube_id,))
+        """,
+            (youtube_id,),
+        )
 
         row = cursor.fetchone()
-        return row['title'] if row else None
+        return row["title"] if row else None
 
 
 def clear_history():
@@ -237,7 +250,10 @@ def clear_history():
 
 # Queue management functions
 
-def add_to_queue(youtube_id: str, title: str, channel: Optional[str] = None, thumbnail_url: Optional[str] = None) -> int:
+
+def add_to_queue(
+    youtube_id: str, title: str, channel: Optional[str] = None, thumbnail_url: Optional[str] = None
+) -> int:
     """
     Add a video to the end of the queue.
 
@@ -260,10 +276,13 @@ def add_to_queue(youtube_id: str, title: str, channel: Optional[str] = None, thu
         max_pos = cursor.fetchone()[0]
         next_position = (max_pos + 1) if max_pos is not None else 0
 
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO queue (youtube_id, title, channel, thumbnail_url, position, created_at)
             VALUES (?, ?, ?, ?, ?, ?)
-        """, (youtube_id, title, channel, thumbnail_url, next_position, timestamp))
+        """,
+            (youtube_id, title, channel, thumbnail_url, next_position, timestamp),
+        )
 
         record_id = cursor.lastrowid
         logger.info(f"Added to queue (position {next_position}): {title} ({youtube_id})")
@@ -329,17 +348,20 @@ def remove_from_queue(queue_id: int) -> bool:
         if not row:
             return False
 
-        removed_position = row['position']
+        removed_position = row["position"]
 
         # Delete the item
         cursor.execute("DELETE FROM queue WHERE id = ?", (queue_id,))
 
         # Reorder remaining items (decrement positions greater than removed)
-        cursor.execute("""
+        cursor.execute(
+            """
             UPDATE queue
             SET position = position - 1
             WHERE position > ?
-        """, (removed_position,))
+        """,
+            (removed_position,),
+        )
 
         logger.info(f"Removed queue item {queue_id} and reordered queue")
         return True

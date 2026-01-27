@@ -1,4 +1,5 @@
 """Caching service for transcripts, summaries, and audio files."""
+
 import json
 import logging
 import os
@@ -36,13 +37,10 @@ class TranscriptionCache:
             return None
 
         try:
-            with open(cache_file, 'r') as f:
+            with open(cache_file, "r") as f:
                 data = json.load(f)
             logger.info(f"Found cached transcript/summary for video {video_id}")
-            return {
-                "transcript": data.get("transcript"),
-                "summary": data.get("summary")
-            }
+            return {"transcript": data.get("transcript"), "summary": data.get("summary")}
         except Exception as e:
             logger.error(f"Error reading cache for {video_id}: {e}")
             return None
@@ -55,13 +53,13 @@ class TranscriptionCache:
             # Load existing data or create new
             data = {}
             if cache_file.exists():
-                with open(cache_file, 'r') as f:
+                with open(cache_file, "r") as f:
                     data = json.load(f)
 
             data["transcript"] = transcript
             data["transcript_timestamp"] = datetime.now().isoformat()
 
-            with open(cache_file, 'w') as f:
+            with open(cache_file, "w") as f:
                 json.dump(data, f, indent=2)
 
             logger.info(f"Cached transcript for video {video_id}")
@@ -76,13 +74,13 @@ class TranscriptionCache:
             # Load existing data or create new
             data = {}
             if cache_file.exists():
-                with open(cache_file, 'r') as f:
+                with open(cache_file, "r") as f:
                     data = json.load(f)
 
             data["summary"] = summary
             data["summary_timestamp"] = datetime.now().isoformat()
 
-            with open(cache_file, 'w') as f:
+            with open(cache_file, "w") as f:
                 json.dump(data, f, indent=2)
 
             logger.info(f"Cached summary for video {video_id}")
@@ -114,7 +112,9 @@ class AudioCache:
             # Remove oldest files if we exceed the limit
             files_to_remove = len(audio_files) - self.max_files
             if files_to_remove > 0:
-                logger.info(f"Cleaning up {files_to_remove} old audio files (limit: {self.max_files})")
+                logger.info(
+                    f"Cleaning up {files_to_remove} old audio files (limit: {self.max_files})"
+                )
                 for file_path, _ in audio_files[:files_to_remove]:
                     try:
                         file_path.unlink()
@@ -128,7 +128,7 @@ class AudioCache:
         """Check if audio file for a video exists in cache."""
         audio_file = self.audio_dir / f"{video_id}.mp3"
         return audio_file.exists()
-    
+
     def should_keep_file(self, video_id: str) -> bool:
         """
         Check if we should keep the audio file.

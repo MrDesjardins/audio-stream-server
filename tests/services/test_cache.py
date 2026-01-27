@@ -1,4 +1,5 @@
 """Tests for cache service."""
+
 import os
 import tempfile
 import time
@@ -127,7 +128,7 @@ class TestTranscriptionCache:
             transcript_text = "This is the cached transcript"
             cache_file = os.path.join(tmpdir, f"{video_id}.txt")
 
-            with open(cache_file, 'w') as f:
+            with open(cache_file, "w") as f:
                 f.write(transcript_text)
 
             result = cache.get_cached_transcript(video_id)
@@ -157,7 +158,7 @@ class TestTranscriptionCache:
             cache_file = os.path.join(tmpdir, f"{video_id}.txt")
             assert os.path.exists(cache_file)
 
-            with open(cache_file, 'r') as f:
+            with open(cache_file, "r") as f:
                 content = f.read()
 
             assert content == transcript_text
@@ -181,7 +182,7 @@ class TestTranscriptionCache:
             summary_text = "This is the cached summary"
             cache_file = os.path.join(tmpdir, f"{video_id}_summary.txt")
 
-            with open(cache_file, 'w') as f:
+            with open(cache_file, "w") as f:
                 f.write(summary_text)
 
             result = cache.get_cached_summary(video_id)
@@ -211,7 +212,7 @@ class TestTranscriptionCache:
             cache_file = os.path.join(tmpdir, f"{video_id}_summary.txt")
             assert os.path.exists(cache_file)
 
-            with open(cache_file, 'r') as f:
+            with open(cache_file, "r") as f:
                 content = f.read()
 
             assert content == summary_text
@@ -220,7 +221,7 @@ class TestTranscriptionCache:
 class TestCacheGetters:
     """Tests for global cache getter functions."""
 
-    @patch('services.cache.get_config')
+    @patch("services.cache.get_config")
     def test_get_audio_cache(self, mock_config):
         """Test get_audio_cache returns singleton."""
         config = Mock()
@@ -229,6 +230,7 @@ class TestCacheGetters:
 
         # Clear module cache if exists
         import services.cache
+
         services.cache._audio_cache = None
 
         cache1 = get_audio_cache()
@@ -238,7 +240,7 @@ class TestCacheGetters:
         assert cache1 is cache2
         assert isinstance(cache1, AudioCache)
 
-    @patch('services.cache.get_config')
+    @patch("services.cache.get_config")
     def test_get_transcript_cache(self, mock_config):
         """Test get_transcript_cache returns singleton."""
         config = Mock()
@@ -246,6 +248,7 @@ class TestCacheGetters:
 
         # Clear module cache if exists
         import services.cache
+
         services.cache._transcript_cache = None
 
         cache1 = get_transcript_cache()

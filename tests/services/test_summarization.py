@@ -1,4 +1,5 @@
 """Tests for summarization service."""
+
 from unittest.mock import Mock, patch
 import pytest
 from services.summarization import summarize_transcript, SUMMARY_PROMPT_TEMPLATE
@@ -7,8 +8,8 @@ from services.summarization import summarize_transcript, SUMMARY_PROMPT_TEMPLATE
 class TestSummarizeTranscript:
     """Tests for summarize_transcript function."""
 
-    @patch('services.summarization._summarize_with_openai')
-    @patch('services.summarization.get_config')
+    @patch("services.summarization._summarize_with_openai")
+    @patch("services.summarization.get_config")
     def test_summarize_transcript_with_openai(self, mock_config, mock_openai):
         """Test summarization with OpenAI provider."""
         config = Mock()
@@ -22,8 +23,8 @@ class TestSummarizeTranscript:
         assert result == "OpenAI summary"
         mock_openai.assert_called_once_with("Test transcript", "test123")
 
-    @patch('services.summarization._summarize_with_gemini')
-    @patch('services.summarization.get_config')
+    @patch("services.summarization._summarize_with_gemini")
+    @patch("services.summarization.get_config")
     def test_summarize_transcript_with_gemini(self, mock_config, mock_gemini):
         """Test summarization with Gemini provider."""
         config = Mock()
@@ -37,7 +38,7 @@ class TestSummarizeTranscript:
         assert result == "Gemini summary"
         mock_gemini.assert_called_once_with("Test transcript", "test123")
 
-    @patch('services.summarization.get_config')
+    @patch("services.summarization.get_config")
     def test_summarize_transcript_unknown_provider(self, mock_config):
         """Test summarization with unknown provider."""
         config = Mock()
@@ -51,7 +52,7 @@ class TestSummarizeTranscript:
 class TestSummarizeWithOpenAI:
     """Tests for OpenAI summarization."""
 
-    @patch('services.summarization.get_config')
+    @patch("services.summarization.get_config")
     def test_summarize_with_openai_no_api_key(self, mock_config):
         """Test OpenAI summarization without API key."""
         from services.summarization import _summarize_with_openai
@@ -63,8 +64,8 @@ class TestSummarizeWithOpenAI:
         with pytest.raises(ValueError, match="OpenAI API key not configured"):
             _summarize_with_openai("Test transcript", "test123")
 
-    @patch('services.summarization.OpenAI')
-    @patch('services.summarization.get_config')
+    @patch("services.summarization.OpenAI")
+    @patch("services.summarization.get_config")
     def test_summarize_with_openai_success(self, mock_config, mock_openai_class):
         """Test successful OpenAI summarization."""
         from services.summarization import _summarize_with_openai
@@ -91,19 +92,19 @@ class TestSummarizeWithOpenAI:
         # Verify API call
         mock_client.chat.completions.create.assert_called_once()
         call_args = mock_client.chat.completions.create.call_args
-        assert call_args[1]['model'] == "gpt-4o-mini"
-        assert call_args[1]['temperature'] == 0.7
-        assert call_args[1]['max_tokens'] == 1000
+        assert call_args[1]["model"] == "gpt-4o-mini"
+        assert call_args[1]["temperature"] == 0.7
+        assert call_args[1]["max_tokens"] == 1000
 
         # Verify messages
-        messages = call_args[1]['messages']
+        messages = call_args[1]["messages"]
         assert len(messages) == 2
-        assert messages[0]['role'] == 'system'
-        assert messages[1]['role'] == 'user'
-        assert 'Test transcript' in messages[1]['content']
+        assert messages[0]["role"] == "system"
+        assert messages[1]["role"] == "user"
+        assert "Test transcript" in messages[1]["content"]
 
-    @patch('services.summarization.OpenAI')
-    @patch('services.summarization.get_config')
+    @patch("services.summarization.OpenAI")
+    @patch("services.summarization.get_config")
     def test_summarize_with_openai_api_error(self, mock_config, mock_openai_class):
         """Test OpenAI summarization with API error."""
         from services.summarization import _summarize_with_openai
@@ -123,7 +124,7 @@ class TestSummarizeWithOpenAI:
 class TestSummarizeWithGemini:
     """Tests for Gemini summarization."""
 
-    @patch('services.summarization.get_config')
+    @patch("services.summarization.get_config")
     def test_summarize_with_gemini_no_api_key(self, mock_config):
         """Test Gemini summarization without API key."""
         from services.summarization import _summarize_with_gemini
@@ -135,8 +136,8 @@ class TestSummarizeWithGemini:
         with pytest.raises(ValueError, match="Gemini API key not configured"):
             _summarize_with_gemini("Test transcript", "test123")
 
-    @patch('services.summarization.genai.Client')
-    @patch('services.summarization.get_config')
+    @patch("services.summarization.genai.Client")
+    @patch("services.summarization.get_config")
     def test_summarize_with_gemini_success(self, mock_config, mock_genai_class):
         """Test successful Gemini summarization."""
         from services.summarization import _summarize_with_gemini
@@ -159,11 +160,11 @@ class TestSummarizeWithGemini:
         # Verify API call
         mock_client.models.generate_content.assert_called_once()
         call_args = mock_client.models.generate_content.call_args
-        assert call_args[1]['model'] == "gemini-1.5-flash"
-        assert 'Test transcript' in call_args[1]['contents']
+        assert call_args[1]["model"] == "gemini-1.5-flash"
+        assert "Test transcript" in call_args[1]["contents"]
 
-    @patch('services.summarization.genai.Client')
-    @patch('services.summarization.get_config')
+    @patch("services.summarization.genai.Client")
+    @patch("services.summarization.get_config")
     def test_summarize_with_gemini_api_error(self, mock_config, mock_genai_class):
         """Test Gemini summarization with API error."""
         from services.summarization import _summarize_with_gemini

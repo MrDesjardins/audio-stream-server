@@ -1,6 +1,7 @@
 """
 Streaming and playback routes.
 """
+
 import logging
 import threading
 import asyncio
@@ -56,7 +57,9 @@ class StreamState:
 
             # Start new stream in a thread
             def target():
-                self._current_process = start_youtube_stream(video_id, skip_transcription, self._broadcaster)
+                self._current_process = start_youtube_stream(
+                    video_id, skip_transcription, self._broadcaster
+                )
                 with self._lock:
                     self._current_process = None
 
@@ -120,10 +123,7 @@ def stream_video(request: StreamRequest):
         metadata = get_video_metadata(video_id)
         if metadata:
             add_to_history(
-                video_id,
-                metadata["title"],
-                metadata.get("channel"),
-                metadata.get("thumbnail_url")
+                video_id, metadata["title"], metadata.get("channel"), metadata.get("thumbnail_url")
             )
             logger.info(f"Added to history: {metadata['title']} by {metadata.get('channel')}")
             video_title = metadata["title"]
@@ -139,10 +139,7 @@ def stream_video(request: StreamRequest):
     if config.transcription_enabled and not request.skip_transcription:
         try:
             queue = get_transcription_queue()
-            job = TranscriptionJob(
-                video_id=video_id,
-                audio_path=config.get_audio_path(video_id)
-            )
+            job = TranscriptionJob(video_id=video_id, audio_path=config.get_audio_path(video_id))
             queue.add_job(job)
             logger.info(f"Queued transcription job for {video_id} (will start after download)")
         except Exception as e:
@@ -182,7 +179,9 @@ async def stream_audio(request: Request):
         logger.warning(f"❌ No active stream when /mystream was accessed")
         raise HTTPException(status_code=400, detail="No active stream")
 
-    logger.info(f"✓ Streaming audio to client (broadcaster active with {len(state.broadcaster.clients)} clients)")
+    logger.info(
+        f"✓ Streaming audio to client (broadcaster active with {len(state.broadcaster.clients)} clients)"
+    )
 
     # Subscribe to broadcaster
     client_queue = state.broadcaster.subscribe()
@@ -205,7 +204,9 @@ async def stream_audio(request: Request):
                 except queue.Empty:
                     # Timeout waiting for chunk, check if stream is still active
                     if not state.broadcaster.is_active():
-                        logger.info(f"Stream ended (broadcaster inactive) for client {request.client.host}")
+                        logger.info(
+                            f"Stream ended (broadcaster inactive) for client {request.client.host}"
+                        )
                         break
 
         except asyncio.CancelledError:
@@ -229,7 +230,7 @@ async def stream_audio(request: Request):
             "Connection": "keep-alive",
             # Indicate we accept range requests for seeking
             "Accept-Ranges": "bytes",
-        }
+        },
     )
 
 

@@ -3,6 +3,7 @@ Book-based audiobook suggestion service.
 
 Analyzes recent books from Trilium and suggests YouTube audiobooks using AI.
 """
+
 import logging
 import re
 from typing import List, Dict, Optional
@@ -25,23 +26,24 @@ async def get_recent_books_from_trilium(limit: int) -> List[Dict[str, str]]:
         List of dicts with 'title' and 'noteId' keys
     """
     try:
-        headers = {
-            "Authorization": config.trilium_etapi_token,
-            "Content-Type": "application/json"
-        }
+        headers = {"Authorization": config.trilium_etapi_token, "Content-Type": "application/json"}
 
         logger.info(f"Fetching children of parent note: {config.trilium_parent_note_id}")
 
         async with httpx.AsyncClient() as client:
             # Get all immediate children of the parent note
-            children_url = f"{config.trilium_url}/etapi/notes/{config.trilium_parent_note_id}/children"
+            children_url = (
+                f"{config.trilium_url}/etapi/notes/{config.trilium_parent_note_id}/children"
+            )
             response = await client.get(children_url, headers=headers, timeout=30.0)
             response.raise_for_status()
 
             children = response.json()
 
             if not children:
-                logger.warning(f"No children found under parent note {config.trilium_parent_note_id}")
+                logger.warning(
+                    f"No children found under parent note {config.trilium_parent_note_id}"
+                )
                 return []
 
             # Fetch details for each child to get dateModified
@@ -60,11 +62,13 @@ async def get_recent_books_from_trilium(limit: int) -> List[Dict[str, str]]:
 
                     # Only include text notes (summaries)
                     if note_data.get("type") == "text":
-                        audiobooks.append({
-                            "title": note_data.get("title", "Unknown"),
-                            "noteId": note_id,
-                            "dateModified": note_data.get("dateModified", "")
-                        })
+                        audiobooks.append(
+                            {
+                                "title": note_data.get("title", "Unknown"),
+                                "noteId": note_id,
+                                "dateModified": note_data.get("dateModified", ""),
+                            }
+                        )
 
             # Sort by dateModified descending (most recent first) and take the limit
             audiobooks.sort(key=lambda x: x.get("dateModified", ""), reverse=True)
@@ -119,11 +123,14 @@ Make sure each URL is a real, working YouTube audiobook link. Verify that the vi
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are a knowledgeable book recommendation assistant with access to YouTube audiobooks. Always provide real, working YouTube URLs."},
-                {"role": "user", "content": prompt}
+                {
+                    "role": "system",
+                    "content": "You are a knowledgeable book recommendation assistant with access to YouTube audiobooks. Always provide real, working YouTube URLs.",
+                },
+                {"role": "user", "content": prompt},
             ],
             temperature=0.7,
-            max_tokens=1000
+            max_tokens=1000,
         )
 
         content = response.choices[0].message.content
@@ -149,7 +156,7 @@ def generate_suggestions_gemini(book_titles: List[str], count: int) -> List[Dict
         import google.generativeai as genai
 
         genai.configure(api_key=config.gemini_api_key)
-        model = genai.GenerativeModel('gemini-2.0-flash-exp')
+        model = genai.GenerativeModel("gemini-2.0-flash-exp")
 
         books_text = "\n".join(f"- {title}" for title in book_titles)
 
@@ -212,7 +219,11 @@ def parse_suggestions(content: str) -> List[Dict[str, str]]:
             suggestion["author"] = author_match.group(1).strip()
 
         # Extract YouTube URL and video ID
-        url_match = re.search(r"URL:\s*(https?://(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/)([a-zA-Z0-9_-]+))", block, re.IGNORECASE)
+        url_match = re.search(
+            r"URL:\s*(https?://(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/)([a-zA-Z0-9_-]+))",
+            block,
+            re.IGNORECASE,
+        )
         if url_match:
             full_url = url_match.group(1).strip()
             video_id = url_match.group(2).strip()
@@ -250,10 +261,7 @@ async def filter_already_played(suggestions: List[Dict[str, str]]) -> List[Dict[
         played_video_ids = {item["youtube_id"] for item in history}
 
         # Filter out already played
-        filtered = [
-            s for s in suggestions
-            if s.get("video_id") not in played_video_ids
-        ]
+        filtered = [s for s in suggestions if s.get("video_id") not in played_video_ids]
 
         removed_count = len(suggestions) - len(filtered)
         if removed_count > 0:

@@ -1,4 +1,5 @@
 """Tests for Trilium service."""
+
 from unittest.mock import Mock, patch, MagicMock
 import pytest
 import httpx
@@ -143,8 +144,8 @@ Regular paragraph"""
 class TestCheckVideoExists:
     """Tests for checking video existence in Trilium."""
 
-    @patch('services.trilium.get_config')
-    @patch('services.trilium.httpx.get')
+    @patch("services.trilium.get_config")
+    @patch("services.trilium.httpx.get")
     def test_check_video_exists_found(self, mock_get, mock_config):
         """Test finding existing video note."""
         # Mock config
@@ -156,9 +157,7 @@ class TestCheckVideoExists:
         # Mock successful search response (list format)
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = [
-            {"noteId": "note123"}
-        ]
+        mock_response.json.return_value = [{"noteId": "note123"}]
         mock_response.raise_for_status = Mock()
         mock_get.return_value = mock_response
 
@@ -168,8 +167,8 @@ class TestCheckVideoExists:
         assert result["noteId"] == "note123"
         assert "note123" in result["url"]
 
-    @patch('services.trilium.get_config')
-    @patch('services.trilium.httpx.get')
+    @patch("services.trilium.get_config")
+    @patch("services.trilium.httpx.get")
     def test_check_video_exists_found_dict_format(self, mock_get, mock_config):
         """Test finding existing video note with dict response."""
         # Mock config
@@ -181,9 +180,7 @@ class TestCheckVideoExists:
         # Mock successful search response (dict format)
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "results": [{"noteId": "note123"}]
-        }
+        mock_response.json.return_value = {"results": [{"noteId": "note123"}]}
         mock_response.raise_for_status = Mock()
         mock_get.return_value = mock_response
 
@@ -192,8 +189,8 @@ class TestCheckVideoExists:
         assert result is not None
         assert result["noteId"] == "note123"
 
-    @patch('services.trilium.get_config')
-    @patch('services.trilium.httpx.get')
+    @patch("services.trilium.get_config")
+    @patch("services.trilium.httpx.get")
     def test_check_video_exists_not_found(self, mock_get, mock_config):
         """Test when video note doesn't exist."""
         # Mock config
@@ -213,7 +210,7 @@ class TestCheckVideoExists:
 
         assert result is None
 
-    @patch('services.trilium.get_config')
+    @patch("services.trilium.get_config")
     def test_check_video_exists_not_configured(self, mock_config):
         """Test when Trilium is not configured."""
         # Mock incomplete config
@@ -226,8 +223,8 @@ class TestCheckVideoExists:
 
         assert result is None
 
-    @patch('services.trilium.get_config')
-    @patch('services.trilium.httpx.get')
+    @patch("services.trilium.get_config")
+    @patch("services.trilium.httpx.get")
     def test_check_video_exists_http_error(self, mock_get, mock_config):
         """Test handling HTTP error."""
         # Mock config
@@ -243,8 +240,8 @@ class TestCheckVideoExists:
 
         assert result is None
 
-    @patch('services.trilium.get_config')
-    @patch('services.trilium.httpx.get')
+    @patch("services.trilium.get_config")
+    @patch("services.trilium.httpx.get")
     def test_check_video_exists_no_note_id_in_result(self, mock_get, mock_config):
         """Test handling result without noteId."""
         # Mock config
@@ -268,9 +265,9 @@ class TestCheckVideoExists:
 class TestCreateTriliumNote:
     """Tests for creating Trilium notes."""
 
-    @patch('services.trilium.get_video_title_from_history')
-    @patch('services.trilium.get_config')
-    @patch('services.trilium.httpx.post')
+    @patch("services.trilium.get_video_title_from_history")
+    @patch("services.trilium.get_config")
+    @patch("services.trilium.httpx.post")
     def test_create_trilium_note_success(self, mock_post, mock_config, mock_get_title):
         """Test successfully creating a note."""
         # Mock config
@@ -285,9 +282,7 @@ class TestCreateTriliumNote:
 
         # Mock successful note creation
         note_response = Mock()
-        note_response.json.return_value = {
-            "note": {"noteId": "note123"}
-        }
+        note_response.json.return_value = {"note": {"noteId": "note123"}}
         note_response.raise_for_status = Mock()
 
         # Mock successful attribute creation
@@ -297,9 +292,7 @@ class TestCreateTriliumNote:
         mock_post.side_effect = [note_response, attr_response]
 
         result = create_trilium_note(
-            video_id="video123",
-            transcript="Transcript text",
-            summary="Summary text"
+            video_id="video123", transcript="Transcript text", summary="Summary text"
         )
 
         assert result["noteId"] == "note123"
@@ -308,10 +301,12 @@ class TestCreateTriliumNote:
         # Verify both API calls were made
         assert mock_post.call_count == 2
 
-    @patch('services.trilium.get_video_title_from_history')
-    @patch('services.trilium.get_config')
-    @patch('services.trilium.httpx.post')
-    def test_create_trilium_note_no_title_uses_fallback(self, mock_post, mock_config, mock_get_title):
+    @patch("services.trilium.get_video_title_from_history")
+    @patch("services.trilium.get_config")
+    @patch("services.trilium.httpx.post")
+    def test_create_trilium_note_no_title_uses_fallback(
+        self, mock_post, mock_config, mock_get_title
+    ):
         """Test using fallback title when none in history."""
         # Mock config
         config = Mock()
@@ -339,10 +334,10 @@ class TestCreateTriliumNote:
 
         # Check that fallback title was used
         call_args = mock_post.call_args_list[0]
-        payload = call_args.kwargs['json']
-        assert "YouTube Video video123" in payload['title']
+        payload = call_args.kwargs["json"]
+        assert "YouTube Video video123" in payload["title"]
 
-    @patch('services.trilium.get_config')
+    @patch("services.trilium.get_config")
     def test_create_trilium_note_not_configured(self, mock_config):
         """Test error when Trilium not configured."""
         # Mock incomplete config
@@ -355,10 +350,10 @@ class TestCreateTriliumNote:
         with pytest.raises(ValueError, match="not properly configured"):
             create_trilium_note("video123", "transcript", "summary")
 
-    @patch('services.trilium.get_video_title_from_history')
-    @patch('services.trilium.get_config')
-    @patch('services.trilium.httpx.post')
-    @patch('services.trilium._save_to_backup')
+    @patch("services.trilium.get_video_title_from_history")
+    @patch("services.trilium.get_config")
+    @patch("services.trilium.httpx.post")
+    @patch("services.trilium._save_to_backup")
     def test_create_trilium_note_http_error_saves_backup(
         self, mock_backup, mock_post, mock_config, mock_get_title
     ):
@@ -381,9 +376,9 @@ class TestCreateTriliumNote:
         # Verify backup was saved
         mock_backup.assert_called_once_with("video123", "transcript", "summary")
 
-    @patch('services.trilium.get_video_title_from_history')
-    @patch('services.trilium.get_config')
-    @patch('services.trilium.httpx.post')
+    @patch("services.trilium.get_video_title_from_history")
+    @patch("services.trilium.get_config")
+    @patch("services.trilium.httpx.post")
     def test_create_trilium_note_no_note_id_in_response(
         self, mock_post, mock_config, mock_get_title
     ):

@@ -1,4 +1,5 @@
 """Trilium Notes integration using ETAPI."""
+
 import logging
 import json
 import os
@@ -13,8 +14,8 @@ logger = logging.getLogger(__name__)
 
 def _build_url(base_url: str, path: str) -> str:
     """Build a URL by joining base and path, handling trailing/leading slashes."""
-    base = base_url.rstrip('/')
-    path = path.lstrip('/')
+    base = base_url.rstrip("/")
+    path = path.lstrip("/")
     return f"{base}/{path}"
 
 
@@ -39,7 +40,7 @@ def check_video_exists(video_id: str) -> Optional[Dict[str, str]]:
 
         headers = {
             "Authorization": f"Bearer {config.trilium_etapi_token}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
 
         # Search for notes with youtube_id attribute
@@ -78,10 +79,7 @@ def check_video_exists(video_id: str) -> Optional[Dict[str, str]]:
             logger.info(f"Found existing note for video {video_id}: {note_id}")
             # Construct note URL - hash fragment should be appended directly
             note_url = f"{config.trilium_url.rstrip('/')}/#root/{note_id}"
-            return {
-                "noteId": note_id,
-                "url": note_url
-            }
+            return {"noteId": note_id, "url": note_url}
 
         logger.info(f"No existing note found for video {video_id}")
         return None
@@ -134,10 +132,7 @@ def create_trilium_note(video_id: str, transcript: str, summary: str) -> Dict[st
 </p>
 """
 
-        headers = {
-            "Authorization": config.trilium_etapi_token,
-            "Content-Type": "application/json"
-        }
+        headers = {"Authorization": config.trilium_etapi_token, "Content-Type": "application/json"}
 
         # Step 1: Create the note (without attributes)
         payload = {
@@ -145,7 +140,7 @@ def create_trilium_note(video_id: str, transcript: str, summary: str) -> Dict[st
             "title": video_title,
             "type": "text",
             "mime": "text/html",
-            "content": content
+            "content": content,
         }
 
         url = _build_url(config.trilium_url, "etapi/create-note")
@@ -165,11 +160,13 @@ def create_trilium_note(video_id: str, transcript: str, summary: str) -> Dict[st
             "noteId": note_id,
             "type": "label",
             "name": "youtube_id",
-            "value": video_id
+            "value": video_id,
         }
 
         attribute_url = _build_url(config.trilium_url, "etapi/attributes")
-        attr_response = httpx.post(attribute_url, headers=headers, json=attribute_payload, timeout=30.0)
+        attr_response = httpx.post(
+            attribute_url, headers=headers, json=attribute_payload, timeout=30.0
+        )
         attr_response.raise_for_status()
 
         logger.info(f"Added youtube_id attribute to note {note_id}")
@@ -177,14 +174,13 @@ def create_trilium_note(video_id: str, transcript: str, summary: str) -> Dict[st
         # Construct note URL - hash fragment should be appended directly
         note_url = f"{config.trilium_url.rstrip('/')}/#root/{note_id}"
         logger.info(f"Successfully created Trilium note: {note_id} with youtube_id attribute")
-        return {
-            "noteId": note_id,
-            "url": note_url
-        }
+        return {"noteId": note_id, "url": note_url}
 
     except httpx.HTTPError as e:
         logger.error(f"HTTP error creating Trilium note: {e}")
-        logger.error(f"Check that TRILIUM_URL ({config.trilium_url}) is correct and Trilium is running")
+        logger.error(
+            f"Check that TRILIUM_URL ({config.trilium_url}) is correct and Trilium is running"
+        )
         logger.error(f"Check that TRILIUM_PARENT_NOTE_ID ({config.trilium_parent_note_id}) exists")
         # Save to backup file
         _save_to_backup(video_id, transcript, summary)
@@ -207,7 +203,7 @@ def _markdown_to_html(text: str) -> str:
     - Bullet points (-, *)
     - Line breaks
     """
-    lines = text.split('\n')
+    lines = text.split("\n")
     html_lines = []
     in_list = False
 
@@ -216,51 +212,51 @@ def _markdown_to_html(text: str) -> str:
 
         if not line:
             if in_list:
-                html_lines.append('</ul>')
+                html_lines.append("</ul>")
                 in_list = False
-            html_lines.append('<br>')
+            html_lines.append("<br>")
             continue
 
         # Handle headers (###, ##, #)
-        if line.startswith('### '):
+        if line.startswith("### "):
             if in_list:
-                html_lines.append('</ul>')
+                html_lines.append("</ul>")
                 in_list = False
-            html_lines.append(f'<h3>{_escape_text(line[4:])}</h3>')
-        elif line.startswith('## '):
+            html_lines.append(f"<h3>{_escape_text(line[4:])}</h3>")
+        elif line.startswith("## "):
             if in_list:
-                html_lines.append('</ul>')
+                html_lines.append("</ul>")
                 in_list = False
-            html_lines.append(f'<h2>{_escape_text(line[3:])}</h2>')
-        elif line.startswith('# '):
+            html_lines.append(f"<h2>{_escape_text(line[3:])}</h2>")
+        elif line.startswith("# "):
             if in_list:
-                html_lines.append('</ul>')
+                html_lines.append("</ul>")
                 in_list = False
-            html_lines.append(f'<h1>{_escape_text(line[2:])}</h1>')
+            html_lines.append(f"<h1>{_escape_text(line[2:])}</h1>")
 
         # Handle bullet points
-        elif line.startswith('- ') or line.startswith('* '):
+        elif line.startswith("- ") or line.startswith("* "):
             if not in_list:
-                html_lines.append('<ul>')
+                html_lines.append("<ul>")
                 in_list = True
             content = line[2:].strip()
             # Handle bold within list items
             content = _process_inline_formatting(content)
-            html_lines.append(f'<li>{content}</li>')
+            html_lines.append(f"<li>{content}</li>")
 
         # Regular paragraph
         else:
             if in_list:
-                html_lines.append('</ul>')
+                html_lines.append("</ul>")
                 in_list = False
             content = _process_inline_formatting(line)
-            html_lines.append(f'<p>{content}</p>')
+            html_lines.append(f"<p>{content}</p>")
 
     # Close any open list
     if in_list:
-        html_lines.append('</ul>')
+        html_lines.append("</ul>")
 
-    return '\n'.join(html_lines)
+    return "\n".join(html_lines)
 
 
 def _process_inline_formatting(text: str) -> str:
@@ -271,22 +267,23 @@ def _process_inline_formatting(text: str) -> str:
     text = _escape_text(text)
 
     # Handle **bold**
-    text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
+    text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
 
     # Handle *italic*
-    text = re.sub(r'\*(.+?)\*', r'<em>\1</em>', text)
+    text = re.sub(r"\*(.+?)\*", r"<em>\1</em>", text)
 
     return text
 
 
 def _escape_text(text: str) -> str:
     """Escape HTML special characters in text."""
-    return (text
-            .replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-            .replace('"', "&quot;")
-            .replace("'", "&#39;"))
+    return (
+        text.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("'", "&#39;")
+    )
 
 
 def _save_to_backup(video_id: str, transcript: str, summary: str) -> None:
@@ -301,7 +298,7 @@ def _save_to_backup(video_id: str, transcript: str, summary: str) -> None:
             "video_id": video_id,
             "transcript": transcript,
             "summary": summary,
-            "youtube_url": f"https://www.youtube.com/watch?v={video_id}"
+            "youtube_url": f"https://www.youtube.com/watch?v={video_id}",
         }
 
         with open(backup_file, "w") as f:

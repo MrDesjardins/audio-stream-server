@@ -4,6 +4,7 @@ Migration script to add channel and thumbnail_url columns to database.
 
 This adds metadata columns to both play_history and queue tables.
 """
+
 import sqlite3
 import logging
 import os

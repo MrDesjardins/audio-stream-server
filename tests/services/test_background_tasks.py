@@ -1,11 +1,12 @@
 """Tests for background tasks service."""
+
 from unittest.mock import Mock, patch, MagicMock
 import pytest
 from services.background_tasks import (
     TranscriptionJob,
     JobStatus,
     TranscriptionQueue,
-    get_transcription_queue
+    get_transcription_queue,
 )
 
 

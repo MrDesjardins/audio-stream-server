@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Test Trilium connection and configuration."""
+
 import httpx
 from config import get_config
 
@@ -13,15 +14,12 @@ def test_trilium_connection():
     print(f"TRILIUM_PARENT_NOTE_ID: {config.trilium_parent_note_id}")
     print()
 
-    headers = {
-        "Authorization": config.trilium_etapi_token,
-        "Content-Type": "application/json"
-    }
+    headers = {"Authorization": config.trilium_etapi_token, "Content-Type": "application/json"}
 
     # Test 1: Check if Trilium is reachable
     print("Test 1: Checking if Trilium is reachable...")
     try:
-        url = config.trilium_url.rstrip('/') + "/etapi/app-info"
+        url = config.trilium_url.rstrip("/") + "/etapi/app-info"
         response = httpx.get(url, headers=headers, timeout=5.0)
         response.raise_for_status()
         app_info = response.json()
@@ -35,7 +33,7 @@ def test_trilium_connection():
     # Test 2: Check if parent note exists
     print("\nTest 2: Checking if parent note exists...")
     try:
-        url = config.trilium_url.rstrip('/') + f"/etapi/notes/{config.trilium_parent_note_id}"
+        url = config.trilium_url.rstrip("/") + f"/etapi/notes/{config.trilium_parent_note_id}"
         response = httpx.get(url, headers=headers, timeout=5.0)
         response.raise_for_status()
         note = response.json()
@@ -60,8 +58,8 @@ def test_trilium_connection():
     print("\nTest 3: Checking if we can search notes by attribute...")
     try:
         # Search for any note with youtube_id attribute (to test search functionality)
-        search_query = '#youtube_id'
-        url = config.trilium_url.rstrip('/') + "/etapi/notes"
+        search_query = "#youtube_id"
+        url = config.trilium_url.rstrip("/") + "/etapi/notes"
         params = {"search": search_query}
         response = httpx.get(url, headers=headers, params=params, timeout=5.0)
 

@@ -102,8 +102,9 @@ def shutdown_handler(signum=None, frame=None):
         # Access the stream state from the routes module
         try:
             from routes.stream import get_stream_state
+
             state = get_stream_state()
-            if hasattr(state, '_current_process') and state._current_process:
+            if hasattr(state, "_current_process") and state._current_process:
                 proc = state._current_process
                 proc.terminate()
                 try:
@@ -117,8 +118,9 @@ def shutdown_handler(signum=None, frame=None):
     if config.transcription_enabled:
         try:
             from services.background_tasks import get_transcription_queue
+
             queue = get_transcription_queue()
-            if hasattr(queue, 'stop'):
+            if hasattr(queue, "stop"):
                 queue.stop()
         except Exception as e:
             logger.warning(f"Error stopping transcription queue: {e}")
@@ -149,9 +151,7 @@ def index(request: Request):
     """Serve the main HTML page."""
     server_host = request.url.hostname
     logger.info(f"📄 Index page requested by {request.client.host}")
-    logger.info(
-        f"   Audio player URL will be: http://{server_host}:{api_port}/mystream"
-    )
+    logger.info(f"   Audio player URL will be: http://{server_host}:{api_port}/mystream")
     return templates.TemplateResponse(
         "index.html",
         {
@@ -172,10 +172,6 @@ if __name__ == "__main__":
     print(f"   Host: {host}")
     print(f"   Port: {api_port}")
     print(f"   Stream URL: http://{host}:{api_port}/mystream")
-    print(
-        f"   Transcription: {'enabled' if config.transcription_enabled else 'disabled'}"
-    )
+    print(f"   Transcription: {'enabled' if config.transcription_enabled else 'disabled'}")
     print("=" * 70)
-    uvicorn.run(
-        "main:app", host=host, port=api_port, reload=is_reloading_on_file_change
-    )
+    uvicorn.run("main:app", host=host, port=api_port, reload=is_reloading_on_file_change)

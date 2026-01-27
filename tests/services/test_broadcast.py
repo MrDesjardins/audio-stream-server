@@ -1,4 +1,5 @@
 """Tests for broadcast service."""
+
 import queue
 import time
 from unittest.mock import Mock, MagicMock, patch
@@ -127,11 +128,9 @@ class TestStreamBroadcaster:
         # Mock process that stays running for a bit
         mock_process = Mock()
         mock_process.poll.side_effect = [None, None, None, 0]  # Running for a few iterations
-        mock_process.stdout.read1 = Mock(side_effect=[
-            b"chunk1",
-            b"chunk2",
-            b""  # EOF to end the loop
-        ])
+        mock_process.stdout.read1 = Mock(
+            side_effect=[b"chunk1", b"chunk2", b""]  # EOF to end the loop
+        )
 
         broadcaster.start_broadcasting(mock_process)
 
@@ -143,7 +142,7 @@ class TestStreamBroadcaster:
         # Wait for thread to finish
         broadcaster.reader_thread.join(timeout=1)
 
-    @patch('services.broadcast.platform.system', return_value='Windows')
+    @patch("services.broadcast.platform.system", return_value="Windows")
     def test_read_and_broadcast_sends_chunks(self, mock_platform):
         """Test that chunks are broadcast to all clients."""
         broadcaster = StreamBroadcaster()
@@ -155,11 +154,7 @@ class TestStreamBroadcaster:
         # Mock process that returns some data
         mock_process = Mock()
         mock_process.poll.side_effect = [None, None, 0]  # Running, running, finished
-        mock_process.stdout.read1 = Mock(side_effect=[
-            b"chunk1",
-            b"chunk2",
-            b""  # EOF
-        ])
+        mock_process.stdout.read1 = Mock(side_effect=[b"chunk1", b"chunk2", b""])  # EOF
 
         broadcaster.start_broadcasting(mock_process)
 
@@ -173,7 +168,7 @@ class TestStreamBroadcaster:
         assert client2.get_nowait() == b"chunk1"
         assert client2.get_nowait() == b"chunk2"
 
-    @patch('services.broadcast.platform.system', return_value='Windows')
+    @patch("services.broadcast.platform.system", return_value="Windows")
     def test_read_and_broadcast_adds_to_buffer(self, mock_platform):
         """Test that chunks are added to buffer."""
         broadcaster = StreamBroadcaster(buffer_size=10)
@@ -181,10 +176,7 @@ class TestStreamBroadcaster:
         # Mock process
         mock_process = Mock()
         mock_process.poll.side_effect = [None, 0]
-        mock_process.stdout.read1 = Mock(side_effect=[
-            b"chunk1",
-            b""
-        ])
+        mock_process.stdout.read1 = Mock(side_effect=[b"chunk1", b""])
 
         broadcaster.start_broadcasting(mock_process)
         broadcaster.reader_thread.join(timeout=2)

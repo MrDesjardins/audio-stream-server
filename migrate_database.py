@@ -21,8 +21,8 @@ def check_schema_version(conn):
     cursor.execute("PRAGMA table_info(play_history)")
     columns = [col[1] for col in cursor.fetchall()]
 
-    has_play_count = 'play_count' in columns
-    has_last_played_at = 'last_played_at' in columns
+    has_play_count = "play_count" in columns
+    has_last_played_at = "last_played_at" in columns
 
     return has_play_count, has_last_played_at
 
