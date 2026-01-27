@@ -653,6 +653,47 @@ main {
         0 0 20px var(--accent-glow);
 }
 
+.btn-suggest {
+    flex: 1;
+    background: linear-gradient(135deg, #10b981, #059669);
+    color: white;
+    border: none;
+    border-radius: 14px;
+    padding: 14px 20px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    box-shadow:
+        4px 4px 8px var(--shadow-dark),
+        -2px -2px 6px var(--shadow-light),
+        0 0 20px rgba(16, 185, 129, 0.3);
+}
+
+.btn-suggest:hover:not(:disabled) {
+    box-shadow:
+        4px 4px 10px var(--shadow-dark),
+        -2px -2px 8px var(--shadow-light),
+        0 0 30px rgba(16, 185, 129, 0.4);
+    transform: translateY(-2px);
+}
+
+.btn-suggest:active:not(:disabled) {
+    transform: translateY(0);
+    box-shadow:
+        inset 2px 2px 4px rgba(0, 0, 0, 0.4),
+        0 0 20px rgba(16, 185, 129, 0.3);
+}
+
+.btn-suggest:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
 /* Player Section */
 .player-section {
     background: var(--bg-elevated);

@@ -7,9 +7,11 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from services.database import add_to_queue, get_queue, get_next_in_queue, remove_from_queue, clear_queue
 from services.youtube import get_video_title, get_video_metadata, extract_video_id
+from config import get_config
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+config = get_config()
 
 
 class QueueRequest(BaseModel):
@@ -118,3 +120,90 @@ def clear_current_queue():
     except Exception as e:
         logger.error(f"Error clearing queue: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/queue/suggestions")
+async def generate_and_queue_suggestions():
+    """
+    Generate audiobook suggestions based on recent books from Trilium
+    and automatically add them to the queue.
+    """
+    if not config.book_suggestions_enabled:
+        raise HTTPException(
+            status_code=400,
+            detail="Book suggestions feature is disabled. Set BOOK_SUGGESTIONS_ENABLED=true in .env"
+        )
+
+    try:
+        from services.book_suggestions import get_audiobook_suggestions
+
+        logger.info("Generating audiobook suggestions from Trilium books...")
+
+        # Get suggestions
+        suggestions = await get_audiobook_suggestions()
+
+        if not suggestions:
+            return JSONResponse({
+                "status": "no_suggestions",
+                "message": "No suggestions could be generated. Check logs for details.",
+                "added": []
+            })
+
+        # Add suggestions to queue
+        added = []
+        failed = []
+
+        for suggestion in suggestions:
+            try:
+                video_id = suggestion["video_id"]
+
+                # Try to get metadata from YouTube (validate the URL)
+                metadata = get_video_metadata(video_id)
+
+                if metadata:
+                    queue_id = add_to_queue(
+                        video_id,
+                        metadata["title"],
+                        metadata.get("channel"),
+                        metadata.get("thumbnail_url")
+                    )
+                    added.append({
+                        "queue_id": queue_id,
+                        "video_id": video_id,
+                        "title": metadata["title"],
+                        "suggested_title": suggestion["title"],
+                        "author": suggestion.get("author", "Unknown")
+                    })
+                    logger.info(f"Added suggestion to queue: {metadata['title']}")
+                else:
+                    # Fall back to AI-provided title
+                    queue_id = add_to_queue(
+                        video_id,
+                        f"{suggestion['title']} by {suggestion.get('author', 'Unknown')}"
+                    )
+                    added.append({
+                        "queue_id": queue_id,
+                        "video_id": video_id,
+                        "title": suggestion["title"],
+                        "author": suggestion.get("author", "Unknown")
+                    })
+                    logger.warning(f"Could not fetch YouTube metadata for {video_id}, using AI title")
+
+            except Exception as e:
+                logger.error(f"Failed to add suggestion to queue: {e}")
+                failed.append({
+                    "title": suggestion.get("title", "Unknown"),
+                    "error": str(e)
+                })
+
+        return JSONResponse({
+            "status": "success",
+            "message": f"Added {len(added)} audiobook suggestions to queue",
+            "added": added,
+            "failed": failed,
+            "total_suggestions": len(suggestions)
+        })
+
+    except Exception as e:
+        logger.error(f"Error generating suggestions: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to generate suggestions: {str(e)}")

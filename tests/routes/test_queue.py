@@ -284,3 +284,139 @@ class TestClearQueueEndpoint:
         response = client.post("/queue/clear")
 
         assert response.status_code == 500
+
+
+class TestSuggestionsEndpoint:
+    """Tests for /queue/suggestions endpoint."""
+
+    @patch('routes.queue.config')
+    def test_suggestions_disabled(self, mock_config, client):
+        """Test when suggestions feature is disabled."""
+        mock_config.book_suggestions_enabled = False
+
+        response = client.post("/queue/suggestions")
+
+        assert response.status_code == 400
+        assert "disabled" in response.json()["detail"]
+
+    @patch('routes.queue.get_video_metadata')
+    @patch('routes.queue.add_to_queue')
+    @patch('services.book_suggestions.get_audiobook_suggestions')
+    @patch('routes.queue.config')
+    @pytest.mark.asyncio
+    async def test_suggestions_success(
+        self, mock_config, mock_get_suggestions, mock_add_to_queue, mock_get_metadata, client
+    ):
+        """Test successful suggestion generation and queuing."""
+        mock_config.book_suggestions_enabled = True
+
+        # Mock suggestions
+        mock_get_suggestions.return_value = [
+            {
+                "title": "Atomic Habits",
+                "author": "James Clear",
+                "video_id": "dQw4w9WgXcQ",
+                "youtube_url": "https://youtube.com/watch?v=dQw4w9WgXcQ"
+            },
+            {
+                "title": "Deep Work",
+                "author": "Cal Newport",
+                "video_id": "jNQXAC9IVRw",
+                "youtube_url": "https://youtube.com/watch?v=jNQXAC9IVRw"
+            }
+        ]
+
+        # Mock metadata fetching
+        mock_get_metadata.side_effect = [
+            {
+                "title": "Atomic Habits Full Audiobook",
+                "channel": "Audiobooks Channel",
+                "thumbnail_url": "https://example.com/thumb1.jpg"
+            },
+            {
+                "title": "Deep Work Audiobook",
+                "channel": "Books Audio",
+                "thumbnail_url": "https://example.com/thumb2.jpg"
+            }
+        ]
+
+        # Mock queue addition
+        mock_add_to_queue.side_effect = [1, 2]
+
+        response = client.post("/queue/suggestions")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "success"
+        assert len(data["added"]) == 2
+        assert data["added"][0]["video_id"] == "dQw4w9WgXcQ"
+        assert data["added"][0]["title"] == "Atomic Habits Full Audiobook"
+
+    @patch('services.book_suggestions.get_audiobook_suggestions')
+    @patch('routes.queue.config')
+    @pytest.mark.asyncio
+    async def test_suggestions_no_results(self, mock_config, mock_get_suggestions, client):
+        """Test when no suggestions are generated."""
+        mock_config.book_suggestions_enabled = True
+        mock_get_suggestions.return_value = []
+
+        response = client.post("/queue/suggestions")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "no_suggestions"
+        assert len(data.get("added", [])) == 0
+
+    @patch('routes.queue.get_video_metadata')
+    @patch('routes.queue.add_to_queue')
+    @patch('services.book_suggestions.get_audiobook_suggestions')
+    @patch('routes.queue.config')
+    @pytest.mark.asyncio
+    async def test_suggestions_partial_failure(
+        self, mock_config, mock_get_suggestions, mock_add_to_queue, mock_get_metadata, client
+    ):
+        """Test when some suggestions fail to add."""
+        mock_config.book_suggestions_enabled = True
+
+        mock_get_suggestions.return_value = [
+            {
+                "title": "Book 1",
+                "author": "Author 1",
+                "video_id": "dQw4w9WgXcQ",
+                "youtube_url": "url1"
+            },
+            {
+                "title": "Book 2",
+                "author": "Author 2",
+                "video_id": "jNQXAC9IVRw",
+                "youtube_url": "url2"
+            }
+        ]
+
+        # First succeeds, second fails
+        mock_get_metadata.side_effect = [
+            {"title": "Book 1", "channel": "Channel", "thumbnail_url": "url"},
+            None  # Metadata fetch fails
+        ]
+
+        mock_add_to_queue.side_effect = [1, 2]
+
+        response = client.post("/queue/suggestions")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "success"
+        assert len(data["added"]) == 2  # Both should be added (second uses fallback title)
+
+    @patch('services.book_suggestions.get_audiobook_suggestions')
+    @patch('routes.queue.config')
+    @pytest.mark.asyncio
+    async def test_suggestions_error(self, mock_config, mock_get_suggestions, client):
+        """Test error handling in suggestions endpoint."""
+        mock_config.book_suggestions_enabled = True
+        mock_get_suggestions.side_effect = Exception("API error")
+
+        response = client.post("/queue/suggestions")
+
+        assert response.status_code == 500
+        assert "Failed to generate suggestions" in response.json()["detail"]

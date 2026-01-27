@@ -159,6 +159,7 @@ def index(request: Request):
             "host": server_host,
             "api_port": api_port,
             "transcription_enabled": config.transcription_enabled,
+            "book_suggestions_enabled": config.book_suggestions_enabled,
         },
     )
 

@@ -31,6 +31,12 @@ class Config:
     trilium_etapi_token: Optional[str]
     trilium_parent_note_id: Optional[str]
 
+    # Book-based audiobook suggestions
+    book_suggestions_enabled: bool
+    books_to_analyze: int
+    suggestions_count: int
+    suggestions_ai_provider: str  # "openai" or "gemini"
+
     @classmethod
     def load_from_env(cls) -> "Config":
         """Load configuration from environment variables."""
@@ -55,11 +61,21 @@ class Config:
             trilium_url=os.getenv("TRILIUM_URL"),
             trilium_etapi_token=os.getenv("TRILIUM_ETAPI_TOKEN"),
             trilium_parent_note_id=os.getenv("TRILIUM_PARENT_NOTE_ID"),
+
+            # Book suggestions settings
+            book_suggestions_enabled=os.getenv("BOOK_SUGGESTIONS_ENABLED", "false").lower() == "true",
+            books_to_analyze=int(os.getenv("BOOKS_TO_ANALYZE", "10")),
+            suggestions_count=int(os.getenv("SUGGESTIONS_COUNT", "4")),
+            suggestions_ai_provider=os.getenv("SUGGESTIONS_AI_PROVIDER", "openai").lower(),
         )
 
         # Validate configuration if transcription is enabled
         if transcription_enabled:
             config.validate()
+
+        # Validate book suggestions if enabled
+        if config.book_suggestions_enabled:
+            config.validate_book_suggestions()
 
         return config
 
@@ -91,6 +107,32 @@ class Config:
 
         if errors:
             error_msg = "Configuration validation failed:\n  - " + "\n  - ".join(errors)
+            raise ValueError(error_msg)
+
+    def validate_book_suggestions(self) -> None:
+        """Validate that required configuration for book suggestions is present."""
+        errors = []
+
+        # Check Trilium configuration
+        if not self.trilium_url:
+            errors.append("TRILIUM_URL is required when BOOK_SUGGESTIONS_ENABLED=true")
+        if not self.trilium_etapi_token:
+            errors.append("TRILIUM_ETAPI_TOKEN is required when BOOK_SUGGESTIONS_ENABLED=true")
+        if not self.trilium_parent_note_id:
+            errors.append("TRILIUM_PARENT_NOTE_ID is required when BOOK_SUGGESTIONS_ENABLED=true (used to find recent audiobook summaries)")
+
+        # Check AI provider configuration
+        if self.suggestions_ai_provider == "openai":
+            if not self.openai_api_key:
+                errors.append("OPENAI_API_KEY is required when SUGGESTIONS_AI_PROVIDER=openai")
+        elif self.suggestions_ai_provider == "gemini":
+            if not self.gemini_api_key:
+                errors.append("GEMINI_API_KEY is required when SUGGESTIONS_AI_PROVIDER=gemini")
+        else:
+            errors.append(f"Invalid SUGGESTIONS_AI_PROVIDER: {self.suggestions_ai_provider}. Must be 'openai' or 'gemini'")
+
+        if errors:
+            error_msg = "Book suggestions configuration validation failed:\n  - " + "\n  - ".join(errors)
             raise ValueError(error_msg)
 
     def get_audio_path(self, video_id: str) -> str:

@@ -67,6 +67,12 @@
                         <i class="fas fa-play"></i>
                         <span>Play Queue</span>
                     </button>
+                    {% if book_suggestions_enabled %}
+                    <button onclick="suggestAudiobooks()" class="btn btn-suggest" id="suggest-btn">
+                        <i class="fas fa-book-reader"></i>
+                        <span>Suggest Audiobooks</span>
+                    </button>
+                    {% endif %}
                 </div>
             </div>
 
@@ -544,6 +550,61 @@
                 updateStatus('Queue cleared', 'idle');
             } catch (e) {
                 console.error('Error clearing queue:', e);
+            }
+        }
+
+        async function suggestAudiobooks() {
+            const suggestBtn = document.getElementById('suggest-btn');
+            if (!suggestBtn) return;
+
+            // Disable button and show loading state
+            suggestBtn.disabled = true;
+            const originalHTML = suggestBtn.innerHTML;
+            suggestBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Generating...</span>';
+
+            try {
+                updateStatus('Analyzing recent books and generating suggestions...', 'streaming');
+
+                const res = await fetch('/queue/suggestions', { method: 'POST' });
+                const data = await res.json();
+
+                if (res.ok) {
+                    if (data.status === 'success' || data.status === 'no_suggestions') {
+                        const addedCount = data.added?.length || 0;
+                        const failedCount = data.failed?.length || 0;
+
+                        if (addedCount > 0) {
+                            updateStatus(`Added ${addedCount} audiobook suggestion(s) to queue!`, 'streaming');
+
+                            // Show details of what was added
+                            console.log('Suggestions added:', data.added);
+                            data.added.forEach(item => {
+                                console.log(`  - ${item.title} (${item.author || 'Unknown author'})`);
+                            });
+                        } else {
+                            updateStatus('No new audiobook suggestions found', 'idle');
+                        }
+
+                        if (failedCount > 0) {
+                            console.warn(`${failedCount} suggestion(s) failed to add:`, data.failed);
+                        }
+
+                        // Refresh queue display
+                        await renderQueue();
+                    } else {
+                        updateStatus(data.message || 'No suggestions available', 'error');
+                    }
+                } else {
+                    updateStatus(data.detail || 'Failed to generate suggestions', 'error');
+                    console.error('Suggestion error:', data);
+                }
+            } catch (error) {
+                updateStatus('Failed to generate suggestions', 'error');
+                console.error('Error generating suggestions:', error);
+            } finally {
+                // Re-enable button
+                suggestBtn.disabled = false;
+                suggestBtn.innerHTML = originalHTML;
             }
         }
 
