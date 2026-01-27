@@ -216,7 +216,21 @@ async def stream_audio(request: Request):
             # Unsubscribe client when done
             state.broadcaster.unsubscribe(client_queue)
 
-    return StreamingResponse(stream_generator(), media_type="audio/mpeg")
+    return StreamingResponse(
+        stream_generator(),
+        media_type="audio/mpeg",
+        headers={
+            # Encourage browser to buffer more aggressively
+            "Cache-Control": "no-cache",
+            # Allow credentials for CORS if needed
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Credentials": "true",
+            # Keep connection alive
+            "Connection": "keep-alive",
+            # Indicate we accept range requests for seeking
+            "Accept-Ranges": "bytes",
+        }
+    )
 
 
 @router.get("/history")

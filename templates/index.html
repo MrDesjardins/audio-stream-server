@@ -83,6 +83,10 @@
                     <source src="http://{{ host }}:{{ api_port }}/mystream" type="audio/mpeg">
                     Your browser does not support audio.
                 </audio>
+                <div id="stream-status" class="stream-status hidden">
+                    <i class="fas fa-sync fa-spin"></i>
+                    <span id="stream-status-text">Reconnecting...</span>
+                </div>
 
                 <div class="playback-controls">
                     <button onclick="rewind()" class="btn btn-control">
@@ -175,6 +179,8 @@
         const player = document.getElementById('player');
         const statusDot = document.getElementById('status-dot');
         const statusText = document.getElementById('status');
+        const streamStatus = document.getElementById('stream-status');
+        const streamStatusText = document.getElementById('stream-status-text');
         const MAX_HISTORY_ITEMS = 10;
         const transcriptionEnabled = {{ 'true' if transcription_enabled else 'false' }};
         let currentVideoId = null;
@@ -182,6 +188,16 @@
         let isPlaying = false;
         let currentTrackTitle = null;
         const defaultTitle = 'YouTube Radio';
+
+        // Stream resilience configuration
+        let retryCount = 0;
+        let maxRetries = 10;
+        let retryDelay = 1000; // Start with 1 second
+        let maxRetryDelay = 30000; // Max 30 seconds between retries
+        let retryTimeout = null;
+        let lastPlayPosition = 0;
+        let isRetrying = false;
+        let stalledTimeout = null;
 
         // Theme Management
         function getSystemTheme() {
@@ -244,6 +260,173 @@
 
         // Initialize theme on page load
         initTheme();
+
+        // Stream Resilience Functions
+        function showStreamStatus(message) {
+            streamStatusText.textContent = message;
+            streamStatus.classList.remove('hidden');
+        }
+
+        function hideStreamStatus() {
+            streamStatus.classList.add('hidden');
+        }
+
+        function retryStream() {
+            if (retryCount >= maxRetries) {
+                console.error(`Max retries (${maxRetries}) reached. Please refresh the page or restart the stream.`);
+                updateStatus(`Stream failed after ${maxRetries} attempts. Please try again.`, 'error');
+                hideStreamStatus();
+                isRetrying = false;
+                return;
+            }
+
+            retryCount++;
+            const currentDelay = Math.min(retryDelay * Math.pow(1.5, retryCount - 1), maxRetryDelay);
+
+            console.log(`Retry attempt ${retryCount}/${maxRetries} in ${currentDelay}ms...`);
+            showStreamStatus(`Reconnecting (attempt ${retryCount}/${maxRetries})...`);
+
+            isRetrying = true;
+
+            retryTimeout = setTimeout(() => {
+                try {
+                    // Save current position
+                    if (!isNaN(player.currentTime) && player.currentTime > 0) {
+                        lastPlayPosition = player.currentTime;
+                    }
+
+                    // Reload the stream
+                    const streamUrl = 'http://{{ host }}:{{ api_port }}/mystream?t=' + Date.now();
+                    player.src = streamUrl;
+                    player.load();
+
+                    // Try to restore position
+                    if (lastPlayPosition > 0) {
+                        player.currentTime = lastPlayPosition;
+                    }
+
+                    // Attempt to play
+                    player.play().then(() => {
+                        console.log('Stream reconnected successfully');
+                        retryCount = 0; // Reset retry count on success
+                        hideStreamStatus();
+                        isRetrying = false;
+                    }).catch(err => {
+                        console.error('Failed to play after reload:', err);
+                        retryStream(); // Try again
+                    });
+                } catch (err) {
+                    console.error('Error during stream retry:', err);
+                    retryStream(); // Try again
+                }
+            }, currentDelay);
+        }
+
+        function cancelRetry() {
+            if (retryTimeout) {
+                clearTimeout(retryTimeout);
+                retryTimeout = null;
+            }
+            if (stalledTimeout) {
+                clearTimeout(stalledTimeout);
+                stalledTimeout = null;
+            }
+            retryCount = 0;
+            isRetrying = false;
+            hideStreamStatus();
+        }
+
+        // Audio Player Event Handlers for Resilience
+        player.addEventListener('error', function(e) {
+            console.error('Audio player error:', e);
+            const error = player.error;
+            if (error) {
+                console.error(`Error code: ${error.code}, message: ${error.message}`);
+
+                // Only retry if we're supposed to be playing
+                if (isPlaying && !isRetrying) {
+                    console.log('Stream error detected, attempting to reconnect...');
+                    retryStream();
+                }
+            }
+        });
+
+        player.addEventListener('stalled', function() {
+            console.warn('Stream stalled, buffering...');
+            showStreamStatus('Buffering...');
+
+            // Clear any existing stalled timeout
+            if (stalledTimeout) {
+                clearTimeout(stalledTimeout);
+            }
+
+            // If still stalled after 10 seconds, try to reconnect
+            stalledTimeout = setTimeout(() => {
+                if (isPlaying && !isRetrying) {
+                    console.log('Stream stalled for too long, attempting to reconnect...');
+                    retryStream();
+                }
+            }, 10000);
+        });
+
+        player.addEventListener('waiting', function() {
+            console.log('Waiting for data...');
+            showStreamStatus('Buffering...');
+        });
+
+        player.addEventListener('canplay', function() {
+            console.log('Can play - enough data loaded');
+            if (!isRetrying) {
+                hideStreamStatus();
+            }
+
+            // Clear stalled timeout if stream is playable
+            if (stalledTimeout) {
+                clearTimeout(stalledTimeout);
+                stalledTimeout = null;
+            }
+        });
+
+        player.addEventListener('playing', function() {
+            console.log('Playback started/resumed');
+            hideStreamStatus();
+            retryCount = 0; // Reset retry count when successfully playing
+
+            // Clear stalled timeout
+            if (stalledTimeout) {
+                clearTimeout(stalledTimeout);
+                stalledTimeout = null;
+            }
+        });
+
+        player.addEventListener('pause', function() {
+            console.log('Playback paused');
+            // Don't show reconnection UI if user paused manually
+            if (!isRetrying) {
+                hideStreamStatus();
+            }
+        });
+
+        player.addEventListener('loadstart', function() {
+            console.log('Started loading stream');
+        });
+
+        player.addEventListener('progress', function() {
+            // Stream is downloading, this is good
+            if (stalledTimeout) {
+                clearTimeout(stalledTimeout);
+                stalledTimeout = null;
+            }
+        });
+
+        player.addEventListener('suspend', function() {
+            // Browser has suspended loading (might be due to buffering enough data)
+            console.log('Stream loading suspended (browser buffered enough)');
+        });
+
+        player.addEventListener('abort', function() {
+            console.warn('Stream loading aborted');
+        });
 
         // Update browser window title
         function updateWindowTitle(title) {
@@ -395,6 +578,7 @@
                     updateStatus('Queue is empty', 'idle');
                     player.pause();
                     isPlaying = false;
+                    cancelRetry(); // Stop any retry attempts
                     updateWindowTitle(null);  // Reset title when queue is empty
                     await renderQueue();
                     return;
@@ -427,6 +611,7 @@
                     currentVideoId = youtube_video_id;
                     currentQueueId = queue_id;
                     isPlaying = true;
+                    cancelRetry(); // Cancel any ongoing retries
 
                     // Update browser window title with track name
                     const queue = await fetchQueue();
@@ -445,12 +630,16 @@
                         currentVideoId = youtube_video_id;
                     }
 
-                    // Reload audio
-                    const streamUrl = 'http://{{ host }}:{{ api_port }}/mystream';
+                    // Reload audio with cache-busting
+                    const streamUrl = 'http://{{ host }}:{{ api_port }}/mystream?t=' + Date.now();
                     player.src = streamUrl;
                     player.load();
                     player.play().catch(e => {
                         console.error('Audio playback failed:', e);
+                        // Auto-retry if initial play fails
+                        if (isPlaying) {
+                            retryStream();
+                        }
                     });
                 }
             } catch (error) {
@@ -627,6 +816,9 @@
                 updateStatus(data.status || data.detail, res.ok ? 'streaming' : 'error');
 
                 if (res.ok) {
+                    isPlaying = true;
+                    cancelRetry(); // Cancel any ongoing retries
+
                     // Re-render history to show the new entry
                     await renderHistory();
 
@@ -651,17 +843,21 @@
                             currentVideoId = youtube_video_id;
                         }
                     }
-                }
 
-                // Reload audio to pick up new stream
-                const streamUrl = 'http://{{ host }}:{{ api_port }}/mystream';
-                console.log('🎵 Setting audio player source to:', streamUrl);
-                player.src = streamUrl;
-                player.load();
-                player.play().catch(e => {
-                    console.error('❌ Audio playback failed:', e);
-                    console.log('   Stream URL:', streamUrl);
-                });
+                    // Reload audio to pick up new stream with cache-busting
+                    const streamUrl = 'http://{{ host }}:{{ api_port }}/mystream?t=' + Date.now();
+                    console.log('🎵 Setting audio player source to:', streamUrl);
+                    player.src = streamUrl;
+                    player.load();
+                    player.play().catch(e => {
+                        console.error('❌ Audio playback failed:', e);
+                        console.log('   Stream URL:', streamUrl);
+                        // Auto-retry if initial play fails
+                        if (isPlaying) {
+                            retryStream();
+                        }
+                    });
+                }
             } catch (error) {
                 updateStatus('Failed to start stream', 'error');
                 console.error(error);
@@ -673,6 +869,9 @@
             player.pause();
             isPlaying = false;
             currentQueueId = null;
+
+            // Cancel any retry attempts
+            cancelRetry();
 
             // Reset browser window title
             updateWindowTitle(null);
