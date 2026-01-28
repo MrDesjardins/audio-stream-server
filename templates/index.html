@@ -872,7 +872,7 @@
                         <div class="history-meta">
                             ${playCountBadge}
                             <span class="history-time">${timeAgo}</span>
-                            <i class="fas fa-play-circle"></i>
+                            <i class="fas fa-plus-circle"></i>
                         </div>
                     </div>
                 `;
@@ -896,9 +896,27 @@
             return div.innerHTML;
         }
 
-        function loadFromHistory(videoId) {
-            document.getElementById('youtube_video_id').value = videoId;
-            startStream();
+        async function loadFromHistory(videoId) {
+            try {
+                updateStatus('Adding to queue...', 'streaming');
+
+                const res = await fetch('/queue/add', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ youtube_video_id: videoId, skip_transcription: false })
+                });
+                const data = await res.json();
+
+                if (res.ok) {
+                    updateStatus('Added to queue: ' + data.title, 'streaming');
+                    await renderQueue();
+                } else {
+                    updateStatus('Failed to add to queue', 'error');
+                }
+            } catch (error) {
+                updateStatus('Failed to add to queue', 'error');
+                console.error(error);
+            }
         }
 
         function extractVideoId(input) {
