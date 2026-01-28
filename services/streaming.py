@@ -49,65 +49,78 @@ def start_youtube_stream(youtube_video_id: str, skip_transcription: bool, broadc
             url,
         ]
 
-        # If transcription is enabled and not skipped, save audio to file while streaming
+        # Build FFmpeg command with common options
+        # Aggressive buffering and error handling to prevent glitches
+        ffmpeg_cmd = [
+            "ffmpeg",
+            "-probesize",
+            "10M",  # Analyze more data for better format detection
+            "-analyzeduration",
+            "10M",  # Analyze longer for accurate stream info
+            "-err_detect",
+            "ignore_err",  # Don't stop on minor errors
+            "-fflags",
+            "+genpts+igndts+discardcorrupt",  # Generate PTS, ignore DTS, discard corrupt packets
+            "-thread_queue_size",
+            "4096",  # Much larger input queue (4x increase)
+            "-i",
+            "pipe:0",
+        ]
+
+        # Add output-specific options
         if config.transcription_enabled and not skip_transcription:
             logger.info(f"Saving audio to {audio_path} while streaming")
-
             # Use tee to write to both stdout and file
-            # Increase buffer sizes to prevent glitches
-            ffmpeg_cmd = [
-                "ffmpeg",
-                "-err_detect",
-                "ignore_err",  # Don't stop on minor errors
-                "-fflags",
-                "+genpts+igndts",  # Generate PTS, ignore DTS issues
-                "-thread_queue_size",
-                "1024",  # Increase input queue size
-                "-i",
-                "pipe:0",
-                "-map",
-                "0:a",  # Map the audio stream
-                "-c:a",
-                "libmp3lame",  # MP3 encoder
-                "-b:a",
-                "192k",  # Constant bitrate for consistent quality
-                "-ar",
-                "48000",  # Sample rate
-                "-ac",
-                "2",  # Stereo
-                "-bufsize",
-                "2048k",  # Larger buffer to prevent underruns
-                "-f",
-                "tee",
-                f"[f=mp3]pipe:1|[f=mp3]{audio_path}",
-            ]
+            ffmpeg_cmd.extend(
+                [
+                    "-map",
+                    "0:a",  # Map the audio stream
+                    "-c:a",
+                    "libmp3lame",  # MP3 encoder
+                    "-q:a",
+                    "2",  # VBR quality 2 (high quality, ~170-210 kbps) - smoother than CBR
+                    "-ar",
+                    "48000",  # Sample rate
+                    "-ac",
+                    "2",  # Stereo
+                    "-async",
+                    "1",  # Audio sync method: resample audio to match timestamps
+                    "-bufsize",
+                    "8192k",  # 4x larger buffer to prevent underruns
+                    "-max_muxing_queue_size",
+                    "9999",  # Prevent muxing queue overflow
+                    "-flush_packets",
+                    "0",  # Don't flush packets immediately (allow buffering)
+                    "-f",
+                    "tee",
+                    f"[f=mp3]pipe:1|[f=mp3]{audio_path}",
+                ]
+            )
         else:
             # Standard streaming without saving
-            # Use consistent encoding settings for quality
-            ffmpeg_cmd = [
-                "ffmpeg",
-                "-err_detect",
-                "ignore_err",  # Don't stop on minor errors
-                "-fflags",
-                "+genpts+igndts",  # Generate PTS, ignore DTS issues
-                "-thread_queue_size",
-                "1024",  # Increase input queue size
-                "-i",
-                "pipe:0",
-                "-c:a",
-                "libmp3lame",  # MP3 encoder
-                "-b:a",
-                "192k",  # Constant bitrate
-                "-ar",
-                "48000",  # Sample rate
-                "-ac",
-                "2",  # Stereo
-                "-bufsize",
-                "2048k",  # Larger buffer
-                "-f",
-                "mp3",
-                "pipe:1",
-            ]
+            ffmpeg_cmd.extend(
+                [
+                    "-c:a",
+                    "libmp3lame",  # MP3 encoder
+                    "-q:a",
+                    "2",  # VBR quality 2 (high quality, ~170-210 kbps) - smoother than CBR
+                    "-ar",
+                    "48000",  # Sample rate
+                    "-ac",
+                    "2",  # Stereo
+                    "-async",
+                    "1",  # Audio sync method: resample audio to match timestamps
+                    "-bufsize",
+                    "8192k",  # 4x larger buffer to prevent underruns
+                    "-max_muxing_queue_size",
+                    "9999",  # Prevent muxing queue overflow
+                    "-flush_packets",
+                    "0",  # Don't flush packets immediately (allow buffering)
+                    "-f",
+                    "mp3",
+                    "pipe:1",
+                ]
+            )
 
         # Use larger pipe buffers (64MB) to prevent stuttering
         yt_proc = subprocess.Popen(yt_cmd, stdout=subprocess.PIPE, bufsize=64 * 1024 * 1024)

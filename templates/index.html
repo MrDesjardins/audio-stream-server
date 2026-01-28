@@ -197,13 +197,14 @@
 
         // Stream resilience configuration
         let retryCount = 0;
-        let maxRetries = 10;
+        let maxRetries = 50; // Increased for long network transitions (5G↔WiFi)
         let retryDelay = 1000; // Start with 1 second
-        let maxRetryDelay = 30000; // Max 30 seconds between retries
+        let maxRetryDelay = 10000; // Max 10 seconds between retries (faster recovery)
         let retryTimeout = null;
         let lastPlayPosition = 0;
         let isRetrying = false;
         let stalledTimeout = null;
+        let bufferingStartTime = null;
 
         // Theme Management
         function getSystemTheme() {
@@ -290,36 +291,52 @@
             const currentDelay = Math.min(retryDelay * Math.pow(1.5, retryCount - 1), maxRetryDelay);
 
             console.log(`Retry attempt ${retryCount}/${maxRetries} in ${currentDelay}ms...`);
-            showStreamStatus(`Reconnecting (attempt ${retryCount}/${maxRetries})...`);
+            showStreamStatus(`Reconnecting (attempt ${retryCount}/${maxRetries})... Buffering...`);
 
             isRetrying = true;
 
             retryTimeout = setTimeout(() => {
                 try {
-                    // Save current position
-                    if (!isNaN(player.currentTime) && player.currentTime > 0) {
-                        lastPlayPosition = player.currentTime;
-                    }
-
-                    // Reload the stream
-                    const streamUrl = 'http://{{ host }}:{{ api_port }}/mystream?t=' + Date.now();
-                    player.src = streamUrl;
-                    player.load();
-
-                    // Try to restore position
-                    if (lastPlayPosition > 0) {
-                        player.currentTime = lastPlayPosition;
-                    }
-
-                    // Attempt to play
+                    // First, just try to play without reloading (preserve buffer)
                     player.play().then(() => {
-                        console.log('Stream reconnected successfully');
+                        console.log('Stream resumed successfully (buffer preserved)');
                         retryCount = 0; // Reset retry count on success
                         hideStreamStatus();
                         isRetrying = false;
                     }).catch(err => {
-                        console.error('Failed to play after reload:', err);
-                        retryStream(); // Try again
+                        // If play fails after several quick attempts, reload as last resort
+                        if (retryCount > 5) {
+                            console.log('Multiple quick retries failed, reloading stream...');
+                            // Save current position
+                            if (!isNaN(player.currentTime) && player.currentTime > 0) {
+                                lastPlayPosition = player.currentTime;
+                            }
+
+                            // Reload the stream
+                            const streamUrl = 'http://{{ host }}:{{ api_port }}/mystream?t=' + Date.now();
+                            player.src = streamUrl;
+                            player.load();
+
+                            // Try to restore position
+                            if (lastPlayPosition > 0) {
+                                player.currentTime = lastPlayPosition;
+                            }
+
+                            // Attempt to play
+                            player.play().then(() => {
+                                console.log('Stream reconnected after reload');
+                                retryCount = 0;
+                                hideStreamStatus();
+                                isRetrying = false;
+                            }).catch(err2 => {
+                                console.error('Failed to play after reload:', err2);
+                                retryStream(); // Try again
+                            });
+                        } else {
+                            // Quick retry without reload
+                            console.error('Play failed, retrying...', err);
+                            retryStream();
+                        }
                     });
                 } catch (err) {
                     console.error('Error during stream retry:', err);
@@ -357,6 +374,15 @@
             }
         });
 
+        player.addEventListener('waiting', function() {
+            console.log('Player waiting for data (buffering)...');
+            bufferingStartTime = Date.now();
+            showStreamStatus('Buffering...');
+
+            // Don't retry immediately - give it time to buffer
+            // The browser will try to recover on its own first
+        });
+
         player.addEventListener('stalled', function() {
             console.warn('Stream stalled, buffering...');
             showStreamStatus('Buffering...');
@@ -366,18 +392,14 @@
                 clearTimeout(stalledTimeout);
             }
 
-            // If still stalled after 10 seconds, try to reconnect
+            // If still stalled after 30 seconds, try to reconnect
+            // Increased from 10s to give more time for poor networks
             stalledTimeout = setTimeout(() => {
                 if (isPlaying && !isRetrying) {
-                    console.log('Stream stalled for too long, attempting to reconnect...');
+                    console.log('Stream stalled for too long (30s), attempting to reconnect...');
                     retryStream();
                 }
-            }, 10000);
-        });
-
-        player.addEventListener('waiting', function() {
-            console.log('Waiting for data...');
-            showStreamStatus('Buffering...');
+            }, 30000); // Increased to 30 seconds
         });
 
         player.addEventListener('canplay', function() {
@@ -394,6 +416,13 @@
         });
 
         player.addEventListener('playing', function() {
+            // Log buffering duration if we were buffering
+            if (bufferingStartTime) {
+                const bufferingDuration = Date.now() - bufferingStartTime;
+                console.log(`Stream resumed after ${bufferingDuration}ms of buffering`);
+                bufferingStartTime = null;
+            }
+
             console.log('Playback started/resumed');
             hideStreamStatus();
             retryCount = 0; // Reset retry count when successfully playing

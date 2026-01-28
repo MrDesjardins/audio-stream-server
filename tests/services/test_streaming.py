@@ -80,9 +80,9 @@ class TestStartYoutubeStream:
         assert "-err_detect" in ffmpeg_cmd
         assert "ignore_err" in ffmpeg_cmd
         assert "-bufsize" in ffmpeg_cmd
-        assert "2048k" in ffmpeg_cmd
-        assert "-b:a" in ffmpeg_cmd
-        assert "192k" in ffmpeg_cmd
+        assert "8192k" in ffmpeg_cmd  # Increased buffer size
+        assert "-q:a" in ffmpeg_cmd  # VBR quality mode
+        assert "2" in ffmpeg_cmd  # Quality level 2
 
         # Verify broadcaster was started
         mock_broadcaster.start_broadcasting.assert_called_once_with(mock_ffmpeg_proc)

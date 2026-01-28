@@ -19,11 +19,11 @@ logger = logging.getLogger(__name__)
 class StreamBroadcaster:
     """Broadcasts audio stream to multiple clients with replay buffer."""
 
-    def __init__(self, buffer_size: int = 300):
+    def __init__(self, buffer_size: int = 900):
         self.clients: List[queue.Queue[bytes]] = []
         self.buffer: deque[bytes] = deque(
             maxlen=buffer_size
-        )  # Keep last N chunks for reconnecting clients (~2.4MB at 8KB chunks)
+        )  # Keep last N chunks for reconnecting clients (~7.2MB at 8KB chunks = ~5 minutes at 192kbps)
         self.lock = threading.Lock()
         self.active = False
         self.reader_thread: Optional[threading.Thread] = None
@@ -152,9 +152,9 @@ class StreamBroadcaster:
 
     def subscribe(self) -> queue.Queue[bytes]:
         """Subscribe a new client to the stream."""
-        # Increase queue size to prevent dropping chunks for slow clients
-        # 500 chunks * 8KB = ~4MB buffer per client (allows better buffering for network issues)
-        client_queue: queue.Queue[bytes] = queue.Queue(maxsize=500)
+        # Large queue size to prevent dropping chunks for slow/unstable clients
+        # 1500 chunks * 8KB = ~12MB buffer per client (allows ~8 minutes buffering at 192kbps)
+        client_queue: queue.Queue[bytes] = queue.Queue(maxsize=1500)
 
         with self.lock:
             self.clients.append(client_queue)
