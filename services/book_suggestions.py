@@ -31,44 +31,46 @@ async def get_recent_books_from_trilium(limit: int) -> List[Dict[str, str]]:
         logger.info(f"Fetching children of parent note: {config.trilium_parent_note_id}")
 
         async with httpx.AsyncClient() as client:
-            # Get all immediate children of the parent note
-            children_url = (
-                f"{config.trilium_url}/etapi/notes/{config.trilium_parent_note_id}/children"
-            )
-            response = await client.get(children_url, headers=headers, timeout=30.0)
+            # Search for all text notes under the parent note using ETAPI search
+            # Using search with ancestorNoteId to get all children
+            search_url = f"{config.trilium_url}/etapi/notes"
+            params: dict[str, str] = {
+                "search": "note.type = text",  # Only get text notes (summaries)
+                "ancestorNoteId": config.trilium_parent_note_id,
+                "orderBy": "dateModified",
+                "limit": str(limit * 2),  # Get more than needed to account for filtering
+            }
+            response = await client.get(search_url, headers=headers, params=params, timeout=30.0)
             response.raise_for_status()
 
-            children = response.json()
+            # Trilium search returns {"results": [...]}
+            response_data = response.json()
+            results = response_data.get("results", [])
 
-            if not children:
+            if not results or len(results) == 0:
                 logger.warning(
-                    f"No children found under parent note {config.trilium_parent_note_id}"
+                    f"No text notes found under parent note {config.trilium_parent_note_id}"
                 )
                 return []
 
-            # Fetch details for each child to get dateModified
+            # Process results - they already have title, noteId, and dateModified
             audiobooks = []
-            for child in children:
-                note_id = child.get("noteId")
+            for note in results:
+                note_id = note.get("noteId")
                 if not note_id:
                     continue
 
-                # Get full note details
-                note_url = f"{config.trilium_url}/etapi/notes/{note_id}"
-                note_response = await client.get(note_url, headers=headers, timeout=10.0)
+                # Skip the parent note itself if it appears in results
+                if note_id == config.trilium_parent_note_id:
+                    continue
 
-                if note_response.status_code == 200:
-                    note_data = note_response.json()
-
-                    # Only include text notes (summaries)
-                    if note_data.get("type") == "text":
-                        audiobooks.append(
-                            {
-                                "title": note_data.get("title", "Unknown"),
-                                "noteId": note_id,
-                                "dateModified": note_data.get("dateModified", ""),
-                            }
-                        )
+                audiobooks.append(
+                    {
+                        "title": note.get("title", "Unknown"),
+                        "noteId": note_id,
+                        "dateModified": note.get("utcDateModified", ""),
+                    }
+                )
 
             # Sort by dateModified descending (most recent first) and take the limit
             audiobooks.sort(key=lambda x: x.get("dateModified", ""), reverse=True)
@@ -107,25 +109,31 @@ def generate_suggestions_openai(book_titles: List[str], count: int) -> List[Dict
         prompt = f"""Based on these recently read books:
 {books_text}
 
-Suggest {count} audiobooks that the reader might enjoy. For each suggestion:
-1. Find a similar book (same genre, author, or theme)
-2. Search for its audiobook on YouTube
-3. Provide a real, working YouTube URL
+Suggest {count} audiobooks that the reader might enjoy. These should be well-known, popular books with full-length audiobooks available on YouTube.
+
+IMPORTANT INSTRUCTIONS:
+- Only suggest mainstream, well-known books that definitely have audiobooks on YouTube
+- Prefer classic books and bestsellers (e.g., "The 48 Laws of Power", "Atomic Habits", "Think and Grow Rich")
+- Only books in similar genres/themes to the list above
+- You CANNOT search YouTube or verify URLs - suggest books you're confident have audiobooks available
+- DO NOT include YouTube URLs or video IDs - just book titles and authors
 
 Format your response EXACTLY as follows for each suggestion:
-TITLE: [Book Title]
+TITLE: [Full Book Title]
 AUTHOR: [Author Name]
-URL: https://www.youtube.com/watch?v=[VIDEO_ID]
 ---
 
-Make sure each URL is a real, working YouTube audiobook link. Verify that the video ID is valid."""
+Example:
+TITLE: Atomic Habits: An Easy & Proven Way to Build Good Habits & Break Bad Ones
+AUTHOR: James Clear
+---"""
 
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a knowledgeable book recommendation assistant with access to YouTube audiobooks. Always provide real, working YouTube URLs.",
+                    "content": "You are a knowledgeable book recommendation assistant. Suggest only well-known books that likely have audiobooks on YouTube.",
                 },
                 {"role": "user", "content": prompt},
             ],
@@ -163,18 +171,24 @@ def generate_suggestions_gemini(book_titles: List[str], count: int) -> List[Dict
         prompt = f"""Based on these recently read books:
 {books_text}
 
-Suggest {count} audiobooks that the reader might enjoy. For each suggestion:
-1. Find a similar book (same genre, author, or theme)
-2. Search for its audiobook on YouTube
-3. Provide a real, working YouTube URL
+Suggest {count} audiobooks that the reader might enjoy. These should be well-known, popular books with full-length audiobooks available on YouTube.
+
+IMPORTANT INSTRUCTIONS:
+- Only suggest mainstream, well-known books that definitely have audiobooks on YouTube
+- Prefer classic books and bestsellers (e.g., "The 48 Laws of Power", "Atomic Habits", "Think and Grow Rich")
+- Only books in similar genres/themes to the list above
+- You CANNOT search YouTube or verify URLs - suggest books you're confident have audiobooks available
+- DO NOT include YouTube URLs or video IDs - just book titles and authors
 
 Format your response EXACTLY as follows for each suggestion:
-TITLE: [Book Title]
+TITLE: [Full Book Title]
 AUTHOR: [Author Name]
-URL: https://www.youtube.com/watch?v=[VIDEO_ID]
 ---
 
-Make sure each URL is a real, working YouTube audiobook link. Verify that the video ID is valid."""
+Example:
+TITLE: Atomic Habits: An Easy & Proven Way to Build Good Habits & Break Bad Ones
+AUTHOR: James Clear
+---"""
 
         response = model.generate_content(prompt)
         content = response.text
@@ -186,15 +200,94 @@ Make sure each URL is a real, working YouTube audiobook link. Verify that the vi
         return []
 
 
+def search_youtube_audiobook(book_title: str, author: str) -> Optional[str]:
+    """
+    Search YouTube for an audiobook and return the first valid video ID.
+
+    Args:
+        book_title: Book title
+        author: Author name
+
+    Returns:
+        Video ID if found and valid, None otherwise
+    """
+    from services.youtube import YT_DLP_PATH
+    import subprocess
+    import json
+
+    try:
+        # Search for audiobook on YouTube
+        search_query = f"{book_title} {author} audiobook full"
+        search_url = f"ytsearch5:{search_query}"
+
+        result = subprocess.run(
+            [
+                YT_DLP_PATH,
+                "--dump-json",
+                "--no-playlist",
+                "--extractor-args",
+                "youtube:player_client=android",
+                search_url,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+
+        if result.returncode != 0:
+            logger.warning(f"YouTube search failed for '{book_title}': {result.stderr}")
+            return None
+
+        # Parse each line of JSON output (one per video)
+        for line in result.stdout.strip().split("\n"):
+            if not line:
+                continue
+
+            try:
+                video_info = json.loads(line)
+                video_id = video_info.get("id")
+                video_title = video_info.get("title", "")
+                duration = video_info.get("duration", 0)
+
+                # Filter: must be at least 30 minutes (1800 seconds) to be a full audiobook
+                if duration < 1800:
+                    logger.debug(f"Skipping short video: {video_title} ({duration}s)")
+                    continue
+
+                # Filter: title should contain "audiobook" or "audio book"
+                if (
+                    "audiobook" not in video_title.lower()
+                    and "audio book" not in video_title.lower()
+                ):
+                    logger.debug(f"Skipping non-audiobook video: {video_title}")
+                    continue
+
+                logger.info(f"Found audiobook: {video_title} ({video_id}, {duration}s)")
+                return video_id
+
+            except json.JSONDecodeError:
+                continue
+
+        logger.warning(f"No suitable audiobook found for '{book_title} by {author}'")
+        return None
+
+    except subprocess.TimeoutExpired:
+        logger.error(f"Timeout searching YouTube for '{book_title}'")
+        return None
+    except Exception as e:
+        logger.error(f"Error searching YouTube for '{book_title}': {e}")
+        return None
+
+
 def parse_suggestions(content: str) -> List[Dict[str, str]]:
     """
-    Parse AI response into structured suggestions.
+    Parse AI response into structured suggestions and search YouTube for each.
 
     Args:
         content: AI response text
 
     Returns:
-        List of dicts with 'title', 'author', and 'youtube_url' keys
+        List of dicts with 'title', 'author', 'video_id', and 'youtube_url' keys
     """
     suggestions = []
 
@@ -218,28 +311,21 @@ def parse_suggestions(content: str) -> List[Dict[str, str]]:
         if author_match:
             suggestion["author"] = author_match.group(1).strip()
 
-        # Extract YouTube URL and video ID
-        url_match = re.search(
-            r"URL:\s*(https?://(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/)([a-zA-Z0-9_-]+))",
-            block,
-            re.IGNORECASE,
-        )
-        if url_match:
-            full_url = url_match.group(1).strip()
-            video_id = url_match.group(2).strip()
+        # Only add if we have both title and author
+        if "title" in suggestion and "author" in suggestion:
+            # Search YouTube for the audiobook
+            video_id = search_youtube_audiobook(suggestion["title"], suggestion["author"])
 
-            # Video IDs are typically 11 characters, but extract the first 11
-            if len(video_id) >= 11:
-                video_id = video_id[:11]
+            if video_id:
+                suggestion["video_id"] = video_id
+                suggestion["youtube_url"] = f"https://www.youtube.com/watch?v={video_id}"
+                suggestions.append(suggestion)
+            else:
+                logger.warning(
+                    f"Skipping '{suggestion['title']}' - no valid YouTube audiobook found"
+                )
 
-            suggestion["youtube_url"] = full_url
-            suggestion["video_id"] = video_id
-
-        # Only add if we have all required fields
-        if "title" in suggestion and "youtube_url" in suggestion and "video_id" in suggestion:
-            suggestions.append(suggestion)
-
-    logger.info(f"Parsed {len(suggestions)} valid suggestions from AI response")
+    logger.info(f"Parsed {len(suggestions)} valid suggestions with YouTube videos")
     return suggestions
 
 

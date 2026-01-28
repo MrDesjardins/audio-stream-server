@@ -22,8 +22,16 @@ def get_video_metadata(youtube_id: str) -> Optional[dict]:
         url = f"https://www.youtube.com/watch?v={youtube_id}"
 
         # Use yt-dlp to get video info without downloading
+        # Use android player client to avoid JS runtime requirement
         result = subprocess.run(
-            [YT_DLP_PATH, "--dump-json", "--no-playlist", url],
+            [
+                YT_DLP_PATH,
+                "--dump-json",
+                "--no-playlist",
+                "--extractor-args",
+                "youtube:player_client=android",
+                url,
+            ],
             capture_output=True,
             text=True,
             timeout=10,

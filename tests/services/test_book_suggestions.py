@@ -35,40 +35,34 @@ class TestGetRecentBooksFromTrilium:
     @patch("services.book_suggestions.httpx.AsyncClient")
     @patch("services.book_suggestions.config")
     async def test_fetch_books_success(self, mock_config_module, mock_client_class, mock_config):
-        """Test successful audiobook fetching from parent note children."""
+        """Test successful audiobook fetching using search API."""
         mock_config_module.trilium_url = mock_config.trilium_url
         mock_config_module.trilium_etapi_token = mock_config.trilium_etapi_token
         mock_config_module.trilium_parent_note_id = mock_config.trilium_parent_note_id
 
-        # Mock children response
-        mock_children_response = Mock()
-        mock_children_response.status_code = 200
-        mock_children_response.json.return_value = [{"noteId": "note1"}, {"noteId": "note2"}]
-
-        # Mock note detail responses
-        mock_note1_response = Mock()
-        mock_note1_response.status_code = 200
-        mock_note1_response.json.return_value = {
-            "noteId": "note1",
-            "title": "Atomic Habits - Audiobook Summary",
-            "type": "text",
-            "dateModified": "2024-01-15T10:00:00Z",
-        }
-
-        mock_note2_response = Mock()
-        mock_note2_response.status_code = 200
-        mock_note2_response.json.return_value = {
-            "noteId": "note2",
-            "title": "Deep Work - Audiobook Summary",
-            "type": "text",
-            "dateModified": "2024-01-10T10:00:00Z",
+        # Mock search response with Trilium format: {"results": [...]}
+        mock_search_response = Mock()
+        mock_search_response.status_code = 200
+        mock_search_response.json.return_value = {
+            "results": [
+                {
+                    "noteId": "note1",
+                    "title": "Atomic Habits - Audiobook Summary",
+                    "type": "text",
+                    "utcDateModified": "2024-01-15T10:00:00Z",
+                },
+                {
+                    "noteId": "note2",
+                    "title": "Deep Work - Audiobook Summary",
+                    "type": "text",
+                    "utcDateModified": "2024-01-10T10:00:00Z",
+                },
+            ]
         }
 
         # Setup mock client
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(
-            side_effect=[mock_children_response, mock_note1_response, mock_note2_response]
-        )
+        mock_client.get = AsyncMock(return_value=mock_search_response)
         mock_client.__aenter__.return_value = mock_client
         mock_client.__aexit__.return_value = None
         mock_client_class.return_value = mock_client
@@ -91,10 +85,10 @@ class TestGetRecentBooksFromTrilium:
         mock_config_module.trilium_etapi_token = mock_config.trilium_etapi_token
         mock_config_module.trilium_parent_note_id = mock_config.trilium_parent_note_id
 
-        # Mock empty children response
+        # Mock empty search response in Trilium format
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = []
+        mock_response.json.return_value = {"results": []}
 
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=mock_response)
@@ -128,23 +122,24 @@ class TestGetRecentBooksFromTrilium:
 class TestGenerateSuggestionsOpenAI:
     """Tests for OpenAI suggestion generation."""
 
+    @patch("services.book_suggestions.search_youtube_audiobook")
     @patch("services.book_suggestions.OpenAI")
     @patch("services.book_suggestions.config")
-    def test_generate_suggestions_success(self, mock_config_module, mock_openai_class, mock_config):
+    def test_generate_suggestions_success(
+        self, mock_config_module, mock_openai_class, mock_search, mock_config
+    ):
         """Test successful suggestion generation."""
         mock_config_module.openai_api_key = mock_config.openai_api_key
 
-        # Mock OpenAI response
+        # Mock OpenAI response (new format without URLs)
         mock_response = Mock()
         mock_response.choices = [Mock()]
         mock_response.choices[0].message.content = """
 TITLE: Atomic Habits
 AUTHOR: James Clear
-URL: https://www.youtube.com/watch?v=dQw4w9WgXcQ
 ---
 TITLE: Deep Work
 AUTHOR: Cal Newport
-URL: https://www.youtube.com/watch?v=jNQXAC9IVRw
 ---
 """
 
@@ -152,12 +147,16 @@ URL: https://www.youtube.com/watch?v=jNQXAC9IVRw
         mock_client.chat.completions.create.return_value = mock_response
         mock_openai_class.return_value = mock_client
 
+        # Mock YouTube search to return video IDs
+        mock_search.side_effect = ["dQw4w9WgXcQ", "jNQXAC9IVRw"]
+
         suggestions = generate_suggestions_openai(["Book One", "Book Two"], 2)
 
         assert len(suggestions) == 2
         assert suggestions[0]["title"] == "Atomic Habits"
         assert suggestions[0]["author"] == "James Clear"
         assert suggestions[0]["video_id"] == "dQw4w9WgXcQ"
+        assert mock_search.call_count == 2
 
     @patch("services.book_suggestions.OpenAI")
     @patch("services.book_suggestions.config")
@@ -223,54 +222,127 @@ URL: https://www.youtube.com/watch?v=BvWB7B8tXD8
         assert len(suggestions) == 0
 
 
+class TestSearchYoutubeAudiobook:
+    """Tests for YouTube audiobook search."""
+
+    @patch("subprocess.run")
+    def test_search_success(self, mock_run):
+        """Test successful YouTube search."""
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = (
+            '{"id": "abc123", "title": "Atomic Habits Audiobook", "duration": 3600}\n'
+        )
+        mock_run.return_value = mock_result
+
+        from services.book_suggestions import search_youtube_audiobook
+
+        video_id = search_youtube_audiobook("Atomic Habits", "James Clear")
+
+        assert video_id == "abc123"
+
+    @patch("subprocess.run")
+    def test_search_short_video_filtered(self, mock_run):
+        """Test that short videos are filtered out."""
+        mock_result = Mock()
+        mock_result.returncode = 0
+        # Video is only 10 minutes (600 seconds) - too short for full audiobook
+        mock_result.stdout = (
+            '{"id": "short1", "title": "Atomic Habits Audiobook Summary", "duration": 600}\n'
+        )
+        mock_run.return_value = mock_result
+
+        from services.book_suggestions import search_youtube_audiobook
+
+        video_id = search_youtube_audiobook("Atomic Habits", "James Clear")
+
+        assert video_id is None
+
+    @patch("subprocess.run")
+    def test_search_no_audiobook_keyword(self, mock_run):
+        """Test that videos without 'audiobook' in title are filtered."""
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = (
+            '{"id": "review1", "title": "Atomic Habits Review", "duration": 3600}\n'
+        )
+        mock_run.return_value = mock_result
+
+        from services.book_suggestions import search_youtube_audiobook
+
+        video_id = search_youtube_audiobook("Atomic Habits", "James Clear")
+
+        assert video_id is None
+
+    @patch("subprocess.run")
+    def test_search_error(self, mock_run):
+        """Test error handling in YouTube search."""
+        mock_result = Mock()
+        mock_result.returncode = 1
+        mock_result.stderr = "Search failed"
+        mock_run.return_value = mock_result
+
+        from services.book_suggestions import search_youtube_audiobook
+
+        video_id = search_youtube_audiobook("Unknown Book", "Unknown Author")
+
+        assert video_id is None
+
+
 class TestParseSuggestions:
     """Tests for parsing AI responses."""
 
-    def test_parse_valid_suggestions(self):
+    @patch("services.book_suggestions.search_youtube_audiobook")
+    def test_parse_valid_suggestions(self, mock_search):
         """Test parsing well-formed suggestions."""
         content = """
 TITLE: Atomic Habits
 AUTHOR: James Clear
-URL: https://www.youtube.com/watch?v=dQw4w9WgXcQ
 ---
 TITLE: Deep Work
 AUTHOR: Cal Newport
-URL: https://youtu.be/jNQXAC9IVRw
 ---
 """
+        # Mock YouTube search to return video IDs
+        mock_search.side_effect = ["dQw4w9WgXcQ", "jNQXAC9IVRw"]
+
         suggestions = parse_suggestions(content)
 
         assert len(suggestions) == 2
         assert suggestions[0]["title"] == "Atomic Habits"
         assert suggestions[0]["video_id"] == "dQw4w9WgXcQ"
         assert suggestions[1]["video_id"] == "jNQXAC9IVRw"
+        assert mock_search.call_count == 2
 
-    def test_parse_missing_fields(self):
+    @patch("services.book_suggestions.search_youtube_audiobook")
+    def test_parse_missing_fields(self, mock_search):
         """Test parsing with missing required fields."""
         content = """
 TITLE: Incomplete Book
-AUTHOR: Unknown
 ---
-TITLE: No URL Book
-AUTHOR: Someone
-URL: not-a-valid-url
+AUTHOR: No Title
 ---
 TITLE: Valid Book
 AUTHOR: Valid Author
-URL: https://www.youtube.com/watch?v=dQw4w9WgXcQ
 ---
 """
+        # Mock YouTube search - only called for valid entries
+        mock_search.return_value = "dQw4w9WgXcQ"
+
         suggestions = parse_suggestions(content)
 
         # Only the valid one should be included
         assert len(suggestions) == 1
         assert suggestions[0]["title"] == "Valid Book"
+        assert mock_search.call_count == 1
 
-    def test_parse_empty_content(self):
+    @patch("services.book_suggestions.search_youtube_audiobook")
+    def test_parse_empty_content(self, mock_search):
         """Test parsing empty content."""
         suggestions = parse_suggestions("")
 
         assert len(suggestions) == 0
+        assert mock_search.call_count == 0
 
 
 @pytest.mark.asyncio

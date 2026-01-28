@@ -35,12 +35,15 @@ def start_youtube_stream(youtube_video_id: str, skip_transcription: bool, broadc
 
         # Get best audio format (usually opus/vorbis in webm, or aac in m4a)
         # Don't use --extract-audio or --audio-format with stdout - just get raw stream
+        # Use android player client to avoid JS runtime requirement
         yt_cmd = [
             "/usr/local/bin/yt-dlp",
             "-f",
             "bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio",
             "--no-playlist",
             "--no-warnings",
+            "--extractor-args",
+            "youtube:player_client=android",
             "-o",
             "-",  # output to stdout
             url,

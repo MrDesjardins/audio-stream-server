@@ -56,7 +56,7 @@ class Config:
             summary_provider=os.getenv("SUMMARY_PROVIDER", "openai").lower(),
             gemini_api_key=os.getenv("GEMINI_API_KEY"),
             # Trilium settings
-            trilium_url=os.getenv("TRILIUM_URL"),
+            trilium_url=os.getenv("TRILIUM_URL", "").rstrip("/") or None,
             trilium_etapi_token=os.getenv("TRILIUM_ETAPI_TOKEN"),
             trilium_parent_note_id=os.getenv("TRILIUM_PARENT_NOTE_ID"),
             # Book suggestions settings
