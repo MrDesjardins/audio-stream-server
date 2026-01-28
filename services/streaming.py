@@ -1,7 +1,7 @@
 """
-YouTube audio streaming service.
+YouTube audio download service.
 
-Handles yt-dlp and ffmpeg pipeline for streaming audio.
+Downloads audio from YouTube using yt-dlp and saves as MP3.
 """
 
 import logging
@@ -16,14 +16,17 @@ config = get_config()
 
 def start_youtube_download(youtube_video_id: str, skip_transcription: bool):
     """
-    Start yt-dlp -> ffmpeg pipeline to download and save audio file.
+    Download audio from YouTube and save as MP3 using yt-dlp.
+
+    Uses yt-dlp's built-in audio extraction (--extract-audio) to download
+    and convert directly to MP3. No ffmpeg pipe needed.
 
     Args:
         youtube_video_id: YouTube video ID
-        skip_transcription: Whether to skip saving audio for transcription
+        skip_transcription: Whether to skip saving audio for transcription (unused, kept for API compat)
 
     Returns:
-        The ffmpeg process
+        The subprocess if successful, None otherwise
     """
     audio_cache = get_audio_cache()
     audio_path = config.get_audio_path(youtube_video_id)
@@ -36,86 +39,57 @@ def start_youtube_download(youtube_video_id: str, skip_transcription: bool):
     logger.info(f"Downloading audio for video {youtube_video_id}")
     url = f"https://www.youtube.com/watch?v={youtube_video_id}"
 
-    # Get best audio format - simplified selector for maximum compatibility
-    # Use android player client to avoid JS runtime requirement
+    # Use yt-dlp to download and convert directly to MP3.
+    # --extract-audio handles the conversion internally (calls ffmpeg under the hood).
+    # This avoids pipe-based yt-dlp | ffmpeg pipelines which can deadlock.
+    stderr_path = audio_path + ".err"
     yt_cmd = [
         "/usr/local/bin/yt-dlp",
         "-f",
-        "bestaudio/best",  # Simplified: just get best audio, any format
+        "bestaudio/best",
+        "--extract-audio",
+        "--audio-format",
+        "mp3",
+        "--audio-quality",
+        "2",  # VBR quality 2 (high quality, ~170-210 kbps)
         "--no-playlist",
-        "--no-warnings",
         "--extractor-args",
         "youtube:player_client=android",
         "-o",
-        "-",  # output to stdout
+        audio_path,  # Output directly to target path
         url,
     ]
 
-    # Build FFmpeg command - directly save to file (no stdout streaming needed)
-    ffmpeg_cmd = [
-        "ffmpeg",
-        "-probesize",
-        "10M",  # Analyze more data for better format detection
-        "-analyzeduration",
-        "10M",  # Analyze longer for accurate stream info
-        "-err_detect",
-        "ignore_err",  # Don't stop on minor errors
-        "-fflags",
-        "+genpts+igndts+discardcorrupt",  # Generate PTS, ignore DTS, discard corrupt packets
-        "-thread_queue_size",
-        "4096",  # Large input queue
-        "-i",
-        "pipe:0",  # Read from stdin
-        "-map",
-        "0:a",  # Map the audio stream
-        "-c:a",
-        "libmp3lame",  # MP3 encoder
-        "-q:a",
-        "2",  # VBR quality 2 (high quality, ~170-210 kbps)
-        "-ar",
-        "48000",  # Sample rate
-        "-ac",
-        "2",  # Stereo
-        "-async",
-        "1",  # Audio sync method
-        "-y",  # Overwrite output file
-        audio_path,  # Output directly to file
-    ]
-
-    # Start the download pipeline
     try:
-        yt_proc = subprocess.Popen(
-            yt_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,  # Capture errors
-            bufsize=64 * 1024 * 1024
-        )
-        ffmpeg_proc = subprocess.Popen(
-            ffmpeg_cmd,
-            stdin=yt_proc.stdout,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,  # Capture errors
-            bufsize=64 * 1024 * 1024
-        )
-        yt_proc.stdout.close()
+        # Write stderr to a file to avoid pipe buffer deadlock on long downloads
+        with open(stderr_path, "w") as stderr_file:
+            proc = subprocess.Popen(
+                yt_cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=stderr_file,
+            )
 
         logger.info(f"Started downloading audio for video {youtube_video_id} to {audio_path}")
 
-        # Wait for download to complete and check return codes
-        ffmpeg_returncode = ffmpeg_proc.wait()
-        yt_returncode = yt_proc.wait()
+        # Wait for download to complete
+        proc.wait()
 
         # Check for errors
-        if yt_returncode != 0:
-            yt_stderr = yt_proc.stderr.read().decode('utf-8', errors='ignore')
-            logger.error(f"yt-dlp failed for {youtube_video_id} (exit code {yt_returncode})")
-            logger.error(f"yt-dlp stderr: {yt_stderr[-500:]}")  # Last 500 chars
-            return None
-
-        if ffmpeg_returncode != 0:
-            ffmpeg_stderr = ffmpeg_proc.stderr.read().decode('utf-8', errors='ignore')
-            logger.error(f"ffmpeg failed for {youtube_video_id} (exit code {ffmpeg_returncode})")
-            logger.error(f"ffmpeg stderr: {ffmpeg_stderr[-500:]}")  # Last 500 chars
+        if proc.returncode != 0:
+            error_output = ""
+            try:
+                with open(stderr_path, "r") as f:
+                    error_output = f.read()[-500:]
+            except Exception:
+                pass
+            logger.error(f"yt-dlp failed for {youtube_video_id} (exit code {proc.returncode})")
+            logger.error(f"yt-dlp output: {error_output}")
+            # Clean up partial file if it exists
+            if os.path.exists(audio_path):
+                try:
+                    os.remove(audio_path)
+                except Exception:
+                    pass
             return None
 
         # Verify file was created
@@ -124,7 +98,7 @@ def start_youtube_download(youtube_video_id: str, skip_transcription: bool):
             logger.info(
                 f"Audio file downloaded: {audio_path} ({file_size / 1024 / 1024:.2f} MB)"
             )
-            return ffmpeg_proc
+            return proc
         else:
             logger.error(f"Download completed but file not found: {audio_path}")
             return None
@@ -135,7 +109,13 @@ def start_youtube_download(youtube_video_id: str, skip_transcription: bool):
         if os.path.exists(audio_path):
             try:
                 os.remove(audio_path)
-                logger.info(f"Cleaned up partial file: {audio_path}")
             except Exception:
                 pass
         return None
+    finally:
+        # Clean up stderr log file
+        try:
+            if os.path.exists(stderr_path):
+                os.remove(stderr_path)
+        except Exception:
+            pass
