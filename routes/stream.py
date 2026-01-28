@@ -140,11 +140,17 @@ def stream_video(request: StreamRequest):
     # Start new stream (handles stopping existing stream internally)
     state.start_stream(video_id, request.skip_transcription)
 
-    return {"status": "stream started", "youtube_video_id": video_id, "title": video_title,}
+    return {
+        "status": "stream started",
+        "youtube_video_id": video_id,
+        "title": video_title,
+    }
+
 
 def _audio_is_ready(video_id: str) -> bool:
     """Check if the audio file exists and is not still being downloaded."""
     from services.streaming import is_download_in_progress
+
     audio_path = config.get_audio_path(video_id)
     return os.path.exists(audio_path) and not is_download_in_progress(video_id)
 
@@ -160,7 +166,7 @@ def get_audio_file(video_id: str):
         # FileResponse automatically handles streaming, chunking, and seeking (Range headers)
         return FileResponse(
             path=audio_path,
-            media_type='audio/mpeg',
+            media_type="audio/mpeg",
             filename=f"{video_id}.mp3",
             headers={
                 "Accept-Ranges": "bytes",
@@ -168,13 +174,13 @@ def get_audio_file(video_id: str):
                 "Content-Length": str(file_size),
                 "Access-Control-Allow-Origin": "*",
                 "Connection": "keep-alive",
-            }
+            },
         )
 
     return JSONResponse(
         status_code=404,
         content={"error": "Audio not yet available", "status": "downloading"},
-        headers={"Retry-After": "2"}
+        headers={"Retry-After": "2"},
     )
 
 
@@ -194,14 +200,11 @@ def check_audio_file(video_id: str):
                 "Content-Length": str(file_size),
                 "Content-Type": "audio/mpeg",
                 "Access-Control-Allow-Origin": "*",
-            }
+            },
         )
 
-    return JSONResponse(
-        status_code=404,
-        content={},
-        headers={"Retry-After": "2"}
-    )
+    return JSONResponse(status_code=404, content={}, headers={"Retry-After": "2"})
+
 
 @router.post("/stop")
 def stop_stream():

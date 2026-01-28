@@ -6,7 +6,7 @@ import threading
 import time
 import random
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from queue import Queue, Empty
 from typing import Optional, Dict
@@ -98,7 +98,7 @@ class TranscriptionQueue:
 
                 # Set timestamp on completion
                 if status in [JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.SKIPPED]:
-                    job.completed_at = datetime.utcnow()
+                    job.completed_at = datetime.now(timezone.utc)
 
                 # Update other fields
                 if error:
@@ -119,7 +119,7 @@ class TranscriptionQueue:
 
     def _cleanup_old_jobs(self):
         """Remove jobs older than max_age."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         cutoff = now - timedelta(hours=self.max_job_age_hours)
 
         with self.lock:

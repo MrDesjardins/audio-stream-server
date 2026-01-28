@@ -127,7 +127,11 @@ def prefetch_audio(video_id: str):
     Called by the frontend when current track is nearing its end,
     so the next track is cached and ready to play immediately.
     """
-    from services.streaming import start_youtube_download, finish_youtube_download, is_download_in_progress
+    from services.streaming import (
+        start_youtube_download,
+        finish_youtube_download,
+        is_download_in_progress,
+    )
     from services.cache import get_audio_cache
     import os
 

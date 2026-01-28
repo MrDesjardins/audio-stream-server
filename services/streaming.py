@@ -145,9 +145,7 @@ def finish_youtube_download(youtube_video_id: str, returncode: int):
         # Success — verify the file exists
         if os.path.exists(audio_path):
             file_size = os.path.getsize(audio_path)
-            logger.info(
-                f"Audio file downloaded: {audio_path} ({file_size / 1024 / 1024:.2f} MB)"
-            )
+            logger.info(f"Audio file downloaded: {audio_path} ({file_size / 1024 / 1024:.2f} MB)")
         else:
             logger.error(f"Download completed (rc=0) but output file not found: {audio_path}")
 

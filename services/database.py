@@ -1,7 +1,7 @@
 import sqlite3
 import logging
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional, Dict
 from contextlib import contextmanager
 from queue import Queue, Empty
@@ -156,7 +156,7 @@ def add_to_history(
     Returns:
         The ID of the record
     """
-    timestamp = datetime.utcnow().isoformat()
+    timestamp = datetime.now(timezone.utc).isoformat()
 
     with get_db_connection() as conn:
         cursor = conn.cursor()
@@ -266,7 +266,7 @@ def add_to_queue(
     Returns:
         The ID of the inserted queue item
     """
-    timestamp = datetime.utcnow().isoformat()
+    timestamp = datetime.now(timezone.utc).isoformat()
 
     with get_db_connection() as conn:
         cursor = conn.cursor()
