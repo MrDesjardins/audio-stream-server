@@ -70,7 +70,7 @@ def start_youtube_download(youtube_video_id: str, skip_transcription: bool):
         "--audio-format",
         "mp3",
         "--audio-quality",
-        "2",  # VBR quality 2 (high quality, ~170-210 kbps)
+        str(config.audio_quality),  # VBR 0-9 from AUDIO_QUALITY env var
         "--no-playlist",
         "--extractor-args",
         "youtube:player_client=android",

@@ -17,6 +17,15 @@ class Config:
     fastapi_host: str
     fastapi_port: int
 
+    # Audio settings
+    # 2 = ~170 kbps (~76 MB/hr)
+    # 3 = ~160 kbps (~72 MB/hr)
+    # 4 = ~128 kbps (~58 MB per hour)
+    # 5 = ~112 kbps (~50 MB/hr)
+    # 6 = ~96 kbps  (~43 MB/hr)
+    # 7 = ~80 kbps  (~36 MB/hr)
+    audio_quality: int  # VBR quality 0-9 (lower = higher quality, 4 = ~128kbps)
+
     # Transcription settings
     transcription_enabled: bool
     openai_api_key: Optional[str]
@@ -47,6 +56,8 @@ class Config:
             # Server settings
             fastapi_host=os.getenv("FASTAPI_HOST", "127.0.0.1"),
             fastapi_port=int(os.getenv("FASTAPI_API_PORT", "8000")),
+            # Audio settings
+            audio_quality=int(os.getenv("AUDIO_QUALITY", "4")),
             # Transcription settings
             transcription_enabled=transcription_enabled,
             openai_api_key=os.getenv("OPENAI_API_KEY"),
