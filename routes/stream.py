@@ -10,7 +10,6 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from config import get_config
 from services.background_tasks import get_transcription_queue, TranscriptionJob
-from services.streaming import start_youtube_stream
 from services.database import add_to_history, get_history, clear_history
 from services.youtube import get_video_metadata, extract_video_id
 
