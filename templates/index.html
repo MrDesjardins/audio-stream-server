@@ -268,7 +268,7 @@
         initTheme();
 
         // File polling functions
-        async function waitForAudioFile(videoId, maxWaitSeconds = 30) {
+        async function waitForAudioFile(videoId, maxWaitSeconds = 60) {
             /**
              * Poll the /audio endpoint until the file is available or timeout.
              * Returns true if file is ready, false if timeout.
@@ -290,7 +290,8 @@
 
                     // File not ready yet, wait before retry
                     const waitTime = Math.min(500 + (attemptCount * 100), 2000); // Progressive backoff, max 2s
-                    showStreamStatus(`Preparing audio... (${Math.ceil((Date.now() - startTime) / 1000)}s)`);
+                    const elapsed = Math.ceil((Date.now() - startTime) / 1000);
+                    showStreamStatus(`Downloading from YouTube... (${elapsed}s)`);
                     await new Promise(resolve => setTimeout(resolve, waitTime));
                 } catch (error) {
                     console.warn(`Polling attempt ${attemptCount} failed:`, error);
@@ -751,12 +752,13 @@
                     await renderQueue();
 
                     // Wait for audio file to be ready before playing
-                    showStreamStatus('Preparing audio...');
-                    const fileReady = await waitForAudioFile(data.youtube_video_id, 30);
+                    showStreamStatus('Starting download from YouTube...');
+                    const fileReady = await waitForAudioFile(data.youtube_video_id, 60);
 
                     if (!fileReady) {
-                        updateStatus('Audio file preparation timed out', 'error');
+                        updateStatus('Download timed out or failed. Check server logs or try again.', 'error');
                         hideStreamStatus();
+                        isPlaying = false;
                         return;
                     }
 
@@ -981,12 +983,13 @@
                     }
 
                     // Wait for audio file to be ready before playing
-                    showStreamStatus('Preparing audio...');
-                    const fileReady = await waitForAudioFile(youtube_video_id, 30);
+                    showStreamStatus('Starting download from YouTube...');
+                    const fileReady = await waitForAudioFile(youtube_video_id, 60);
 
                     if (!fileReady) {
-                        updateStatus('Audio file preparation timed out', 'error');
+                        updateStatus('Download timed out or failed. Check server logs or try again.', 'error');
                         hideStreamStatus();
+                        isPlaying = false;
                         return;
                     }
 

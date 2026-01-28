@@ -36,12 +36,12 @@ def start_youtube_download(youtube_video_id: str, skip_transcription: bool):
     logger.info(f"Downloading audio for video {youtube_video_id}")
     url = f"https://www.youtube.com/watch?v={youtube_video_id}"
 
-    # Get best audio format (usually opus/vorbis in webm, or aac in m4a)
+    # Get best audio format - simplified selector for maximum compatibility
     # Use android player client to avoid JS runtime requirement
     yt_cmd = [
         "/usr/local/bin/yt-dlp",
         "-f",
-        "bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio",
+        "bestaudio/best",  # Simplified: just get best audio, any format
         "--no-playlist",
         "--no-warnings",
         "--extractor-args",
@@ -83,29 +83,59 @@ def start_youtube_download(youtube_video_id: str, skip_transcription: bool):
     ]
 
     # Start the download pipeline
-    yt_proc = subprocess.Popen(yt_cmd, stdout=subprocess.PIPE, bufsize=64 * 1024 * 1024)
-    ffmpeg_proc = subprocess.Popen(
-        ffmpeg_cmd,
-        stdin=yt_proc.stdout,
-        stdout=subprocess.DEVNULL,  # No stdout output needed
-        stderr=subprocess.DEVNULL,  # Suppress ffmpeg output
-        bufsize=64 * 1024 * 1024
-    )
-    yt_proc.stdout.close()
-
-    logger.info(f"Started downloading audio for video {youtube_video_id} to {audio_path}")
-
-    # Wait for download to complete
-    ffmpeg_proc.wait()
-    yt_proc.wait()
-
-    # Log the final file size
-    if os.path.exists(audio_path):
-        file_size = os.path.getsize(audio_path)
-        logger.info(
-            f"Audio file downloaded: {audio_path} ({file_size / 1024 / 1024:.2f} MB)"
+    try:
+        yt_proc = subprocess.Popen(
+            yt_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,  # Capture errors
+            bufsize=64 * 1024 * 1024
         )
-    else:
-        logger.error(f"Failed to download audio file for {youtube_video_id}")
+        ffmpeg_proc = subprocess.Popen(
+            ffmpeg_cmd,
+            stdin=yt_proc.stdout,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,  # Capture errors
+            bufsize=64 * 1024 * 1024
+        )
+        yt_proc.stdout.close()
 
-    return ffmpeg_proc
+        logger.info(f"Started downloading audio for video {youtube_video_id} to {audio_path}")
+
+        # Wait for download to complete and check return codes
+        ffmpeg_returncode = ffmpeg_proc.wait()
+        yt_returncode = yt_proc.wait()
+
+        # Check for errors
+        if yt_returncode != 0:
+            yt_stderr = yt_proc.stderr.read().decode('utf-8', errors='ignore')
+            logger.error(f"yt-dlp failed for {youtube_video_id} (exit code {yt_returncode})")
+            logger.error(f"yt-dlp stderr: {yt_stderr[-500:]}")  # Last 500 chars
+            return None
+
+        if ffmpeg_returncode != 0:
+            ffmpeg_stderr = ffmpeg_proc.stderr.read().decode('utf-8', errors='ignore')
+            logger.error(f"ffmpeg failed for {youtube_video_id} (exit code {ffmpeg_returncode})")
+            logger.error(f"ffmpeg stderr: {ffmpeg_stderr[-500:]}")  # Last 500 chars
+            return None
+
+        # Verify file was created
+        if os.path.exists(audio_path):
+            file_size = os.path.getsize(audio_path)
+            logger.info(
+                f"Audio file downloaded: {audio_path} ({file_size / 1024 / 1024:.2f} MB)"
+            )
+            return ffmpeg_proc
+        else:
+            logger.error(f"Download completed but file not found: {audio_path}")
+            return None
+
+    except Exception as e:
+        logger.error(f"Exception during download for {youtube_video_id}: {e}")
+        # Clean up partial file if it exists
+        if os.path.exists(audio_path):
+            try:
+                os.remove(audio_path)
+                logger.info(f"Cleaned up partial file: {audio_path}")
+            except Exception:
+                pass
+        return None
