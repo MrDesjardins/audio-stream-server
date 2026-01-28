@@ -14,35 +14,54 @@ logger = logging.getLogger(__name__)
 config = get_config()
 
 
+def _get_download_marker(youtube_video_id: str) -> str:
+    """Get the path for the download-in-progress marker file."""
+    return os.path.join(config.temp_audio_dir, f"{youtube_video_id}.downloading")
+
+
+def is_download_in_progress(youtube_video_id: str) -> bool:
+    """Check if a download is currently in progress for this video."""
+    return os.path.exists(_get_download_marker(youtube_video_id))
+
+
 def start_youtube_download(youtube_video_id: str, skip_transcription: bool):
     """
-    Download audio from YouTube and save as MP3 using yt-dlp.
+    Start downloading audio from YouTube. Returns the process immediately
+    so the caller can store it and terminate if needed.
 
-    Uses yt-dlp's built-in audio extraction (--extract-audio) to download
-    and convert directly to MP3. No ffmpeg pipe needed.
+    Call finish_youtube_download() after proc.wait() to handle cleanup.
 
     Args:
         youtube_video_id: YouTube video ID
-        skip_transcription: Whether to skip saving audio for transcription (unused, kept for API compat)
+        skip_transcription: Unused, kept for API compatibility
 
     Returns:
-        The subprocess if successful, None otherwise
+        (proc, youtube_video_id) tuple if started, (None, video_id) if already cached or error
     """
     audio_cache = get_audio_cache()
     audio_path = config.get_audio_path(youtube_video_id)
 
-    # If audio file already exists in cache, no need to download again
     if audio_cache.check_file_exists(youtube_video_id):
         logger.info(f"Audio file for video {youtube_video_id} already exists in cache")
-        return None
+        return None, youtube_video_id
 
     logger.info(f"Downloading audio for video {youtube_video_id}")
     url = f"https://www.youtube.com/watch?v={youtube_video_id}"
 
-    # Use yt-dlp to download and convert directly to MP3.
-    # --extract-audio handles the conversion internally (calls ffmpeg under the hood).
-    # This avoids pipe-based yt-dlp | ffmpeg pipelines which can deadlock.
+    # Create marker file so the /audio endpoint won't serve a partial file
+    marker_path = _get_download_marker(youtube_video_id)
+    try:
+        open(marker_path, "w").close()
+    except Exception as e:
+        logger.error(f"Failed to create download marker: {e}")
+
     stderr_path = audio_path + ".err"
+
+    # Use yt-dlp to download and convert directly to MP3.
+    # -o uses the base path WITHOUT extension — yt-dlp appends .mp3 via --audio-format.
+    # Passing -o with .mp3 extension causes yt-dlp to create path.mp3.mp3.
+    # --extract-audio handles the ffmpeg conversion internally.
+    base_path = os.path.join(config.temp_audio_dir, youtube_video_id)
     yt_cmd = [
         "/usr/local/bin/yt-dlp",
         "-f",
@@ -56,7 +75,7 @@ def start_youtube_download(youtube_video_id: str, skip_transcription: bool):
         "--extractor-args",
         "youtube:player_client=android",
         "-o",
-        audio_path,  # Output directly to target path
+        base_path,  # No extension — yt-dlp adds .mp3
         url,
     ]
 
@@ -70,52 +89,71 @@ def start_youtube_download(youtube_video_id: str, skip_transcription: bool):
             )
 
         logger.info(f"Started downloading audio for video {youtube_video_id} to {audio_path}")
+        return proc, youtube_video_id
 
-        # Wait for download to complete
-        proc.wait()
+    except Exception as e:
+        logger.error(f"Exception starting download for {youtube_video_id}: {e}")
+        # Clean up marker on failure to start
+        try:
+            if os.path.exists(marker_path):
+                os.remove(marker_path)
+        except Exception:
+            pass
+        return None, youtube_video_id
 
-        # Check for errors
-        if proc.returncode != 0:
-            error_output = ""
+
+def finish_youtube_download(youtube_video_id: str, returncode: int):
+    """
+    Handle post-download cleanup: remove marker file, log errors on failure.
+    Call this after proc.wait() completes in the download thread.
+
+    Args:
+        youtube_video_id: YouTube video ID
+        returncode: Process exit code (0 = success)
+    """
+    audio_path = config.get_audio_path(youtube_video_id)
+    marker_path = _get_download_marker(youtube_video_id)
+    stderr_path = audio_path + ".err"
+
+    # Read stderr for error reporting
+    error_output = ""
+    try:
+        with open(stderr_path, "r") as f:
+            error_output = f.read()[-500:]
+    except Exception:
+        pass
+
+    # Clean up stderr file
+    try:
+        if os.path.exists(stderr_path):
+            os.remove(stderr_path)
+    except Exception:
+        pass
+
+    if returncode != 0:
+        # Download failed or was killed — clean up any partial mp3 file
+        logger.error(f"Download failed for {youtube_video_id} (exit code {returncode})")
+        if error_output:
+            logger.error(f"yt-dlp output: {error_output}")
+        if os.path.exists(audio_path):
             try:
-                with open(stderr_path, "r") as f:
-                    error_output = f.read()[-500:]
+                os.remove(audio_path)
+                logger.info(f"Cleaned up partial file: {audio_path}")
             except Exception:
                 pass
-            logger.error(f"yt-dlp failed for {youtube_video_id} (exit code {proc.returncode})")
-            logger.error(f"yt-dlp output: {error_output}")
-            # Clean up partial file if it exists
-            if os.path.exists(audio_path):
-                try:
-                    os.remove(audio_path)
-                except Exception:
-                    pass
-            return None
-
-        # Verify file was created
+    else:
+        # Success — verify the file exists
         if os.path.exists(audio_path):
             file_size = os.path.getsize(audio_path)
             logger.info(
                 f"Audio file downloaded: {audio_path} ({file_size / 1024 / 1024:.2f} MB)"
             )
-            return proc
         else:
-            logger.error(f"Download completed but file not found: {audio_path}")
-            return None
+            logger.error(f"Download completed (rc=0) but output file not found: {audio_path}")
 
-    except Exception as e:
-        logger.error(f"Exception during download for {youtube_video_id}: {e}")
-        # Clean up partial file if it exists
-        if os.path.exists(audio_path):
-            try:
-                os.remove(audio_path)
-            except Exception:
-                pass
-        return None
-    finally:
-        # Clean up stderr log file
-        try:
-            if os.path.exists(stderr_path):
-                os.remove(stderr_path)
-        except Exception:
-            pass
+    # Always remove the marker file — download is no longer in progress
+    try:
+        if os.path.exists(marker_path):
+            os.remove(marker_path)
+    except Exception:
+        pass

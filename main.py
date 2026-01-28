@@ -59,10 +59,12 @@ config = get_config()
 logger.info("Initializing database")
 init_database()
 
+# Audio download directory is always needed
+os.makedirs(config.temp_audio_dir, exist_ok=True)
+
 # Initialize background tasks if transcription is enabled
 if config.transcription_enabled:
     logger.info("Transcription enabled - initializing background tasks")
-    os.makedirs(config.temp_audio_dir, exist_ok=True)
     init_background_tasks()
 else:
     logger.info("Transcription disabled")

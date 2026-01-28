@@ -326,7 +326,7 @@
             const currentDelay = Math.min(retryDelay * Math.pow(1.5, retryCount - 1), maxRetryDelay);
 
             console.log(`Retry attempt ${retryCount}/${maxRetries} in ${currentDelay}ms...`);
-            showStreamStatus(`Reconnecting (attempt ${retryCount}/${maxRetries})... Buffering...`);
+            showStreamStatus(`Loading audio (attempt ${retryCount}/${maxRetries})...`);
 
             isRetrying = true;
 
@@ -954,6 +954,7 @@
                 updateStatus(data.status || data.detail, res.ok ? 'streaming' : 'error');
 
                 if (res.ok) {
+                    currentVideoId = youtube_video_id;
                     isPlaying = true;
                     cancelRetry(); // Cancel any ongoing retries
 
@@ -968,17 +969,13 @@
                         setupMediaSession(currentTrack);
                     }
 
-                    // Track current video for transcription (only if not skipped)
+                    // Update transcription status UI if enabled
                     if (transcriptionEnabled) {
                         if (skip_transcription) {
-                            currentVideoId = null;
-                            // Update transcription status to show it was skipped
                             const container = document.getElementById('transcription-status');
                             if (container) {
                                 container.innerHTML = '<p class="transcription-idle"><i class="fas fa-music"></i> Transcription skipped for this stream</p>';
                             }
-                        } else {
-                            currentVideoId = youtube_video_id;
                         }
                     }
 

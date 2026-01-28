@@ -33,7 +33,7 @@ class StreamState:
 
     def start_stream(self, video_id: str, skip_transcription: bool):
         """Start new download, stopping existing one."""
-        from services.streaming import start_youtube_download
+        from services.streaming import start_youtube_download, finish_youtube_download
 
         with self._lock:
             # Terminate existing download
@@ -44,17 +44,25 @@ class StreamState:
                     self._current_process.wait(timeout=5)
                 except Exception:
                     self._current_process.kill()
+                self._current_process = None
 
-            # Start new download in a thread
-            def target():
-                self._current_process = start_youtube_download(
-                    video_id, skip_transcription
-                )
-                with self._lock:
-                    self._current_process = None
+        # Start the download process (returns immediately)
+        proc, vid = start_youtube_download(video_id, skip_transcription)
 
-            self._download_thread = threading.Thread(target=target, daemon=True)
-            self._download_thread.start()
+        with self._lock:
+            self._current_process = proc  # Store immediately so stop_stream() can kill it
+
+        def target():
+            if proc is not None:
+                # Wait for download to complete
+                proc.wait()
+                # Handle rename and cleanup only if download succeeded
+                finish_youtube_download(video_id, proc.returncode)
+            with self._lock:
+                self._current_process = None
+
+        self._download_thread = threading.Thread(target=target, daemon=True)
+        self._download_thread.start()
 
     def stop_stream(self) -> bool:
         """Stop current download."""
@@ -134,13 +142,19 @@ def stream_video(request: StreamRequest):
 
     return {"status": "stream started", "youtube_video_id": video_id, "title": video_title,}
 
+def _audio_is_ready(video_id: str) -> bool:
+    """Check if the audio file exists and is not still being downloaded."""
+    from services.streaming import is_download_in_progress
+    audio_path = config.get_audio_path(video_id)
+    return os.path.exists(audio_path) and not is_download_in_progress(video_id)
+
+
 @router.get("/audio/{video_id}")
 def get_audio_file(video_id: str):
     """Serve the actual MP3 file for the player with mobile-optimized headers."""
-    audio_path = config.get_audio_path(video_id) # e.g., /tmp/audio-transcriptions/video_id.mp3
+    audio_path = config.get_audio_path(video_id)
 
-    if os.path.exists(audio_path):
-        # Get file size for progress tracking
+    if _audio_is_ready(video_id):
         file_size = os.path.getsize(audio_path)
 
         # FileResponse automatically handles streaming, chunking, and seeking (Range headers)
@@ -149,15 +163,10 @@ def get_audio_file(video_id: str):
             media_type='audio/mpeg',
             filename=f"{video_id}.mp3",
             headers={
-                # Enable byte-range requests for seeking (mobile browsers rely on this)
                 "Accept-Ranges": "bytes",
-                # Allow aggressive caching once file is complete
                 "Cache-Control": "public, max-age=3600",
-                # Provide file size for download progress
                 "Content-Length": str(file_size),
-                # Allow CORS for cross-origin requests
                 "Access-Control-Allow-Origin": "*",
-                # Keep connection alive for mobile
                 "Connection": "keep-alive",
             }
         )
@@ -165,19 +174,20 @@ def get_audio_file(video_id: str):
     return JSONResponse(
         status_code=404,
         content={"error": "Audio not yet available", "status": "downloading"},
-        headers={"Retry-After": "2"}  # Suggest retry after 2 seconds
+        headers={"Retry-After": "2"}
     )
+
 
 @router.head("/audio/{video_id}")
 def check_audio_file(video_id: str):
-    """Check if audio file exists (for polling) - HEAD request returns headers only."""
+    """Check if audio file exists and is ready (for polling). HEAD request."""
     audio_path = config.get_audio_path(video_id)
 
-    if os.path.exists(audio_path):
+    if _audio_is_ready(video_id):
         file_size = os.path.getsize(audio_path)
         return JSONResponse(
             status_code=200,
-            content={},  # HEAD requests should have empty body
+            content={},
             headers={
                 "Accept-Ranges": "bytes",
                 "Cache-Control": "public, max-age=3600",
@@ -189,7 +199,7 @@ def check_audio_file(video_id: str):
 
     return JSONResponse(
         status_code=404,
-        content={},  # HEAD requests should have empty body
+        content={},
         headers={"Retry-After": "2"}
     )
 
