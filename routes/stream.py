@@ -168,6 +168,31 @@ def get_audio_file(video_id: str):
         headers={"Retry-After": "2"}  # Suggest retry after 2 seconds
     )
 
+@router.head("/audio/{video_id}")
+def check_audio_file(video_id: str):
+    """Check if audio file exists (for polling) - HEAD request returns headers only."""
+    audio_path = config.get_audio_path(video_id)
+
+    if os.path.exists(audio_path):
+        file_size = os.path.getsize(audio_path)
+        return JSONResponse(
+            status_code=200,
+            content={},  # HEAD requests should have empty body
+            headers={
+                "Accept-Ranges": "bytes",
+                "Cache-Control": "public, max-age=3600",
+                "Content-Length": str(file_size),
+                "Content-Type": "audio/mpeg",
+                "Access-Control-Allow-Origin": "*",
+            }
+        )
+
+    return JSONResponse(
+        status_code=404,
+        content={},  # HEAD requests should have empty body
+        headers={"Retry-After": "2"}
+    )
+
 @router.post("/stop")
 def stop_stream():
     """Stop the current stream."""
