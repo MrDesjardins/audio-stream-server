@@ -83,10 +83,9 @@
                     <p id="status">Status: idle</p>
                 </div>
 
-                <!-- Stream URL: http://{{ host }}:{{ api_port }}/mystream -->
-                <!-- If you see 127.0.0.1 above, check your .env file FASTAPI_HOST setting -->
-                <audio id="player" controls playsinline preload="auto">
-                    <source src="http://{{ host }}:{{ api_port }}/mystream" type="audio/mpeg">
+                <!-- Audio player - source is set dynamically via JavaScript -->
+                <!-- If playback fails, check your .env file FASTAPI_HOST setting -->
+                <audio id="player" controls playsinline preload="none">
                     Your browser does not support audio.
                 </audio>
                 <div id="stream-status" class="stream-status hidden">
@@ -268,6 +267,41 @@
         // Initialize theme on page load
         initTheme();
 
+        // File polling functions
+        async function waitForAudioFile(videoId, maxWaitSeconds = 30) {
+            /**
+             * Poll the /audio endpoint until the file is available or timeout.
+             * Returns true if file is ready, false if timeout.
+             */
+            const startTime = Date.now();
+            const maxWaitMs = maxWaitSeconds * 1000;
+            let attemptCount = 0;
+
+            while (Date.now() - startTime < maxWaitMs) {
+                attemptCount++;
+                try {
+                    const audioUrl = `http://{{ host }}:{{ api_port }}/audio/${videoId}?t=${Date.now()}`;
+                    const response = await fetch(audioUrl, { method: 'HEAD' }); // Use HEAD to avoid downloading
+
+                    if (response.ok) {
+                        console.log(`Audio file ready after ${attemptCount} attempts (${Date.now() - startTime}ms)`);
+                        return true;
+                    }
+
+                    // File not ready yet, wait before retry
+                    const waitTime = Math.min(500 + (attemptCount * 100), 2000); // Progressive backoff, max 2s
+                    showStreamStatus(`Preparing audio... (${Math.ceil((Date.now() - startTime) / 1000)}s)`);
+                    await new Promise(resolve => setTimeout(resolve, waitTime));
+                } catch (error) {
+                    console.warn(`Polling attempt ${attemptCount} failed:`, error);
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+            }
+
+            console.error(`Audio file not ready after ${maxWaitSeconds}s`);
+            return false;
+        }
+
         // Stream Resilience Functions
         function showStreamStatus(message) {
             streamStatusText.textContent = message;
@@ -312,10 +346,12 @@
                                 lastPlayPosition = player.currentTime;
                             }
 
-                            // Reload the stream
-                            const streamUrl = 'http://{{ host }}:{{ api_port }}/mystream?t=' + Date.now();
-                            player.src = streamUrl;
-                            player.load();
+                            // Reload the audio file
+                            if (currentVideoId) {
+                                const audioUrl = `http://{{ host }}:{{ api_port }}/audio/${currentVideoId}?t=${Date.now()}`;
+                                player.src = audioUrl;
+                                player.load();
+                            }
 
                             // Try to restore position
                             if (lastPlayPosition > 0) {
@@ -714,16 +750,27 @@
                     await renderHistory();
                     await renderQueue();
 
-                    // NEW LOGIC: Point the player to the static file endpoint
-                    // We use data.youtube_video_id returned from your POST /stream response
+                    // Wait for audio file to be ready before playing
+                    showStreamStatus('Preparing audio...');
+                    const fileReady = await waitForAudioFile(data.youtube_video_id, 30);
+
+                    if (!fileReady) {
+                        updateStatus('Audio file preparation timed out', 'error');
+                        hideStreamStatus();
+                        return;
+                    }
+
+                    // File is ready, now load and play
                     const audioUrl = `http://{{ host }}:{{ api_port }}/audio/${data.youtube_video_id}?t=${Date.now()}`;
+                    console.log('Audio file ready, loading:', audioUrl);
 
                     player.src = audioUrl;
                     player.load();
+
+                    hideStreamStatus();
+
                     player.play().catch(e => {
                         console.error('Audio playback failed:', e);
-                        // If the file isn't ready yet, your /audio endpoint returns 404, 
-                        // which triggers the retry logic.
                         if (isPlaying) {
                             retryStream();
                         }
@@ -933,14 +980,27 @@
                         }
                     }
 
-                    // Reload audio to pick up new stream with cache-busting
-                    const streamUrl = 'http://{{ host }}:{{ api_port }}/mystream?t=' + Date.now();
-                    console.log('🎵 Setting audio player source to:', streamUrl);
-                    player.src = streamUrl;
+                    // Wait for audio file to be ready before playing
+                    showStreamStatus('Preparing audio...');
+                    const fileReady = await waitForAudioFile(youtube_video_id, 30);
+
+                    if (!fileReady) {
+                        updateStatus('Audio file preparation timed out', 'error');
+                        hideStreamStatus();
+                        return;
+                    }
+
+                    // File is ready, now load and play
+                    const audioUrl = `http://{{ host }}:{{ api_port }}/audio/${youtube_video_id}?t=${Date.now()}`;
+                    console.log('🎵 Audio file ready, loading:', audioUrl);
+
+                    player.src = audioUrl;
                     player.load();
+
+                    hideStreamStatus();
+
                     player.play().catch(e => {
                         console.error('❌ Audio playback failed:', e);
-                        console.log('   Stream URL:', streamUrl);
                         // Auto-retry if initial play fails
                         if (isPlaying) {
                             retryStream();

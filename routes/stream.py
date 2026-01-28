@@ -5,10 +5,8 @@ Streaming and playback routes.
 import logging
 import os
 import threading
-import asyncio
-import queue
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from config import get_config
 from services.background_tasks import get_transcription_queue, TranscriptionJob
@@ -29,48 +27,38 @@ class StreamRequest(BaseModel):
 class StreamState:
     """Thread-safe streaming state management."""
 
-    def __init__(self, lock, broadcaster):
+    def __init__(self, lock):
         self._lock = lock
-        self._broadcaster = broadcaster
         self._current_process = None
-        self._ffmpeg_thread = None
+        self._download_thread = None
 
     def start_stream(self, video_id: str, skip_transcription: bool):
-        """Start new stream, stopping existing one."""
-        from services.streaming import start_youtube_stream
-        from services.broadcast import StreamBroadcaster
+        """Start new download, stopping existing one."""
+        from services.streaming import start_youtube_download
 
         with self._lock:
-            # Terminate existing stream
+            # Terminate existing download
             if self._current_process:
-                logger.info("Stopping existing stream")
+                logger.info("Stopping existing download")
                 self._current_process.terminate()
                 try:
                     self._current_process.wait(timeout=5)
                 except Exception:
                     self._current_process.kill()
 
-            # Stop old broadcaster
-            self._broadcaster.stop()
-
-            # Create new broadcaster
-            self._broadcaster = StreamBroadcaster()
-
-            # Start new stream in a thread
+            # Start new download in a thread
             def target():
-                self._current_process = start_youtube_stream(
-                    video_id, skip_transcription, self._broadcaster
+                self._current_process = start_youtube_download(
+                    video_id, skip_transcription
                 )
                 with self._lock:
                     self._current_process = None
 
-            self._ffmpeg_thread = threading.Thread(target=target, daemon=True)
-            self._ffmpeg_thread.start()
-
-            return self._broadcaster
+            self._download_thread = threading.Thread(target=target, daemon=True)
+            self._download_thread.start()
 
     def stop_stream(self) -> bool:
-        """Stop current stream."""
+        """Stop current download."""
         with self._lock:
             if self._current_process:
                 self._current_process.terminate()
@@ -79,29 +67,23 @@ class StreamState:
                 except Exception:
                     self._current_process.kill()
                 self._current_process = None
-                self._broadcaster.stop()
                 return True
             return False
 
     def is_streaming(self) -> bool:
-        """Check if currently streaming."""
+        """Check if currently downloading."""
         with self._lock:
             return self._current_process is not None
-
-    @property
-    def broadcaster(self):
-        """Get current broadcaster (read-only)."""
-        return self._broadcaster
 
 
 # Global instance
 _stream_state = None
 
 
-def init_stream_globals(proc_lock, bc):
+def init_stream_globals(proc_lock):
     """Initialize global state from main.py."""
     global _stream_state
-    _stream_state = StreamState(proc_lock, bc)
+    _stream_state = StreamState(proc_lock)
 
 
 def get_stream_state() -> StreamState:
@@ -155,18 +137,37 @@ def stream_video(request: StreamRequest):
 
 @router.get("/audio/{video_id}")
 def get_audio_file(video_id: str):
-    """Serve the actual MP3 file for the player."""
+    """Serve the actual MP3 file for the player with mobile-optimized headers."""
     audio_path = config.get_audio_path(video_id) # e.g., /tmp/audio-transcriptions/video_id.mp3
-    
+
     if os.path.exists(audio_path):
+        # Get file size for progress tracking
+        file_size = os.path.getsize(audio_path)
+
         # FileResponse automatically handles streaming, chunking, and seeking (Range headers)
         return FileResponse(
-            path=audio_path, 
-            media_type='audio/mpeg', 
-            filename=f"{video_id}.mp3"
+            path=audio_path,
+            media_type='audio/mpeg',
+            filename=f"{video_id}.mp3",
+            headers={
+                # Enable byte-range requests for seeking (mobile browsers rely on this)
+                "Accept-Ranges": "bytes",
+                # Allow aggressive caching once file is complete
+                "Cache-Control": "public, max-age=3600",
+                # Provide file size for download progress
+                "Content-Length": str(file_size),
+                # Allow CORS for cross-origin requests
+                "Access-Control-Allow-Origin": "*",
+                # Keep connection alive for mobile
+                "Connection": "keep-alive",
+            }
         )
-    
-    return JSONResponse(status_code=404, content={"error": "Audio not yet available"})
+
+    return JSONResponse(
+        status_code=404,
+        content={"error": "Audio not yet available", "status": "downloading"},
+        headers={"Retry-After": "2"}  # Suggest retry after 2 seconds
+    )
 
 @router.post("/stop")
 def stop_stream():
@@ -182,71 +183,6 @@ def get_status():
     """Get the current streaming status."""
     state = get_stream_state()
     return {"status": "streaming" if state.is_streaming() else "idle"}
-
-
-@router.get("/mystream")
-async def stream_audio(request: Request):
-    """Serve current ffmpeg stdout as audio (with multi-client support)."""
-    state = get_stream_state()
-    logger.info(f"🎵 /mystream accessed by {request.client.host}:{request.client.port}")
-
-    if not state.broadcaster.is_active():
-        logger.warning(f"❌ No active stream when /mystream was accessed")
-        raise HTTPException(status_code=400, detail="No active stream")
-
-    logger.info(
-        f"✓ Streaming audio to client (broadcaster active with {len(state.broadcaster.clients)} clients)"
-    )
-
-    # Subscribe to broadcaster
-    client_queue = state.broadcaster.subscribe()
-
-    async def stream_generator():
-        """Generate stream chunks from broadcaster queue."""
-        try:
-            while True:
-                try:
-                    # Wait for next chunk from broadcaster
-                    chunk = await asyncio.to_thread(client_queue.get, timeout=1.0)
-
-                    # None signals end of stream
-                    if chunk is None:
-                        logger.info(f"Stream ended for client {request.client.host}")
-                        break
-
-                    yield chunk
-
-                except queue.Empty:
-                    # Timeout waiting for chunk, check if stream is still active
-                    if not state.broadcaster.is_active():
-                        logger.info(
-                            f"Stream ended (broadcaster inactive) for client {request.client.host}"
-                        )
-                        break
-
-        except asyncio.CancelledError:
-            logger.info(f"Client {request.client.host} disconnected")
-        except Exception as e:
-            logger.error(f"Error streaming to client {request.client.host}: {e}")
-        finally:
-            # Unsubscribe client when done
-            state.broadcaster.unsubscribe(client_queue)
-
-    return StreamingResponse(
-        stream_generator(),
-        media_type="audio/mpeg",
-        headers={
-            # Encourage browser to buffer more aggressively
-            "Cache-Control": "no-cache",
-            # Allow credentials for CORS if needed
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Credentials": "true",
-            # Keep connection alive
-            "Connection": "keep-alive",
-            # Indicate we accept range requests for seeking
-            "Accept-Ranges": "bytes",
-        },
-    )
 
 
 @router.get("/history")

@@ -17,7 +17,6 @@ load_dotenv()
 # Import services
 from config import get_config
 from services.background_tasks import init_background_tasks
-from services.broadcast import StreamBroadcaster
 from services.database import init_database
 
 # Import routers
@@ -47,7 +46,7 @@ logger.info("SERVER CONFIGURATION")
 logger.info(f"ENV: {env}")
 logger.info(f"FASTAPI_HOST: {host}")
 logger.info(f"FASTAPI_API_PORT: {api_port}")
-logger.info(f"Stream URL will be: http://{host}:{api_port}/mystream")
+logger.info(f"Audio files will be served from: http://{host}:{api_port}/audio/{{video_id}}")
 logger.info("=" * 60)
 
 # Initialize FastAPI app
@@ -74,7 +73,6 @@ templates = Jinja2Templates(directory="templates")
 
 # Initialize global state for streaming
 process_lock = threading.Lock()
-broadcaster = StreamBroadcaster()
 
 # Shutdown state tracking
 _shutdown_called = False
@@ -93,11 +91,7 @@ def shutdown_handler(signum=None, frame=None):
 
     logger.info("Shutdown signal received, cleaning up...")
 
-    # Stop broadcaster
-    if broadcaster:
-        broadcaster.stop()
-
-    # Terminate streaming process with timeout
+    # Terminate download process with timeout
     with process_lock:
         # Access the stream state from the routes module
         try:
@@ -138,7 +132,7 @@ signal.signal(signal.SIGTERM, shutdown_handler)
 atexit.register(shutdown_handler)
 
 # Initialize stream router with global state
-init_stream_globals(process_lock, broadcaster)
+init_stream_globals(process_lock)
 
 # Include routers
 app.include_router(stream_router)
@@ -151,7 +145,7 @@ def index(request: Request):
     """Serve the main HTML page."""
     server_host = request.url.hostname
     logger.info(f"📄 Index page requested by {request.client.host}")
-    logger.info(f"   Audio player URL will be: http://{server_host}:{api_port}/mystream")
+    logger.info(f"   Audio files served from: http://{server_host}:{api_port}/audio/{{video_id}}")
     return templates.TemplateResponse(
         "index.html",
         {
@@ -171,7 +165,7 @@ if __name__ == "__main__":
     print(f"   Environment: {env}")
     print(f"   Host: {host}")
     print(f"   Port: {api_port}")
-    print(f"   Stream URL: http://{host}:{api_port}/mystream")
+    print(f"   Audio endpoint: http://{host}:{api_port}/audio/{{video_id}}")
     print(f"   Transcription: {'enabled' if config.transcription_enabled else 'disabled'}")
     print("=" * 70)
     uvicorn.run("main:app", host=host, port=api_port, reload=is_reloading_on_file_change)
