@@ -194,6 +194,10 @@
         let currentTrackTitle = null;
         const defaultTitle = 'YouTube Radio';
 
+        // Prefetch configuration
+        const prefetchThresholdSeconds = {{ prefetch_threshold_seconds }};
+        let prefetchTriggered = false;
+
         // Stream resilience configuration
         let retryCount = 0;
         let maxRetries = 50; // Increased for long network transitions (5G↔WiFi)
@@ -496,6 +500,30 @@
             console.log('Stream loading suspended (browser buffered enough)');
         });
 
+        // Prefetch next queue item when current track is nearing its end
+        player.addEventListener('timeupdate', async function () {
+            if (!isPlaying || prefetchTriggered || !player.duration) return;
+
+            const remaining = player.duration - player.currentTime;
+            if (remaining > prefetchThresholdSeconds) return;
+
+            // Trigger only once per track
+            prefetchTriggered = true;
+
+            // Find the next video in the queue (index 1, since index 0 is current)
+            const queue = await fetchQueue();
+            if (queue.length < 2) return;
+
+            const nextVideoId = queue[1].youtube_id;
+            console.log(`Prefetching next track: ${queue[1].title} (${nextVideoId}) — ${Math.round(remaining)}s remaining`);
+
+            try {
+                await fetch(`/queue/prefetch/${nextVideoId}`, { method: 'POST' });
+            } catch (e) {
+                console.warn('Prefetch request failed:', e);
+            }
+        });
+
         player.addEventListener('abort', function () {
             console.warn('Stream loading aborted');
         });
@@ -738,6 +766,7 @@
                     currentVideoId = youtube_video_id;
                     currentQueueId = queue_id;
                     isPlaying = true;
+                    prefetchTriggered = false;
                     cancelRetry();
 
                     // Metadata & UI updates
@@ -974,6 +1003,7 @@
                 if (res.ok) {
                     currentVideoId = youtube_video_id;
                     isPlaying = true;
+                    prefetchTriggered = false;
                     cancelRetry(); // Cancel any ongoing retries
 
                     // Re-render history to show the new entry

@@ -25,6 +25,7 @@ class Config:
     # 6 = ~96 kbps  (~43 MB/hr)
     # 7 = ~80 kbps  (~36 MB/hr)
     audio_quality: int  # VBR quality 0-9 (lower = higher quality, 4 = ~128kbps)
+    prefetch_threshold_seconds: int  # Seconds before end to start pre-downloading next track
 
     # Transcription settings
     transcription_enabled: bool
@@ -58,6 +59,7 @@ class Config:
             fastapi_port=int(os.getenv("FASTAPI_API_PORT", "8000")),
             # Audio settings
             audio_quality=int(os.getenv("AUDIO_QUALITY", "4")),
+            prefetch_threshold_seconds=int(os.getenv("PREFETCH_THRESHOLD_SECONDS", "30")),
             # Transcription settings
             transcription_enabled=transcription_enabled,
             openai_api_key=os.getenv("OPENAI_API_KEY"),

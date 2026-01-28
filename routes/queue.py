@@ -3,6 +3,7 @@ Queue management routes.
 """
 
 import logging
+import threading
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -117,6 +118,47 @@ def clear_current_queue():
     except Exception as e:
         logger.error(f"Error clearing queue: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/queue/prefetch/{video_id}")
+def prefetch_audio(video_id: str):
+    """
+    Pre-download audio for a video in the background.
+    Called by the frontend when current track is nearing its end,
+    so the next track is cached and ready to play immediately.
+    """
+    from services.streaming import start_youtube_download, finish_youtube_download, is_download_in_progress
+    from services.cache import get_audio_cache
+    import os
+
+    audio_cache = get_audio_cache()
+    audio_path = config.get_audio_path(video_id)
+
+    # Already cached — nothing to do
+    if audio_cache.check_file_exists(video_id):
+        logger.info(f"Prefetch {video_id}: already cached")
+        return JSONResponse({"status": "cached", "video_id": video_id})
+
+    # Already downloading — don't start a second one
+    if is_download_in_progress(video_id):
+        logger.info(f"Prefetch {video_id}: download already in progress")
+        return JSONResponse({"status": "downloading", "video_id": video_id})
+
+    # Start background download (fire and forget)
+    proc, _ = start_youtube_download(video_id, skip_transcription=True)
+
+    if proc is None:
+        return JSONResponse({"status": "cached", "video_id": video_id})
+
+    def _prefetch_worker():
+        proc.wait()
+        finish_youtube_download(video_id, proc.returncode)
+
+    thread = threading.Thread(target=_prefetch_worker, daemon=True)
+    thread.start()
+
+    logger.info(f"Prefetch {video_id}: started background download")
+    return JSONResponse({"status": "started", "video_id": video_id})
 
 
 @router.post("/queue/suggestions")

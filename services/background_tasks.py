@@ -278,7 +278,11 @@ class TranscriptionWorker:
 
     def _wait_for_file(self, audio_path: str, video_id: str, timeout: int = 1800) -> bool:
         """
-        Wait for the audio file to be fully downloaded and stable.
+        Wait for the audio file to be fully downloaded.
+
+        Uses the .downloading marker file as the authoritative signal:
+        the marker exists while yt-dlp is running, and is removed by
+        finish_youtube_download() once the file is complete.
 
         Args:
             audio_path: Path to the audio file
@@ -288,45 +292,36 @@ class TranscriptionWorker:
         Returns:
             True if file is ready, False if timeout or error
         """
+        from services.streaming import is_download_in_progress
+
         logger.info(f"Waiting for audio file to be ready: {audio_path}")
         start_time = time.time()
-        last_size = 0
-        stable_count = 0
 
         while time.time() - start_time < timeout:
-            if not os.path.exists(audio_path):
-                # File doesn't exist yet, wait a bit
-                time.sleep(2)
-                continue
+            file_exists = os.path.exists(audio_path)
+            still_downloading = is_download_in_progress(video_id)
 
-            current_size = os.path.getsize(audio_path)
-
-            if current_size == 0:
-                # File exists but is empty, wait
-                logger.debug(f"Audio file is empty, waiting... ({video_id})")
-                time.sleep(2)
-                continue
-
-            if current_size == last_size:
-                # Size hasn't changed, might be complete
-                stable_count += 1
-                if stable_count >= 3:  # Stable for 3 checks (6 seconds)
+            if file_exists and not still_downloading:
+                file_size = os.path.getsize(audio_path)
+                if file_size > 0:
                     logger.info(
-                        f"Audio file is ready: {audio_path} ({current_size / 1024 / 1024:.2f} MB)"
+                        f"Audio file is ready: {audio_path} ({file_size / 1024 / 1024:.2f} MB)"
                     )
                     return True
-            else:
-                # Still growing
-                stable_count = 0
-                logger.debug(
-                    f"Audio file growing: {current_size / 1024 / 1024:.2f} MB ({video_id})"
-                )
 
-            last_size = current_size
+            # Log periodic progress
+            elapsed = time.time() - start_time
+            if int(elapsed) % 10 == 0:
+                status = "downloading" if still_downloading else "waiting for download to start"
+                logger.debug(f"Audio file {video_id}: {status} ({elapsed:.0f}s elapsed)")
+
             time.sleep(2)
 
-        # Timeout
-        logger.error(f"Timeout waiting for audio file: {audio_path}")
+        # Timeout — check if file exists at all for a better error message
+        if os.path.exists(audio_path):
+            logger.error(f"Timeout waiting for download to finish: {audio_path}")
+        else:
+            logger.error(f"Timeout — audio file never appeared: {audio_path}")
         return False
 
 

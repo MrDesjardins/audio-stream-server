@@ -156,6 +156,7 @@ def index(request: Request):
             "api_port": api_port,
             "transcription_enabled": config.transcription_enabled,
             "book_suggestions_enabled": config.book_suggestions_enabled,
+            "prefetch_threshold_seconds": config.prefetch_threshold_seconds,
         },
     )
 
