@@ -3,11 +3,12 @@ Streaming and playback routes.
 """
 
 import logging
+import os
 import threading
 import asyncio
 import queue
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from pydantic import BaseModel
 from config import get_config
 from services.background_tasks import get_transcription_queue, TranscriptionJob
@@ -150,8 +151,22 @@ def stream_video(request: StreamRequest):
     # Start new stream (handles stopping existing stream internally)
     state.start_stream(video_id, request.skip_transcription)
 
-    return {"status": "stream started", "youtube_video_id": video_id, "title": video_title}
+    return {"status": "stream started", "youtube_video_id": video_id, "title": video_title,}
 
+@router.get("/audio/{video_id}")
+def get_audio_file(video_id: str):
+    """Serve the actual MP3 file for the player."""
+    audio_path = config.get_audio_path(video_id) # e.g., /tmp/audio-transcriptions/video_id.mp3
+    
+    if os.path.exists(audio_path):
+        # FileResponse automatically handles streaming, chunking, and seeking (Range headers)
+        return FileResponse(
+            path=audio_path, 
+            media_type='audio/mpeg', 
+            filename=f"{video_id}.mp3"
+        )
+    
+    return JSONResponse(status_code=404, content={"error": "Audio not yet available"})
 
 @router.post("/stop")
 def stop_stream():

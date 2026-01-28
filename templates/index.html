@@ -360,7 +360,7 @@
         }
 
         // Audio Player Event Handlers for Resilience
-        player.addEventListener('error', function(e) {
+        player.addEventListener('error', function (e) {
             console.error('Audio player error:', e);
             const error = player.error;
             if (error) {
@@ -374,7 +374,7 @@
             }
         });
 
-        player.addEventListener('waiting', function() {
+        player.addEventListener('waiting', function () {
             console.log('Player waiting for data (buffering)...');
             bufferingStartTime = Date.now();
             showStreamStatus('Buffering...');
@@ -383,7 +383,7 @@
             // The browser will try to recover on its own first
         });
 
-        player.addEventListener('stalled', function() {
+        player.addEventListener('stalled', function () {
             console.warn('Stream stalled, buffering...');
             showStreamStatus('Buffering...');
 
@@ -402,7 +402,7 @@
             }, 30000); // Increased to 30 seconds
         });
 
-        player.addEventListener('canplay', function() {
+        player.addEventListener('canplay', function () {
             console.log('Can play - enough data loaded');
             if (!isRetrying) {
                 hideStreamStatus();
@@ -415,7 +415,7 @@
             }
         });
 
-        player.addEventListener('playing', function() {
+        player.addEventListener('playing', function () {
             // Log buffering duration if we were buffering
             if (bufferingStartTime) {
                 const bufferingDuration = Date.now() - bufferingStartTime;
@@ -434,7 +434,7 @@
             }
         });
 
-        player.addEventListener('pause', function() {
+        player.addEventListener('pause', function () {
             console.log('Playback paused');
             // Don't show reconnection UI if user paused manually
             if (!isRetrying) {
@@ -442,11 +442,11 @@
             }
         });
 
-        player.addEventListener('loadstart', function() {
+        player.addEventListener('loadstart', function () {
             console.log('Started loading stream');
         });
 
-        player.addEventListener('progress', function() {
+        player.addEventListener('progress', function () {
             // Stream is downloading, this is good
             if (stalledTimeout) {
                 clearTimeout(stalledTimeout);
@@ -454,12 +454,12 @@
             }
         });
 
-        player.addEventListener('suspend', function() {
+        player.addEventListener('suspend', function () {
             // Browser has suspended loading (might be due to buffering enough data)
             console.log('Stream loading suspended (browser buffered enough)');
         });
 
-        player.addEventListener('abort', function() {
+        player.addEventListener('abort', function () {
             console.warn('Stream loading aborted');
         });
 
@@ -701,9 +701,9 @@
                     currentVideoId = youtube_video_id;
                     currentQueueId = queue_id;
                     isPlaying = true;
-                    cancelRetry(); // Cancel any ongoing retries
+                    cancelRetry();
 
-                    // Update browser window title with track name
+                    // Metadata & UI updates
                     const queue = await fetchQueue();
                     const currentItem = queue.find(item => item.id === queue_id);
                     if (currentItem) {
@@ -711,26 +711,25 @@
                         setupMediaSession(currentItem);
                     }
 
-                    // Update history
                     await renderHistory();
                     await renderQueue();
 
-                    // Setup transcription tracking if enabled
-                    if (transcriptionEnabled && !skip_transcription) {
-                        currentVideoId = youtube_video_id;
-                    }
+                    // NEW LOGIC: Point the player to the static file endpoint
+                    // We use data.youtube_video_id returned from your POST /stream response
+                    const audioUrl = `http://{{ host }}:{{ api_port }}/audio/${data.youtube_video_id}?t=${Date.now()}`;
 
-                    // Reload audio with cache-busting
-                    const streamUrl = 'http://{{ host }}:{{ api_port }}/mystream?t=' + Date.now();
-                    player.src = streamUrl;
+                    player.src = audioUrl;
                     player.load();
                     player.play().catch(e => {
                         console.error('Audio playback failed:', e);
-                        // Auto-retry if initial play fails
+                        // If the file isn't ready yet, your /audio endpoint returns 404, 
+                        // which triggers the retry logic.
                         if (isPlaying) {
                             retryStream();
                         }
                     });
+                } else {
+                    updateStatus('Failed to start stream', 'error');
                 }
             } catch (error) {
                 updateStatus('Failed to start stream', 'error');
