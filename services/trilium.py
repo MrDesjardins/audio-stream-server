@@ -286,6 +286,41 @@ def _escape_text(text: str) -> str:
     )
 
 
+def get_note_content(note_id: str) -> Optional[str]:
+    """
+    Fetch the content of a note from Trilium.
+
+    Args:
+        note_id: The Trilium note ID
+
+    Returns:
+        The note content (HTML), or None on error
+    """
+    config = get_config()
+
+    if not all([config.trilium_url, config.trilium_etapi_token]):
+        logger.warning("Trilium not configured")
+        return None
+
+    try:
+        headers = {
+            "Authorization": f"Bearer {config.trilium_etapi_token}",
+            "Content-Type": "application/json",
+        }
+
+        url = _build_url(config.trilium_url, f"etapi/notes/{note_id}/content")
+        response = httpx.get(url, headers=headers, timeout=10.0)
+        response.raise_for_status()
+
+        content = response.text
+        logger.debug(f"Fetched content for note {note_id}: {len(content)} chars")
+        return content
+
+    except Exception as e:
+        logger.error(f"Error fetching note content for {note_id}: {e}")
+        return None
+
+
 def _save_to_backup(video_id: str, transcript: str, summary: str) -> None:
     """Save transcript and summary to local backup file."""
     try:

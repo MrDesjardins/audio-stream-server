@@ -85,31 +85,64 @@ def get_summary(video_id: str):
         raise HTTPException(status_code=400, detail="Transcription not enabled")
 
     try:
+        # First try to get from transcription queue (for recent videos)
         queue = get_transcription_queue()
         job = queue.get_job_status(video_id)
 
-        if job is None:
-            raise HTTPException(
-                status_code=404, detail=f"No transcription found for video {video_id}"
-            )
-
-        if job.status not in [JobStatus.COMPLETED, JobStatus.SKIPPED]:
+        if job and job.status in [JobStatus.COMPLETED, JobStatus.SKIPPED]:
             return JSONResponse(
                 {
                     "video_id": video_id,
                     "status": job.status.value,
-                    "summary": None,
-                    "error": "Transcription not yet completed",
+                    "summary": job.summary,
+                    "trilium_note_url": job.trilium_note_url,
                 }
             )
 
-        return JSONResponse(
-            {
-                "video_id": video_id,
-                "status": job.status.value,
-                "summary": job.summary,
-                "trilium_note_url": job.trilium_note_url,
-            }
+        # If not in queue, try to fetch from Trilium
+        from services.trilium import check_video_exists, get_note_content
+        import re
+
+        note_info = check_video_exists(video_id)
+        if note_info:
+            note_id = note_info["noteId"]
+            content = get_note_content(note_id)
+
+            if content:
+                # Extract summary from HTML content
+                # Remove the YouTube link section at the bottom
+                content = re.sub(
+                    r'<p style="margin-top.*?</p>',
+                    '',
+                    content,
+                    flags=re.DOTALL
+                )
+
+                # Convert HTML to text with line breaks
+                # Replace closing tags with newlines for better formatting
+                text_summary = re.sub(r'</p>', '\n\n', content)
+                text_summary = re.sub(r'</h[1-3]>', '\n\n', text_summary)
+                text_summary = re.sub(r'</li>', '\n', text_summary)
+                text_summary = re.sub(r'<ul>', '\n', text_summary)
+                text_summary = re.sub(r'</ul>', '\n', text_summary)
+                # Remove remaining HTML tags
+                text_summary = re.sub(r'<[^>]+>', '', text_summary)
+                # Clean up excessive whitespace
+                text_summary = re.sub(r'\n\s*\n\s*\n', '\n\n', text_summary)
+                text_summary = text_summary.strip()
+
+                return JSONResponse(
+                    {
+                        "video_id": video_id,
+                        "status": "completed",
+                        "summary": text_summary,
+                        "trilium_note_url": note_info["url"],
+                    }
+                )
+
+        # Not found anywhere
+        raise HTTPException(
+            status_code=404, detail=f"No summary found for video {video_id}"
         )
 
     except HTTPException:

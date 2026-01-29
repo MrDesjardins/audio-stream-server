@@ -898,16 +898,29 @@
                 const timeAgo = getTimeAgo(item.last_played_at);
                 const playCountBadge = item.play_count > 1 ? `<span class="play-count-badge">${item.play_count}×</span>` : '';
 
+                // Show summary button if transcription is enabled
+                const summaryButton = transcriptionEnabled ?
+                    `<button class="history-action-btn summary-btn" onclick="event.stopPropagation(); viewSummary('${item.youtube_id}')" title="View Summary">
+                        <i class="fas fa-file-alt"></i>
+                    </button>` : '';
+
                 return `
-                    <div class="history-item" onclick="loadFromHistory('${item.youtube_id}')">
-                        <div class="history-info">
+                    <div class="history-item">
+                        <div class="history-info" onclick="loadFromHistory('${item.youtube_id}')">
                             <i class="fab fa-youtube"></i>
                             <span class="history-title">${escapeHtml(item.title)}</span>
                         </div>
                         <div class="history-meta">
-                            ${playCountBadge}
-                            <span class="history-time">${timeAgo}</span>
-                            <i class="fas fa-plus-circle"></i>
+                            <div class="history-meta-left">
+                                ${playCountBadge}
+                                <span class="history-time">${timeAgo}</span>
+                            </div>
+                            <div class="history-meta-right">
+                                ${summaryButton}
+                                <button class="history-action-btn queue-btn" onclick="event.stopPropagation(); addToQueueFromHistory('${item.youtube_id}')" title="Add to Queue">
+                                    <i class="fas fa-plus-circle"></i>
+                                </button>
+                            </div>
                         </div>
                     </div>
                 `;
@@ -953,6 +966,9 @@
                 console.error(error);
             }
         }
+
+        // Alias for consistency with UI
+        const addToQueueFromHistory = loadFromHistory;
 
         function extractVideoId(input) {
             // If it's already just an ID (11 characters, alphanumeric), return it
@@ -1253,6 +1269,20 @@
 
             try {
                 const res = await fetch(`/transcription/summary/${videoId}`);
+
+                if (!res.ok) {
+                    if (res.status === 404) {
+                        content.innerHTML = `
+                            <p>No summary found for this video.</p>
+                            <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 10px;">
+                                This video hasn't been transcribed yet. Play it with transcription enabled to generate a summary.
+                            </p>
+                        `;
+                        return;
+                    }
+                    throw new Error(`HTTP ${res.status}`);
+                }
+
                 const data = await res.json();
 
                 if (data.summary) {
@@ -1274,7 +1304,7 @@
                 }
             } catch (error) {
                 console.error('Failed to fetch summary:', error);
-                content.innerHTML = '<p>Failed to load summary</p>';
+                content.innerHTML = '<p>Failed to load summary. Please check the console for details.</p>';
             }
         }
 

@@ -20,7 +20,7 @@ config = get_config()
 
 async def get_recent_summaries(limit: int) -> List[Dict[str, str]]:
     """
-    Get summaries from recently watched videos.
+    Get summaries from recently watched videos (fetched from Trilium).
 
     Args:
         limit: Maximum number of summaries to fetch
@@ -28,33 +28,63 @@ async def get_recent_summaries(limit: int) -> List[Dict[str, str]]:
     Returns:
         List of dicts with 'video_id', 'title', and 'summary' keys
     """
+    from services.trilium import check_video_exists, get_note_content
+    import re
+
     try:
         # Get recent history
-        history = get_history(limit=limit)
+        history = get_history(limit=limit * 2)  # Get more to account for videos without summaries
 
         if not history:
             logger.warning("No history found")
             return []
 
-        cache = get_transcript_cache()
         summaries = []
 
         for item in history:
             video_id = item["youtube_id"]
             title = item["title"]
 
-            # Try to get cached summary
-            cached = cache.get_cached(video_id)
+            # Check if Trilium note exists for this video
+            note_info = check_video_exists(video_id)
 
-            if cached and cached.get("summary"):
-                summaries.append({
-                    "video_id": video_id,
-                    "title": title,
-                    "summary": cached["summary"]
-                })
-                logger.debug(f"Found summary for {title}")
+            if note_info:
+                note_id = note_info["noteId"]
+                logger.debug(f"Found Trilium note for {title}: {note_id}")
+
+                # Fetch note content
+                content = get_note_content(note_id)
+
+                if content:
+                    # Extract summary from HTML content
+                    # Remove the YouTube link section at the bottom
+                    content = re.sub(
+                        r'<p style="margin-top.*?</p>',
+                        '',
+                        content,
+                        flags=re.DOTALL
+                    )
+
+                    # Strip HTML tags to get plain text
+                    text_summary = re.sub(r'<[^>]+>', ' ', content)
+                    # Clean up whitespace
+                    text_summary = re.sub(r'\s+', ' ', text_summary).strip()
+
+                    if text_summary:
+                        summaries.append({
+                            "video_id": video_id,
+                            "title": title,
+                            "summary": text_summary
+                        })
+                        logger.debug(f"Extracted summary for {title} ({len(text_summary)} chars)")
+
+                        # Stop when we have enough
+                        if len(summaries) >= limit:
+                            break
+                else:
+                    logger.debug(f"Could not fetch note content for {title}")
             else:
-                logger.debug(f"No summary cached for {title}")
+                logger.debug(f"No Trilium note found for {title}")
 
         logger.info(f"Found {len(summaries)} summaries from recent history")
         return summaries
@@ -90,6 +120,7 @@ Based on the themes, topics, and interests shown in these videos, write ONE sent
 
 The sentence should be:
 - Descriptive and specific (not generic)
+- Does not contain specific names as it needs to be general
 - Focus on the key topics/themes that appear across multiple videos
 - Suitable for use as a YouTube search query
 
@@ -104,7 +135,7 @@ Respond with ONLY the theme sentence, nothing else."""
                 },
                 {"role": "user", "content": prompt},
             ],
-            temperature=0.7,
+            temperature=0.9,
             max_tokens=100,
         )
 
