@@ -1,225 +1,185 @@
 """
-Book-based audiobook suggestion service.
+YouTube video suggestion service based on recently watched content.
 
-Analyzes recent books from Trilium and suggests YouTube audiobooks using AI.
+Analyzes summaries from recent videos and suggests similar YouTube content.
 """
 
 import logging
-import re
+import json
+import subprocess
 from typing import List, Dict, Optional
-import httpx
 from openai import OpenAI
+from google import genai
 from config import get_config
+from services.cache import get_transcript_cache
+from services.database import get_history
 
 logger = logging.getLogger(__name__)
 config = get_config()
 
 
-async def get_recent_books_from_trilium(limit: int) -> List[Dict[str, str]]:
+async def get_recent_summaries(limit: int) -> List[Dict[str, str]]:
     """
-    Fetch recent audiobook summaries from Trilium parent note's children.
+    Get summaries from recently watched videos.
 
     Args:
-        limit: Maximum number of audiobooks to fetch
+        limit: Maximum number of summaries to fetch
 
     Returns:
-        List of dicts with 'title' and 'noteId' keys
+        List of dicts with 'video_id', 'title', and 'summary' keys
     """
     try:
-        headers = {"Authorization": config.trilium_etapi_token, "Content-Type": "application/json"}
+        # Get recent history
+        history = get_history(limit=limit)
 
-        logger.info(f"Fetching children of parent note: {config.trilium_parent_note_id}")
+        if not history:
+            logger.warning("No history found")
+            return []
 
-        async with httpx.AsyncClient() as client:
-            # Search for all text notes under the parent note using ETAPI search
-            # Using search with ancestorNoteId to get all children
-            search_url = f"{config.trilium_url}/etapi/notes"
-            params: dict[str, str] = {
-                "search": "note.type = text",  # Only get text notes (summaries)
-                "ancestorNoteId": config.trilium_parent_note_id,
-                "orderBy": "dateModified",
-                "limit": str(limit * 2),  # Get more than needed to account for filtering
-            }
-            response = await client.get(search_url, headers=headers, params=params, timeout=30.0)
-            response.raise_for_status()
+        cache = get_transcript_cache()
+        summaries = []
 
-            # Trilium search returns {"results": [...]}
-            response_data = response.json()
-            results = response_data.get("results", [])
+        for item in history:
+            video_id = item["youtube_id"]
+            title = item["title"]
 
-            if not results or len(results) == 0:
-                logger.warning(
-                    f"No text notes found under parent note {config.trilium_parent_note_id}"
-                )
-                return []
+            # Try to get cached summary
+            cached = cache.get_cached(video_id)
 
-            # Process results - they already have title, noteId, and dateModified
-            audiobooks = []
-            for note in results:
-                note_id = note.get("noteId")
-                if not note_id:
-                    continue
+            if cached and cached.get("summary"):
+                summaries.append({
+                    "video_id": video_id,
+                    "title": title,
+                    "summary": cached["summary"]
+                })
+                logger.debug(f"Found summary for {title}")
+            else:
+                logger.debug(f"No summary cached for {title}")
 
-                # Skip the parent note itself if it appears in results
-                if note_id == config.trilium_parent_note_id:
-                    continue
-
-                audiobooks.append(
-                    {
-                        "title": note.get("title", "Unknown"),
-                        "noteId": note_id,
-                        "dateModified": note.get("utcDateModified", ""),
-                    }
-                )
-
-            # Sort by dateModified descending (most recent first) and take the limit
-            audiobooks.sort(key=lambda x: x.get("dateModified", ""), reverse=True)
-            audiobooks = audiobooks[:limit]
-
-            logger.info(f"Found {len(audiobooks)} recent audiobook summaries in Trilium")
-
-            # Log the titles for debugging
-            if audiobooks:
-                titles_preview = ", ".join([ab["title"][:50] for ab in audiobooks[:3]])
-                logger.info(f"Most recent: {titles_preview}...")
-
-            return audiobooks
+        logger.info(f"Found {len(summaries)} summaries from recent history")
+        return summaries
 
     except Exception as e:
-        logger.error(f"Error fetching audiobooks from Trilium: {e}", exc_info=True)
+        logger.error(f"Error getting recent summaries: {e}", exc_info=True)
         return []
 
 
-def generate_suggestions_openai(book_titles: List[str], count: int) -> List[Dict[str, str]]:
+def generate_theme_openai(summaries: List[Dict[str, str]]) -> Optional[str]:
     """
-    Generate audiobook suggestions using OpenAI.
+    Generate a 1-sentence theme from summaries using OpenAI.
 
     Args:
-        book_titles: List of book titles to base suggestions on
-        count: Number of suggestions to generate
+        summaries: List of dicts with 'summary' key
 
     Returns:
-        List of dicts with 'title', 'author', and 'youtube_url' keys
+        A 1-sentence theme string, or None on error
     """
     try:
         client = OpenAI(api_key=config.openai_api_key)
 
-        books_text = "\n".join(f"- {title}" for title in book_titles)
+        summaries_text = "\n\n".join(
+            f"Video {i+1}:\n{s['summary']}"
+            for i, s in enumerate(summaries)
+        )
 
-        prompt = f"""Based on these recently read books:
-{books_text}
+        prompt = f"""Analyze these video summaries from recently watched content:
 
-Suggest {count} audiobooks that the reader might enjoy. These should be well-known, popular books with full-length audiobooks available on YouTube.
+{summaries_text}
 
-IMPORTANT INSTRUCTIONS:
-- Only suggest mainstream, well-known books that definitely have audiobooks on YouTube
-- Prefer classic books and bestsellers (e.g., "The 48 Laws of Power", "Atomic Habits", "Think and Grow Rich")
-- Only books in similar genres/themes to the list above
-- You CANNOT search YouTube or verify URLs - suggest books you're confident have audiobooks available
-- DO NOT include YouTube URLs or video IDs - just book titles and authors
+Based on the themes, topics, and interests shown in these videos, write ONE sentence that captures the overarching theme or interest area. This will be used to search YouTube for similar content.
 
-Format your response EXACTLY as follows for each suggestion:
-TITLE: [Full Book Title]
-AUTHOR: [Author Name]
----
+The sentence should be:
+- Descriptive and specific (not generic)
+- Focus on the key topics/themes that appear across multiple videos
+- Suitable for use as a YouTube search query
 
-Example:
-TITLE: Atomic Habits: An Easy & Proven Way to Build Good Habits & Break Bad Ones
-AUTHOR: James Clear
----"""
+Respond with ONLY the theme sentence, nothing else."""
 
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a knowledgeable book recommendation assistant. Suggest only well-known books that likely have audiobooks on YouTube.",
+                    "content": "You are an expert at identifying themes and patterns in content consumption.",
                 },
                 {"role": "user", "content": prompt},
             ],
             temperature=0.7,
-            max_tokens=1000,
+            max_tokens=100,
         )
 
-        content = response.choices[0].message.content
-        return parse_suggestions(content)
+        theme = response.choices[0].message.content.strip()
+        logger.info(f"Generated theme: {theme}")
+        return theme
 
     except Exception as e:
-        logger.error(f"Error generating suggestions with OpenAI: {e}", exc_info=True)
-        return []
+        logger.error(f"Error generating theme with OpenAI: {e}", exc_info=True)
+        return None
 
 
-def generate_suggestions_gemini(book_titles: List[str], count: int) -> List[Dict[str, str]]:
+def generate_theme_gemini(summaries: List[Dict[str, str]]) -> Optional[str]:
     """
-    Generate audiobook suggestions using Google Gemini.
+    Generate a 1-sentence theme from summaries using Gemini.
 
     Args:
-        book_titles: List of book titles to base suggestions on
-        count: Number of suggestions to generate
+        summaries: List of dicts with 'summary' key
 
     Returns:
-        List of dicts with 'title', 'author', and 'youtube_url' keys
+        A 1-sentence theme string, or None on error
     """
     try:
-        import google.generativeai as genai
+        client = genai.Client(api_key=config.gemini_api_key)
 
-        genai.configure(api_key=config.gemini_api_key)
-        model = genai.GenerativeModel("gemini-2.0-flash-exp")
+        summaries_text = "\n\n".join(
+            f"Video {i+1}:\n{s['summary']}"
+            for i, s in enumerate(summaries)
+        )
 
-        books_text = "\n".join(f"- {title}" for title in book_titles)
+        prompt = f"""Analyze these video summaries from recently watched content:
 
-        prompt = f"""Based on these recently read books:
-{books_text}
+{summaries_text}
 
-Suggest {count} audiobooks that the reader might enjoy. These should be well-known, popular books with full-length audiobooks available on YouTube.
+Based on the themes, topics, and interests shown in these videos, write ONE sentence that captures the overarching theme or interest area. This will be used to search YouTube for similar content.
 
-IMPORTANT INSTRUCTIONS:
-- Only suggest mainstream, well-known books that definitely have audiobooks on YouTube
-- Prefer classic books and bestsellers (e.g., "The 48 Laws of Power", "Atomic Habits", "Think and Grow Rich")
-- Only books in similar genres/themes to the list above
-- You CANNOT search YouTube or verify URLs - suggest books you're confident have audiobooks available
-- DO NOT include YouTube URLs or video IDs - just book titles and authors
+The sentence should be:
+- Descriptive and specific (not generic)
+- Focus on the key topics/themes that appear across multiple videos
+- Suitable for use as a YouTube search query
 
-Format your response EXACTLY as follows for each suggestion:
-TITLE: [Full Book Title]
-AUTHOR: [Author Name]
----
+Respond with ONLY the theme sentence, nothing else."""
 
-Example:
-TITLE: Atomic Habits: An Easy & Proven Way to Build Good Habits & Break Bad Ones
-AUTHOR: James Clear
----"""
+        response = client.models.generate_content(
+            model="gemini-1.5-flash",
+            contents=prompt
+        )
 
-        response = model.generate_content(prompt)
-        content = response.text
-
-        return parse_suggestions(content)
+        theme = response.text.strip()
+        logger.info(f"Generated theme: {theme}")
+        return theme
 
     except Exception as e:
-        logger.error(f"Error generating suggestions with Gemini: {e}", exc_info=True)
-        return []
+        logger.error(f"Error generating theme with Gemini: {e}", exc_info=True)
+        return None
 
 
-def search_youtube_audiobook(book_title: str, author: str) -> Optional[str]:
+def search_youtube_by_theme(theme: str, count: int) -> List[Dict[str, str]]:
     """
-    Search YouTube for an audiobook and return the first valid video ID.
+    Search YouTube for videos matching the theme.
 
     Args:
-        book_title: Book title
-        author: Author name
+        theme: Search query theme
+        count: Number of videos to find
 
     Returns:
-        Video ID if found and valid, None otherwise
+        List of dicts with 'video_id', 'title', 'channel', 'duration', 'youtube_url' keys
     """
     from services.youtube import YT_DLP_PATH
-    import subprocess
-    import json
 
     try:
-        # Search for audiobook on YouTube
-        search_query = f"{book_title} {author} audiobook full"
-        search_url = f"ytsearch5:{search_query}"
-
+        # Search YouTube using the theme
+        search_url = f"ytsearch{count * 2}:{theme}"  # Get more than needed for filtering
+        logger.info(f"Searching YouTube for theme: {theme}")
+        logger.debug(f"YT-DLP search URL: {search_url}")
         result = subprocess.run(
             [
                 YT_DLP_PATH,
@@ -231,12 +191,14 @@ def search_youtube_audiobook(book_title: str, author: str) -> Optional[str]:
             ],
             capture_output=True,
             text=True,
-            timeout=15,
+            timeout=30,
         )
 
         if result.returncode != 0:
-            logger.warning(f"YouTube search failed for '{book_title}': {result.stderr}")
-            return None
+            logger.warning(f"YouTube search failed for theme '{theme}': {result.stderr}")
+            return []
+
+        videos = []
 
         # Parse each line of JSON output (one per video)
         for line in result.stdout.strip().split("\n"):
@@ -246,156 +208,133 @@ def search_youtube_audiobook(book_title: str, author: str) -> Optional[str]:
             try:
                 video_info = json.loads(line)
                 video_id = video_info.get("id")
-                video_title = video_info.get("title", "")
+                title = video_info.get("title", "")
+                channel = video_info.get("uploader", "Unknown")
                 duration = video_info.get("duration", 0)
 
-                # Filter: must be at least 30 minutes (1800 seconds) to be a full audiobook
-                if duration < 1800:
-                    logger.debug(f"Skipping short video: {video_title} ({duration}s)")
+                # Filter: must be at least 10 minutes (600 seconds)
+                if duration < 600:
+                    logger.debug(f"Skipping short video: {title} ({duration}s)")
                     continue
 
-                # Filter: title should contain "audiobook" or "audio book"
-                if (
-                    "audiobook" not in video_title.lower()
-                    and "audio book" not in video_title.lower()
-                ):
-                    logger.debug(f"Skipping non-audiobook video: {video_title}")
-                    continue
+                videos.append({
+                    "video_id": video_id,
+                    "title": title,
+                    "channel": channel,
+                    "duration": duration,
+                    "youtube_url": f"https://www.youtube.com/watch?v={video_id}"
+                })
 
-                logger.info(f"Found audiobook: {video_title} ({video_id}, {duration}s)")
-                return video_id
+                logger.info(f"Found video: {title} ({video_id}, {duration}s)")
+
+                # Stop when we have enough
+                if len(videos) >= count:
+                    break
 
             except json.JSONDecodeError:
                 continue
 
-        logger.warning(f"No suitable audiobook found for '{book_title} by {author}'")
-        return None
+        logger.info(f"Found {len(videos)} videos for theme: {theme}")
+        return videos
 
     except subprocess.TimeoutExpired:
-        logger.error(f"Timeout searching YouTube for '{book_title}'")
-        return None
+        logger.error(f"Timeout searching YouTube for theme '{theme}'")
+        return []
     except Exception as e:
-        logger.error(f"Error searching YouTube for '{book_title}': {e}")
-        return None
+        logger.error(f"Error searching YouTube for theme '{theme}': {e}")
+        return []
 
 
-def parse_suggestions(content: str) -> List[Dict[str, str]]:
+async def filter_already_played(videos: List[Dict[str, str]]) -> List[Dict[str, str]]:
     """
-    Parse AI response into structured suggestions and search YouTube for each.
+    Filter out videos that have already been played.
 
     Args:
-        content: AI response text
+        videos: List of video dicts with 'video_id' key
 
     Returns:
-        List of dicts with 'title', 'author', 'video_id', and 'youtube_url' keys
+        Filtered list of videos
     """
-    suggestions = []
-
-    # Split by --- separator
-    blocks = content.split("---")
-
-    for block in blocks:
-        block = block.strip()
-        if not block:
-            continue
-
-        suggestion = {}
-
-        # Extract title
-        title_match = re.search(r"TITLE:\s*(.+)", block, re.IGNORECASE)
-        if title_match:
-            suggestion["title"] = title_match.group(1).strip()
-
-        # Extract author
-        author_match = re.search(r"AUTHOR:\s*(.+)", block, re.IGNORECASE)
-        if author_match:
-            suggestion["author"] = author_match.group(1).strip()
-
-        # Only add if we have both title and author
-        if "title" in suggestion and "author" in suggestion:
-            # Search YouTube for the audiobook
-            video_id = search_youtube_audiobook(suggestion["title"], suggestion["author"])
-
-            if video_id:
-                suggestion["video_id"] = video_id
-                suggestion["youtube_url"] = f"https://www.youtube.com/watch?v={video_id}"
-                suggestions.append(suggestion)
-            else:
-                logger.warning(
-                    f"Skipping '{suggestion['title']}' - no valid YouTube audiobook found"
-                )
-
-    logger.info(f"Parsed {len(suggestions)} valid suggestions with YouTube videos")
-    return suggestions
-
-
-async def filter_already_played(suggestions: List[Dict[str, str]]) -> List[Dict[str, str]]:
-    """
-    Filter out suggestions that have already been played.
-
-    Args:
-        suggestions: List of suggestion dicts with 'video_id' key
-
-    Returns:
-        Filtered list of suggestions
-    """
-    from services.database import get_history
-
     try:
         # Get play history
         history = get_history(limit=1000)  # Get more history to check against
         played_video_ids = {item["youtube_id"] for item in history}
 
         # Filter out already played
-        filtered = [s for s in suggestions if s.get("video_id") not in played_video_ids]
+        filtered = [v for v in videos if v.get("video_id") not in played_video_ids]
 
-        removed_count = len(suggestions) - len(filtered)
+        removed_count = len(videos) - len(filtered)
         if removed_count > 0:
-            logger.info(f"Filtered out {removed_count} already-played suggestions")
+            logger.info(f"Filtered out {removed_count} already-played videos")
 
         return filtered
 
     except Exception as e:
-        logger.error(f"Error filtering suggestions: {e}", exc_info=True)
-        return suggestions  # Return unfiltered on error
+        logger.error(f"Error filtering videos: {e}", exc_info=True)
+        return videos  # Return unfiltered on error
 
 
-async def get_audiobook_suggestions() -> List[Dict[str, str]]:
+async def get_video_suggestions() -> List[Dict[str, str]]:
     """
-    Get audiobook suggestions based on recent books from Trilium.
+    Get video suggestions based on recently watched content.
+
+    Workflow:
+    1. Get summaries from last BOOKS_TO_ANALYZE videos
+    2. Generate a 1-sentence theme using AI
+    3. Search YouTube for videos matching the theme
+    4. Filter out already-watched videos
+    5. Return suggestions
 
     Returns:
-        List of suggestion dicts with 'title', 'author', 'youtube_url', 'video_id' keys
+        List of suggestion dicts with 'video_id', 'title', 'channel', 'youtube_url' keys
     """
     if not config.book_suggestions_enabled:
-        logger.warning("Book suggestions feature is disabled")
+        logger.warning("Video suggestions feature is disabled")
         return []
 
-    # Step 1: Get recent books from Trilium
-    books = await get_recent_books_from_trilium(config.books_to_analyze)
+    # Step 1: Get recent summaries
+    summaries = await get_recent_summaries(config.books_to_analyze)
 
-    if not books:
-        logger.warning("No recent books found in Trilium")
+    if not summaries:
+        logger.warning("No summaries found from recent videos")
         return []
 
-    book_titles = [book["title"] for book in books]
-    logger.info(f"Analyzing {len(book_titles)} recent books: {', '.join(book_titles[:3])}...")
+    logger.info(f"Analyzing {len(summaries)} recent video summaries")
 
-    # Step 2: Generate suggestions using AI
+    # Step 2: Generate theme from summaries
     if config.suggestions_ai_provider == "openai":
-        suggestions = generate_suggestions_openai(book_titles, config.suggestions_count)
+        theme = generate_theme_openai(summaries)
     elif config.suggestions_ai_provider == "gemini":
-        suggestions = generate_suggestions_gemini(book_titles, config.suggestions_count)
+        theme = generate_theme_gemini(summaries)
     else:
         logger.error(f"Invalid AI provider: {config.suggestions_ai_provider}")
         return []
 
-    if not suggestions:
-        logger.warning("No suggestions generated by AI")
+    if not theme:
+        logger.warning("Failed to generate theme from summaries")
         return []
 
-    # Step 3: Filter out already played audiobooks
-    filtered_suggestions = await filter_already_played(suggestions)
+    logger.info(f"Generated theme: '{theme}'")
 
-    logger.info(f"Generated {len(filtered_suggestions)} new audiobook suggestions")
-    return filtered_suggestions
+    # Step 3: Search YouTube for videos matching the theme
+    videos = search_youtube_by_theme(theme, config.suggestions_count)
+
+    if not videos:
+        logger.warning("No videos found for the generated theme")
+        return []
+
+    # Step 4: Filter out already played videos
+    filtered_videos = await filter_already_played(videos)
+
+    logger.info(f"Generated {len(filtered_videos)} new video suggestions")
+    return filtered_videos
+
+
+# Backwards compatibility alias
+async def get_audiobook_suggestions() -> List[Dict[str, str]]:
+    """
+    Deprecated: Use get_video_suggestions() instead.
+
+    This function is kept for backwards compatibility.
+    """
+    return await get_video_suggestions()

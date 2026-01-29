@@ -168,22 +168,22 @@ def prefetch_audio(video_id: str):
 @router.post("/queue/suggestions")
 async def generate_and_queue_suggestions():
     """
-    Generate audiobook suggestions based on recent books from Trilium
+    Generate video suggestions based on recently watched content
     and automatically add them to the queue.
     """
     if not config.book_suggestions_enabled:
         raise HTTPException(
             status_code=400,
-            detail="Book suggestions feature is disabled. Set BOOK_SUGGESTIONS_ENABLED=true in .env",
+            detail="Video suggestions feature is disabled. Set BOOK_SUGGESTIONS_ENABLED=true in .env",
         )
 
     try:
-        from services.book_suggestions import get_audiobook_suggestions
+        from services.book_suggestions import get_video_suggestions
 
-        logger.info("Generating audiobook suggestions from Trilium books...")
+        logger.info("Generating video suggestions based on recently watched content...")
 
         # Get suggestions
-        suggestions = await get_audiobook_suggestions()
+        suggestions = await get_video_suggestions()
 
         if not suggestions:
             return JSONResponse(
@@ -217,26 +217,27 @@ async def generate_and_queue_suggestions():
                             "queue_id": queue_id,
                             "video_id": video_id,
                             "title": metadata["title"],
-                            "suggested_title": suggestion["title"],
-                            "author": suggestion.get("author", "Unknown"),
+                            "channel": suggestion.get("channel", "Unknown"),
                         }
                     )
                     logger.info(f"Added suggestion to queue: {metadata['title']}")
                 else:
-                    # Fall back to AI-provided title
+                    # Fall back to suggestion-provided title
                     queue_id = add_to_queue(
-                        video_id, f"{suggestion['title']} by {suggestion.get('author', 'Unknown')}"
+                        video_id,
+                        suggestion["title"],
+                        suggestion.get("channel"),
                     )
                     added.append(
                         {
                             "queue_id": queue_id,
                             "video_id": video_id,
                             "title": suggestion["title"],
-                            "author": suggestion.get("author", "Unknown"),
+                            "channel": suggestion.get("channel", "Unknown"),
                         }
                     )
                     logger.warning(
-                        f"Could not fetch YouTube metadata for {video_id}, using AI title"
+                        f"Could not fetch YouTube metadata for {video_id}, using search result"
                     )
 
             except Exception as e:
@@ -246,7 +247,7 @@ async def generate_and_queue_suggestions():
         return JSONResponse(
             {
                 "status": "success",
-                "message": f"Added {len(added)} audiobook suggestions to queue",
+                "message": f"Added {len(added)} video suggestions to queue",
                 "added": added,
                 "failed": failed,
                 "total_suggestions": len(suggestions),

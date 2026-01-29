@@ -68,9 +68,9 @@
                         <span>Play Queue</span>
                     </button>
                     {% if book_suggestions_enabled %}
-                    <button onclick="suggestAudiobooks()" class="btn btn-suggest" id="suggest-btn">
-                        <i class="fas fa-book-reader"></i>
-                        <span>Suggest Audiobooks</span>
+                    <button onclick="suggestVideos()" class="btn btn-suggest" id="suggest-btn">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i>
+                        <span>Smart Suggestions</span>
                     </button>
                     {% endif %}
                 </div>
@@ -650,7 +650,7 @@
             }
         }
 
-        async function suggestAudiobooks() {
+        async function suggestVideos() {
             const suggestBtn = document.getElementById('suggest-btn');
             if (!suggestBtn) return;
 
@@ -659,8 +659,8 @@
             const originalHTML = suggestBtn.innerHTML;
             suggestBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Generating...</span>';
 
-            try {
-                updateStatus('Analyzing recent books and generating suggestions...', 'streaming');
+            try{
+                updateStatus('Analyzing recent videos and finding similar content...', 'streaming');
 
                 const res = await fetch('/queue/suggestions', { method: 'POST' });
                 const data = await res.json();
@@ -671,15 +671,15 @@
                         const failedCount = data.failed?.length || 0;
 
                         if (addedCount > 0) {
-                            updateStatus(`Added ${addedCount} audiobook suggestion(s) to queue!`, 'streaming');
+                            updateStatus(`Added ${addedCount} video suggestion(s) to queue!`, 'streaming');
 
                             // Show details of what was added
                             console.log('Suggestions added:', data.added);
                             data.added.forEach(item => {
-                                console.log(`  - ${item.title} (${item.author || 'Unknown author'})`);
+                                console.log(`  - ${item.title} by ${item.channel || 'Unknown channel'}`);
                             });
                         } else {
-                            updateStatus('No new audiobook suggestions found', 'idle');
+                            updateStatus('No new video suggestions found', 'idle');
                         }
 
                         if (failedCount > 0) {
@@ -704,6 +704,9 @@
                 suggestBtn.innerHTML = originalHTML;
             }
         }
+
+        // Backwards compatibility alias
+        const suggestAudiobooks = suggestVideos;
 
         async function removeFromQueue(queueId) {
             try {
