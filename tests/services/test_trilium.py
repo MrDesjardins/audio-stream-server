@@ -1,6 +1,6 @@
 """Tests for Trilium service."""
 
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 import pytest
 import httpx
 from services.trilium import (
@@ -145,21 +145,21 @@ class TestCheckVideoExists:
     """Tests for checking video existence in Trilium."""
 
     @patch("services.trilium.get_config")
-    @patch("services.trilium.httpx.get")
-    def test_check_video_exists_found(self, mock_get, mock_config):
+    @patch("services.trilium.get_httpx_client")
+    def test_check_video_exists_found(self, mock_client_factory, mock_config):
         """Test finding existing video note."""
-        # Mock config
         config = Mock()
         config.trilium_url = "http://localhost:8080"
         config.trilium_etapi_token = "test_token"
         mock_config.return_value = config
 
-        # Mock successful search response (list format)
         mock_response = Mock()
-        mock_response.status_code = 200
         mock_response.json.return_value = [{"noteId": "note123"}]
         mock_response.raise_for_status = Mock()
-        mock_get.return_value = mock_response
+
+        mock_client = Mock()
+        mock_client.get.return_value = mock_response
+        mock_client_factory.return_value = mock_client
 
         result = check_video_exists("video123")
 
@@ -168,21 +168,21 @@ class TestCheckVideoExists:
         assert "note123" in result["url"]
 
     @patch("services.trilium.get_config")
-    @patch("services.trilium.httpx.get")
-    def test_check_video_exists_found_dict_format(self, mock_get, mock_config):
+    @patch("services.trilium.get_httpx_client")
+    def test_check_video_exists_found_dict_format(self, mock_client_factory, mock_config):
         """Test finding existing video note with dict response."""
-        # Mock config
         config = Mock()
         config.trilium_url = "http://localhost:8080"
         config.trilium_etapi_token = "test_token"
         mock_config.return_value = config
 
-        # Mock successful search response (dict format)
         mock_response = Mock()
-        mock_response.status_code = 200
         mock_response.json.return_value = {"results": [{"noteId": "note123"}]}
         mock_response.raise_for_status = Mock()
-        mock_get.return_value = mock_response
+
+        mock_client = Mock()
+        mock_client.get.return_value = mock_response
+        mock_client_factory.return_value = mock_client
 
         result = check_video_exists("video123")
 
@@ -190,21 +190,21 @@ class TestCheckVideoExists:
         assert result["noteId"] == "note123"
 
     @patch("services.trilium.get_config")
-    @patch("services.trilium.httpx.get")
-    def test_check_video_exists_not_found(self, mock_get, mock_config):
+    @patch("services.trilium.get_httpx_client")
+    def test_check_video_exists_not_found(self, mock_client_factory, mock_config):
         """Test when video note doesn't exist."""
-        # Mock config
         config = Mock()
         config.trilium_url = "http://localhost:8080"
         config.trilium_etapi_token = "test_token"
         mock_config.return_value = config
 
-        # Mock empty search response
         mock_response = Mock()
-        mock_response.status_code = 200
         mock_response.json.return_value = []
         mock_response.raise_for_status = Mock()
-        mock_get.return_value = mock_response
+
+        mock_client = Mock()
+        mock_client.get.return_value = mock_response
+        mock_client_factory.return_value = mock_client
 
         result = check_video_exists("video123")
 
@@ -213,7 +213,6 @@ class TestCheckVideoExists:
     @patch("services.trilium.get_config")
     def test_check_video_exists_not_configured(self, mock_config):
         """Test when Trilium is not configured."""
-        # Mock incomplete config
         config = Mock()
         config.trilium_url = None
         config.trilium_etapi_token = "test_token"
@@ -224,38 +223,38 @@ class TestCheckVideoExists:
         assert result is None
 
     @patch("services.trilium.get_config")
-    @patch("services.trilium.httpx.get")
-    def test_check_video_exists_http_error(self, mock_get, mock_config):
+    @patch("services.trilium.get_httpx_client")
+    def test_check_video_exists_http_error(self, mock_client_factory, mock_config):
         """Test handling HTTP error."""
-        # Mock config
         config = Mock()
         config.trilium_url = "http://localhost:8080"
         config.trilium_etapi_token = "test_token"
         mock_config.return_value = config
 
-        # Mock HTTP error
-        mock_get.side_effect = httpx.HTTPError("Connection failed")
+        mock_client = Mock()
+        mock_client.get.side_effect = httpx.HTTPError("Connection failed")
+        mock_client_factory.return_value = mock_client
 
         result = check_video_exists("video123")
 
         assert result is None
 
     @patch("services.trilium.get_config")
-    @patch("services.trilium.httpx.get")
-    def test_check_video_exists_no_note_id_in_result(self, mock_get, mock_config):
-        """Test handling result without noteId."""
-        # Mock config
+    @patch("services.trilium.get_httpx_client")
+    def test_check_video_exists_no_note_id_in_result(self, mock_client_factory, mock_config):
+        """Test handling response without noteId."""
         config = Mock()
         config.trilium_url = "http://localhost:8080"
         config.trilium_etapi_token = "test_token"
         mock_config.return_value = config
 
-        # Mock response without noteId
         mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = [{"title": "Some note"}]
+        mock_response.json.return_value = [{"title": "Some Note"}]
         mock_response.raise_for_status = Mock()
-        mock_get.return_value = mock_response
+
+        mock_client = Mock()
+        mock_client.get.return_value = mock_response
+        mock_client_factory.return_value = mock_client
 
         result = check_video_exists("video123")
 
@@ -267,80 +266,70 @@ class TestCreateTriliumNote:
 
     @patch("services.trilium.get_video_title_from_history")
     @patch("services.trilium.get_config")
-    @patch("services.trilium.httpx.post")
-    def test_create_trilium_note_success(self, mock_post, mock_config, mock_get_title):
-        """Test successfully creating a note."""
-        # Mock config
+    @patch("services.trilium.get_httpx_client")
+    def test_create_trilium_note_success(self, mock_client_factory, mock_config, mock_get_title):
+        """Test successful note creation."""
         config = Mock()
         config.trilium_url = "http://localhost:8080"
         config.trilium_etapi_token = "test_token"
         config.trilium_parent_note_id = "parent123"
         mock_config.return_value = config
 
-        # Mock title from history
         mock_get_title.return_value = "Test Video Title"
 
-        # Mock successful note creation
         note_response = Mock()
-        note_response.json.return_value = {"note": {"noteId": "note123"}}
+        note_response.json.return_value = {"note": {"noteId": "new_note123"}}
         note_response.raise_for_status = Mock()
 
-        # Mock successful attribute creation
         attr_response = Mock()
+        attr_response.json.return_value = {"attributeId": "attr123"}
         attr_response.raise_for_status = Mock()
 
-        mock_post.side_effect = [note_response, attr_response]
+        mock_client = Mock()
+        mock_client.post.side_effect = [note_response, attr_response]
+        mock_client_factory.return_value = mock_client
 
-        result = create_trilium_note(
-            video_id="video123", transcript="Transcript text", summary="Summary text"
-        )
+        result = create_trilium_note("video123", "transcript text", "summary text")
 
-        assert result["noteId"] == "note123"
-        assert "note123" in result["url"]
-
-        # Verify both API calls were made
-        assert mock_post.call_count == 2
+        assert result["noteId"] == "new_note123"
+        assert "new_note123" in result["url"]
+        assert mock_client.post.call_count == 2
 
     @patch("services.trilium.get_video_title_from_history")
     @patch("services.trilium.get_config")
-    @patch("services.trilium.httpx.post")
+    @patch("services.trilium.get_httpx_client")
     def test_create_trilium_note_no_title_uses_fallback(
-        self, mock_post, mock_config, mock_get_title
+        self, mock_client_factory, mock_config, mock_get_title
     ):
-        """Test using fallback title when none in history."""
-        # Mock config
+        """Test note creation with fallback title."""
         config = Mock()
         config.trilium_url = "http://localhost:8080"
         config.trilium_etapi_token = "test_token"
         config.trilium_parent_note_id = "parent123"
         mock_config.return_value = config
 
-        # Mock no title from history
         mock_get_title.return_value = None
 
-        # Mock successful responses
         note_response = Mock()
-        note_response.json.return_value = {"note": {"noteId": "note123"}}
+        note_response.json.return_value = {"note": {"noteId": "new_note123"}}
         note_response.raise_for_status = Mock()
 
         attr_response = Mock()
         attr_response.raise_for_status = Mock()
 
-        mock_post.side_effect = [note_response, attr_response]
+        mock_client = Mock()
+        mock_client.post.side_effect = [note_response, attr_response]
+        mock_client_factory.return_value = mock_client
 
-        result = create_trilium_note("video123", "transcript", "summary")
+        create_trilium_note("video123", "transcript", "summary")
 
-        assert result is not None
-
-        # Check that fallback title was used
-        call_args = mock_post.call_args_list[0]
-        payload = call_args.kwargs["json"]
+        call_args = mock_client.post.call_args_list[0]
+        payload = call_args[1]["json"]
         assert "YouTube Video video123" in payload["title"]
 
     @patch("services.trilium.get_config")
     def test_create_trilium_note_not_configured(self, mock_config):
-        """Test error when Trilium not configured."""
-        # Mock incomplete config
+        """Test note creation when not configured."""
         config = Mock()
         config.trilium_url = None
         config.trilium_etapi_token = "test_token"
@@ -352,13 +341,11 @@ class TestCreateTriliumNote:
 
     @patch("services.trilium.get_video_title_from_history")
     @patch("services.trilium.get_config")
-    @patch("services.trilium.httpx.post")
-    @patch("services.trilium._save_to_backup")
-    def test_create_trilium_note_http_error_saves_backup(
-        self, mock_backup, mock_post, mock_config, mock_get_title
+    @patch("services.trilium.get_httpx_client")
+    def test_create_trilium_note_http_error_raises_exception(
+        self, mock_client_factory, mock_config, mock_get_title
     ):
-        """Test that backup is saved on HTTP error."""
-        # Mock config
+        """Test that HTTP errors raise exceptions."""
         config = Mock()
         config.trilium_url = "http://localhost:8080"
         config.trilium_etapi_token = "test_token"
@@ -367,23 +354,26 @@ class TestCreateTriliumNote:
 
         mock_get_title.return_value = "Test Title"
 
-        # Mock HTTP error
-        mock_post.side_effect = httpx.HTTPError("Connection failed")
+        # Simulate a status error from raise_for_status()
+        mock_response = Mock()
+        mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "Connection failed", request=Mock(), response=Mock()
+        )
+
+        mock_client = Mock()
+        mock_client.post.return_value = mock_response
+        mock_client_factory.return_value = mock_client
 
         with pytest.raises(Exception, match="Failed to create Trilium note"):
             create_trilium_note("video123", "transcript", "summary")
 
-        # Verify backup was saved
-        mock_backup.assert_called_once_with("video123", "transcript", "summary")
-
     @patch("services.trilium.get_video_title_from_history")
     @patch("services.trilium.get_config")
-    @patch("services.trilium.httpx.post")
+    @patch("services.trilium.get_httpx_client")
     def test_create_trilium_note_no_note_id_in_response(
-        self, mock_post, mock_config, mock_get_title
+        self, mock_client_factory, mock_config, mock_get_title
     ):
         """Test handling response without noteId."""
-        # Mock config
         config = Mock()
         config.trilium_url = "http://localhost:8080"
         config.trilium_etapi_token = "test_token"
@@ -392,11 +382,13 @@ class TestCreateTriliumNote:
 
         mock_get_title.return_value = "Test Title"
 
-        # Mock response without noteId
         note_response = Mock()
         note_response.json.return_value = {"note": {}}
         note_response.raise_for_status = Mock()
-        mock_post.return_value = note_response
+
+        mock_client = Mock()
+        mock_client.post.return_value = note_response
+        mock_client_factory.return_value = mock_client
 
         with pytest.raises(Exception, match="Failed to get note ID"):
             create_trilium_note("video123", "transcript", "summary")

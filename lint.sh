@@ -29,6 +29,10 @@ if [ "$MODE" = "fix" ]; then
     uv run mypy .
     echo -e "${GREEN}✓ MyPy type checking complete${NC}"
 
+    echo "🐶 Running Ruff (Linter)..."
+    uv run ruff check .
+    echo -e "${GREEN}✓ Ruff linting complete${NC}"
+
 elif [ "$MODE" = "check" ]; then
     echo -e "${YELLOW}Running in CHECK mode - will not modify files${NC}"
     echo ""
@@ -49,6 +53,15 @@ elif [ "$MODE" = "check" ]; then
         echo -e "${RED}✗ MyPy found type errors${NC}"
         exit 1
     fi
+
+    echo "🐶 Running Ruff (Linter)..."
+    if uv run ruff check .; then
+        echo -e "${GREEN}✓ Ruff linting passed${NC}"
+    else
+        echo -e "${RED}✗ Ruff found linting issues${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}✓ Ruff linting complete${NC}"
 
 else
     echo -e "${RED}Invalid mode: $MODE${NC}"

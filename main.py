@@ -11,18 +11,16 @@ from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-# Load environment variables from .env file FIRST
-load_dotenv()
-
-# Import services
 from config import get_config
 from services.background_tasks import init_background_tasks
 from services.database import init_database
 
-# Import routers
 from routes.stream import router as stream_router, init_stream_globals
 from routes.queue import router as queue_router
 from routes.transcription import router as transcription_router
+
+# Load environment variables from .env file FIRST
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(
@@ -146,7 +144,8 @@ app.include_router(transcription_router)
 def index(request: Request):
     """Serve the main HTML page."""
     server_host = request.url.hostname
-    logger.info(f"📄 Index page requested by {request.client.host}")
+    client = request.client
+    logger.info(f"📄 Index page requested by {client.host if client else 'unknown'}")
     logger.info(f"   Audio files served from: http://{server_host}:{api_port}/audio/{{video_id}}")
     return templates.TemplateResponse(
         "index.html",

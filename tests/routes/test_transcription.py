@@ -219,7 +219,7 @@ class TestGetSummary:
         response = client.get("/transcription/summary/test123")
 
         assert response.status_code == 404
-        assert "No transcription found" in response.json()["detail"]
+        assert "No summary found for video test123" in response.json()["detail"]
 
     @patch("routes.transcription.get_transcription_queue")
     @patch("routes.transcription.config")
@@ -236,11 +236,9 @@ class TestGetSummary:
 
         response = client.get("/transcription/summary/test123")
 
-        assert response.status_code == 200
+        assert response.status_code == 404
         data = response.json()
-        assert data["status"] == "transcribing"
-        assert data["summary"] is None
-        assert "not yet completed" in data["error"]
+        assert "No summary found for video test123" in data["detail"]
 
     @patch("routes.transcription.get_transcription_queue")
     @patch("routes.transcription.config")

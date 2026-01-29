@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import threading
 from pathlib import Path
 from typing import Optional, Dict
 from datetime import datetime
@@ -18,6 +19,7 @@ class TranscriptionCache:
     def __init__(self, cache_dir: str = "/tmp/transcription-cache"):
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
         logger.info(f"Transcription cache initialized at {self.cache_dir}")
 
     def _get_cache_path(self, video_id: str) -> Path:
@@ -50,17 +52,18 @@ class TranscriptionCache:
         cache_file = self._get_cache_path(video_id)
 
         try:
-            # Load existing data or create new
-            data = {}
-            if cache_file.exists():
-                with open(cache_file, "r") as f:
-                    data = json.load(f)
+            with self._lock:
+                # Load existing data or create new
+                data = {}
+                if cache_file.exists():
+                    with open(cache_file, "r") as f:
+                        data = json.load(f)
 
-            data["transcript"] = transcript
-            data["transcript_timestamp"] = datetime.now().isoformat()
+                data["transcript"] = transcript
+                data["transcript_timestamp"] = datetime.now().isoformat()
 
-            with open(cache_file, "w") as f:
-                json.dump(data, f, indent=2)
+                with open(cache_file, "w") as f:
+                    json.dump(data, f, indent=2)
 
             logger.info(f"Cached transcript for video {video_id}")
         except Exception as e:
@@ -71,17 +74,18 @@ class TranscriptionCache:
         cache_file = self._get_cache_path(video_id)
 
         try:
-            # Load existing data or create new
-            data = {}
-            if cache_file.exists():
-                with open(cache_file, "r") as f:
-                    data = json.load(f)
+            with self._lock:
+                # Load existing data or create new
+                data = {}
+                if cache_file.exists():
+                    with open(cache_file, "r") as f:
+                        data = json.load(f)
 
-            data["summary"] = summary
-            data["summary_timestamp"] = datetime.now().isoformat()
+                data["summary"] = summary
+                data["summary_timestamp"] = datetime.now().isoformat()
 
-            with open(cache_file, "w") as f:
-                json.dump(data, f, indent=2)
+                with open(cache_file, "w") as f:
+                    json.dump(data, f, indent=2)
 
             logger.info(f"Cached summary for video {video_id}")
         except Exception as e:
@@ -141,13 +145,16 @@ class AudioCache:
 # Global cache instances
 _transcript_cache: Optional[TranscriptionCache] = None
 _audio_cache: Optional[AudioCache] = None
+_cache_lock = threading.Lock()
 
 
 def get_transcript_cache() -> TranscriptionCache:
     """Get the global transcript cache instance."""
     global _transcript_cache
     if _transcript_cache is None:
-        _transcript_cache = TranscriptionCache()
+        with _cache_lock:
+            if _transcript_cache is None:
+                _transcript_cache = TranscriptionCache()
     return _transcript_cache
 
 
@@ -155,6 +162,8 @@ def get_audio_cache() -> AudioCache:
     """Get the global audio cache instance."""
     global _audio_cache
     if _audio_cache is None:
-        max_files = int(os.environ.get("AUDIO_CACHE_MAX_FILES", "10"))
-        _audio_cache = AudioCache(max_files=max_files)
+        with _cache_lock:
+            if _audio_cache is None:
+                max_files = int(os.environ.get("AUDIO_CACHE_MAX_FILES", "10"))
+                _audio_cache = AudioCache(max_files=max_files)
     return _audio_cache

@@ -3,7 +3,7 @@
 import os
 import tempfile
 import threading
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 
 import pytest
 from fastapi import FastAPI

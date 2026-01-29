@@ -5,7 +5,6 @@ import tempfile
 import time
 from pathlib import Path
 from unittest.mock import patch, Mock
-import pytest
 from services.cache import AudioCache, TranscriptionCache, get_audio_cache, get_transcript_cache
 
 

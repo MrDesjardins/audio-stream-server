@@ -54,6 +54,18 @@ uv run mypy services/database.py
 uv run mypy services/
 ```
 
+### Ruff - Linter
+
+
+**Manual usage:**
+
+```bash
+# Check
+uv run ruff check 
+
+# Fix 
+uv run ruff check --fix
+```
 ## CI Integration
 
 The lint checks are automatically run in CI. All pull requests must pass:

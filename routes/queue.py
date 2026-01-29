@@ -14,7 +14,7 @@ from services.database import (
     remove_from_queue,
     clear_queue,
 )
-from services.youtube import get_video_title, get_video_metadata, extract_video_id
+from services.youtube import get_video_metadata, extract_video_id
 from config import get_config
 
 logger = logging.getLogger(__name__)
@@ -133,10 +133,8 @@ def prefetch_audio(video_id: str):
         is_download_in_progress,
     )
     from services.cache import get_audio_cache
-    import os
 
     audio_cache = get_audio_cache()
-    audio_path = config.get_audio_path(video_id)
 
     # Already cached — nothing to do
     if audio_cache.check_file_exists(video_id):

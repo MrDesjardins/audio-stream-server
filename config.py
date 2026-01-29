@@ -1,12 +1,45 @@
 """Configuration management for audio stream server with transcription."""
 
 import os
+import threading
+import logging
 from typing import Optional
 from dataclasses import dataclass
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
+
+logger = logging.getLogger(__name__)
+
+
+def _parse_int(
+    value: str, default: int, min_val: Optional[int] = None, max_val: Optional[int] = None
+) -> int:
+    """
+    Parse integer from string with validation and bounds checking.
+
+    Args:
+        value: String value to parse
+        default: Default value if parsing fails
+        min_val: Minimum allowed value (inclusive)
+        max_val: Maximum allowed value (inclusive)
+
+    Returns:
+        Parsed integer value or default if parsing fails or out of bounds
+    """
+    try:
+        result = int(value)
+        if min_val is not None and result < min_val:
+            logger.warning(f"Value {result} below minimum {min_val}, using default {default}")
+            return default
+        if max_val is not None and result > max_val:
+            logger.warning(f"Value {result} above maximum {max_val}, using default {default}")
+            return default
+        return result
+    except (ValueError, TypeError):
+        logger.warning(f"Invalid integer value '{value}', using default {default}")
+        return default
 
 
 @dataclass
@@ -56,15 +89,19 @@ class Config:
         config = cls(
             # Server settings
             fastapi_host=os.getenv("FASTAPI_HOST", "127.0.0.1"),
-            fastapi_port=int(os.getenv("FASTAPI_API_PORT", "8000")),
+            fastapi_port=_parse_int(os.getenv("FASTAPI_API_PORT", "8000"), 8000, 1, 65535),
             # Audio settings
-            audio_quality=int(os.getenv("AUDIO_QUALITY", "4")),
-            prefetch_threshold_seconds=int(os.getenv("PREFETCH_THRESHOLD_SECONDS", "30")),
+            audio_quality=_parse_int(os.getenv("AUDIO_QUALITY", "4"), 4, 0, 9),
+            prefetch_threshold_seconds=_parse_int(
+                os.getenv("PREFETCH_THRESHOLD_SECONDS", "30"), 30, 0, 300
+            ),
             # Transcription settings
             transcription_enabled=transcription_enabled,
             openai_api_key=os.getenv("OPENAI_API_KEY"),
             temp_audio_dir=os.getenv("TEMP_AUDIO_DIR", "/tmp/audio-transcriptions"),
-            max_audio_length_minutes=int(os.getenv("MAX_AUDIO_LENGTH_MINUTES", "60")),
+            max_audio_length_minutes=_parse_int(
+                os.getenv("MAX_AUDIO_LENGTH_MINUTES", "60"), 60, 1, 600
+            ),
             # Summarization settings
             summary_provider=os.getenv("SUMMARY_PROVIDER", "openai").lower(),
             gemini_api_key=os.getenv("GEMINI_API_KEY"),
@@ -75,8 +112,8 @@ class Config:
             # Book suggestions settings
             book_suggestions_enabled=os.getenv("BOOK_SUGGESTIONS_ENABLED", "false").lower()
             == "true",
-            books_to_analyze=int(os.getenv("BOOKS_TO_ANALYZE", "10")),
-            suggestions_count=int(os.getenv("SUGGESTIONS_COUNT", "4")),
+            books_to_analyze=_parse_int(os.getenv("BOOKS_TO_ANALYZE", "10"), 10, 1, 100),
+            suggestions_count=_parse_int(os.getenv("SUGGESTIONS_COUNT", "4"), 4, 1, 20),
             suggestions_ai_provider=os.getenv("SUGGESTIONS_AI_PROVIDER", "openai").lower(),
         )
 
@@ -161,11 +198,14 @@ class Config:
 
 # Global config instance
 config: Optional[Config] = None
+_config_lock = threading.Lock()
 
 
 def get_config() -> Config:
     """Get the global configuration instance."""
     global config
     if config is None:
-        config = Config.load_from_env()
+        with _config_lock:
+            if config is None:
+                config = Config.load_from_env()
     return config

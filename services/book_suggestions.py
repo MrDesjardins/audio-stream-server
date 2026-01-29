@@ -11,7 +11,6 @@ from typing import List, Dict, Optional
 from openai import OpenAI
 from google import genai
 from config import get_config
-from services.cache import get_transcript_cache
 from services.database import get_history
 
 logger = logging.getLogger(__name__)
@@ -58,24 +57,17 @@ async def get_recent_summaries(limit: int) -> List[Dict[str, str]]:
                 if content:
                     # Extract summary from HTML content
                     # Remove the YouTube link section at the bottom
-                    content = re.sub(
-                        r'<p style="margin-top.*?</p>',
-                        '',
-                        content,
-                        flags=re.DOTALL
-                    )
+                    content = re.sub(r'<p style="margin-top.*?</p>', "", content, flags=re.DOTALL)
 
                     # Strip HTML tags to get plain text
-                    text_summary = re.sub(r'<[^>]+>', ' ', content)
+                    text_summary = re.sub(r"<[^>]+>", " ", content)
                     # Clean up whitespace
-                    text_summary = re.sub(r'\s+', ' ', text_summary).strip()
+                    text_summary = re.sub(r"\s+", " ", text_summary).strip()
 
                     if text_summary:
-                        summaries.append({
-                            "video_id": video_id,
-                            "title": title,
-                            "summary": text_summary
-                        })
+                        summaries.append(
+                            {"video_id": video_id, "title": title, "summary": text_summary}
+                        )
                         logger.debug(f"Extracted summary for {title} ({len(text_summary)} chars)")
 
                         # Stop when we have enough
@@ -108,8 +100,7 @@ def generate_theme_openai(summaries: List[Dict[str, str]]) -> Optional[str]:
         client = OpenAI(api_key=config.openai_api_key)
 
         summaries_text = "\n\n".join(
-            f"Video {i+1}:\n{s['summary']}"
-            for i, s in enumerate(summaries)
+            f"Video {i+1}:\n{s['summary']}" for i, s in enumerate(summaries)
         )
 
         prompt = f"""Analyze these video summaries from recently watched content:
@@ -139,7 +130,8 @@ Respond with ONLY the theme sentence, nothing else."""
             max_tokens=100,
         )
 
-        theme = response.choices[0].message.content.strip()
+        theme = response.choices[0].message.content
+        theme = theme.strip() if theme else None
         logger.info(f"Generated theme: {theme}")
         return theme
 
@@ -162,8 +154,7 @@ def generate_theme_gemini(summaries: List[Dict[str, str]]) -> Optional[str]:
         client = genai.Client(api_key=config.gemini_api_key)
 
         summaries_text = "\n\n".join(
-            f"Video {i+1}:\n{s['summary']}"
-            for i, s in enumerate(summaries)
+            f"Video {i+1}:\n{s['summary']}" for i, s in enumerate(summaries)
         )
 
         prompt = f"""Analyze these video summaries from recently watched content:
@@ -179,12 +170,9 @@ The sentence should be:
 
 Respond with ONLY the theme sentence, nothing else."""
 
-        response = client.models.generate_content(
-            model="gemini-1.5-flash",
-            contents=prompt
-        )
-
-        theme = response.text.strip()
+        response = client.models.generate_content(model="gemini-1.5-flash", contents=prompt)
+        theme = response.text
+        theme = theme.strip() if theme else None
         logger.info(f"Generated theme: {theme}")
         return theme
 
@@ -248,13 +236,15 @@ def search_youtube_by_theme(theme: str, count: int) -> List[Dict[str, str]]:
                     logger.debug(f"Skipping short video: {title} ({duration}s)")
                     continue
 
-                videos.append({
-                    "video_id": video_id,
-                    "title": title,
-                    "channel": channel,
-                    "duration": duration,
-                    "youtube_url": f"https://www.youtube.com/watch?v={video_id}"
-                })
+                videos.append(
+                    {
+                        "video_id": video_id,
+                        "title": title,
+                        "channel": channel,
+                        "duration": duration,
+                        "youtube_url": f"https://www.youtube.com/watch?v={video_id}",
+                    }
+                )
 
                 logger.info(f"Found video: {title} ({video_id}, {duration}s)")
 
@@ -359,13 +349,3 @@ async def get_video_suggestions() -> List[Dict[str, str]]:
 
     logger.info(f"Generated {len(filtered_videos)} new video suggestions")
     return filtered_videos
-
-
-# Backwards compatibility alias
-async def get_audiobook_suggestions() -> List[Dict[str, str]]:
-    """
-    Deprecated: Use get_video_suggestions() instead.
-
-    This function is kept for backwards compatibility.
-    """
-    return await get_video_suggestions()

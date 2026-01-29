@@ -1,6 +1,6 @@
 """Tests for queue routes."""
 
-from unittest.mock import patch, Mock
+from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 from routes.queue import router
@@ -287,7 +287,7 @@ class TestSuggestionsEndpoint:
 
     @patch("routes.queue.get_video_metadata")
     @patch("routes.queue.add_to_queue")
-    @patch("services.book_suggestions.get_audiobook_suggestions")
+    @patch("services.book_suggestions.get_video_suggestions")
     @patch("routes.queue.config")
     @pytest.mark.asyncio
     async def test_suggestions_success(
@@ -338,7 +338,7 @@ class TestSuggestionsEndpoint:
         assert data["added"][0]["video_id"] == "dQw4w9WgXcQ"
         assert data["added"][0]["title"] == "Atomic Habits Full Audiobook"
 
-    @patch("services.book_suggestions.get_audiobook_suggestions")
+    @patch("services.book_suggestions.get_video_suggestions")
     @patch("routes.queue.config")
     @pytest.mark.asyncio
     async def test_suggestions_no_results(self, mock_config, mock_get_suggestions, client):
@@ -355,7 +355,7 @@ class TestSuggestionsEndpoint:
 
     @patch("routes.queue.get_video_metadata")
     @patch("routes.queue.add_to_queue")
-    @patch("services.book_suggestions.get_audiobook_suggestions")
+    @patch("services.book_suggestions.get_video_suggestions")
     @patch("routes.queue.config")
     @pytest.mark.asyncio
     async def test_suggestions_partial_failure(
@@ -394,7 +394,7 @@ class TestSuggestionsEndpoint:
         assert data["status"] == "success"
         assert len(data["added"]) == 2  # Both should be added (second uses fallback title)
 
-    @patch("services.book_suggestions.get_audiobook_suggestions")
+    @patch("services.book_suggestions.get_video_suggestions")
     @patch("routes.queue.config")
     @pytest.mark.asyncio
     async def test_suggestions_error(self, mock_config, mock_get_suggestions, client):

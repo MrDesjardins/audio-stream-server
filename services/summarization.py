@@ -1,11 +1,10 @@
 """Transcript summarization using ChatGPT or Gemini."""
 
 import logging
-from typing import Optional
-from openai import OpenAI
 from google import genai
 
 from config import get_config
+from services.api_clients import get_openai_client
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +57,7 @@ def _summarize_with_openai(transcript: str, video_id: str) -> str:
 
     logger.info(f"Summarizing transcript for video {video_id} using OpenAI")
 
-    client = OpenAI(api_key=config.openai_api_key)
+    client = get_openai_client()
 
     try:
         response = client.chat.completions.create(
@@ -75,8 +74,10 @@ def _summarize_with_openai(transcript: str, video_id: str) -> str:
         )
 
         summary = response.choices[0].message.content
-        logger.info(f"Successfully generated summary using OpenAI ({len(summary)} characters)")
-        return summary
+        logger.info(
+            f"Successfully generated summary using OpenAI ({0 if not summary else len(summary)} characters)"
+        )
+        return summary if summary else ""
 
     except Exception as e:
         logger.error(f"Failed to summarize with OpenAI: {e}")
@@ -104,8 +105,10 @@ def _summarize_with_gemini(transcript: str, video_id: str) -> str:
         )
 
         summary = response.text
-        logger.info(f"Successfully generated summary using Gemini ({len(summary)} characters)")
-        return summary
+        logger.info(
+            f"Successfully generated summary using Gemini ({0 if not summary else len(summary)} characters)"
+        )
+        return summary if summary else ""
 
     except Exception as e:
         logger.error(f"Failed to summarize with Gemini: {e}")

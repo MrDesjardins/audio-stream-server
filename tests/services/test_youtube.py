@@ -2,8 +2,7 @@
 
 import json
 import subprocess
-from unittest.mock import Mock, patch, MagicMock
-import pytest
+from unittest.mock import Mock, patch
 from services.youtube import get_video_title, extract_video_id
 
 

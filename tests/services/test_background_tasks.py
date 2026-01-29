@@ -2,17 +2,14 @@
 
 import os
 import tempfile
-import time
 from datetime import datetime, timedelta, timezone
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 
-import pytest
 from services.background_tasks import (
     TranscriptionJob,
     JobStatus,
     TranscriptionQueue,
     TranscriptionWorker,
-    get_transcription_queue,
 )
 
 

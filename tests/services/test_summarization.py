@@ -64,9 +64,9 @@ class TestSummarizeWithOpenAI:
         with pytest.raises(ValueError, match="OpenAI API key not configured"):
             _summarize_with_openai("Test transcript", "test123")
 
-    @patch("services.summarization.OpenAI")
+    @patch("services.summarization.get_openai_client")
     @patch("services.summarization.get_config")
-    def test_summarize_with_openai_success(self, mock_config, mock_openai_class):
+    def test_summarize_with_openai_success(self, mock_config, mock_get_client):
         """Test successful OpenAI summarization."""
         from services.summarization import _summarize_with_openai
 
@@ -83,7 +83,7 @@ class TestSummarizeWithOpenAI:
         mock_choice.message = mock_message
         mock_response.choices = [mock_choice]
         mock_client.chat.completions.create.return_value = mock_response
-        mock_openai_class.return_value = mock_client
+        mock_get_client.return_value = mock_client
 
         result = _summarize_with_openai("Test transcript", "test123")
 
@@ -103,9 +103,9 @@ class TestSummarizeWithOpenAI:
         assert messages[1]["role"] == "user"
         assert "Test transcript" in messages[1]["content"]
 
-    @patch("services.summarization.OpenAI")
+    @patch("services.summarization.get_openai_client")
     @patch("services.summarization.get_config")
-    def test_summarize_with_openai_api_error(self, mock_config, mock_openai_class):
+    def test_summarize_with_openai_api_error(self, mock_config, mock_get_client):
         """Test OpenAI summarization with API error."""
         from services.summarization import _summarize_with_openai
 
@@ -115,7 +115,7 @@ class TestSummarizeWithOpenAI:
 
         mock_client = Mock()
         mock_client.chat.completions.create.side_effect = Exception("API error")
-        mock_openai_class.return_value = mock_client
+        mock_get_client.return_value = mock_client
 
         with pytest.raises(Exception, match="API error"):
             _summarize_with_openai("Test transcript", "test123")

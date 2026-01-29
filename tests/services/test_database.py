@@ -1,9 +1,7 @@
 """Tests for database service."""
 
 import os
-import sqlite3
 import tempfile
-from datetime import datetime
 import pytest
 from services.database import (
     init_database,

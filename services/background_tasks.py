@@ -47,7 +47,7 @@ class TranscriptionJob:
 class TranscriptionQueue:
     """Thread-safe queue for transcription jobs."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.queue: Queue[TranscriptionJob] = Queue()
         self.jobs: Dict[str, TranscriptionJob] = {}
         self.lock = threading.Lock()

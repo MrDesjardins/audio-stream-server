@@ -1,13 +1,10 @@
 """Tests for transcription service."""
 
-import os
-import tempfile
-from unittest.mock import Mock, patch, MagicMock, mock_open
+from unittest.mock import Mock, patch, mock_open
 import pytest
 from services.transcription import (
     compress_audio_for_whisper,
     transcribe_audio,
-    WHISPER_MAX_FILE_SIZE,
 )
 
 
@@ -132,12 +129,12 @@ class TestTranscribeAudio:
         mock_exists.return_value = True
 
         # Mock OpenAI client
-        with patch("services.transcription.OpenAI") as mock_openai:
+        with patch("services.transcription.get_openai_client") as mock_get_client:
             mock_client = Mock()
             mock_response = Mock()
             mock_response.text = "This is the transcribed text"
             mock_client.audio.transcriptions.create.return_value = mock_response
-            mock_openai.return_value = mock_client
+            mock_get_client.return_value = mock_client
 
             with patch("builtins.open", mock_open(read_data=b"audio data")):
                 result = transcribe_audio("/path/to/audio.mp3")
@@ -193,14 +190,14 @@ class TestTranscribeAudio:
         mock_compress.return_value = "/tmp/compressed.mp3"
         mock_exists.return_value = True
 
-        with patch("services.transcription.OpenAI") as mock_openai:
+        with patch("services.transcription.get_openai_client") as mock_get_client:
             mock_client = Mock()
             mock_client.audio.transcriptions.create.side_effect = [
                 Exception("API error"),
                 Exception("API error"),
                 "Success on third try",
             ]
-            mock_openai.return_value = mock_client
+            mock_get_client.return_value = mock_client
 
             with patch("builtins.open", mock_open(read_data=b"audio data")):
                 result = transcribe_audio("/path/to/audio.mp3", retries=3)
@@ -228,10 +225,10 @@ class TestTranscribeAudio:
         mock_compress.return_value = "/tmp/compressed.mp3"
         mock_exists.return_value = True
 
-        with patch("services.transcription.OpenAI") as mock_openai:
+        with patch("services.transcription.get_openai_client") as mock_get_client:
             mock_client = Mock()
             mock_client.audio.transcriptions.create.side_effect = Exception("API error")
-            mock_openai.return_value = mock_client
+            mock_get_client.return_value = mock_client
 
             with patch("builtins.open", mock_open(read_data=b"audio data")):
                 with pytest.raises(Exception, match="Transcription failed after 3 attempts"):
@@ -254,11 +251,11 @@ class TestTranscribeAudio:
         mock_compress.return_value = "/tmp/compressed.mp3"
         mock_exists.return_value = True
 
-        with patch("services.transcription.OpenAI") as mock_openai:
+        with patch("services.transcription.get_openai_client") as mock_get_client:
             mock_client = Mock()
             # API returns string directly
             mock_client.audio.transcriptions.create.return_value = "Direct string response"
-            mock_openai.return_value = mock_client
+            mock_get_client.return_value = mock_client
 
             with patch("builtins.open", mock_open(read_data=b"audio data")):
                 result = transcribe_audio("/path/to/audio.mp3")
@@ -282,16 +279,14 @@ class TestTranscribeAudio:
         mock_compress.return_value = "/tmp/compressed.mp3"
         mock_exists.return_value = True
 
-        with patch("services.transcription.OpenAI") as mock_openai:
+        with patch("services.transcription.get_openai_client") as mock_get_client:
             mock_client = Mock()
             mock_client.audio.transcriptions.create.side_effect = Exception("API error")
-            mock_openai.return_value = mock_client
+            mock_get_client.return_value = mock_client
 
             with patch("builtins.open", mock_open(read_data=b"audio data")):
-                try:
+                with pytest.raises(Exception, match="API error"):
                     transcribe_audio("/path/to/audio.mp3", retries=1)
-                except:
-                    pass
 
             # Should still clean up compressed file even on error
-            mock_unlink.assert_called()
+            mock_unlink.assert_called_once_with("/tmp/compressed.mp3")

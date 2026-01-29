@@ -27,7 +27,7 @@ def test_trilium_connection():
     except Exception as e:
         print(f"✗ Failed to connect to Trilium: {e}")
         print(f"  Make sure Trilium is running at {config.trilium_url}")
-        print(f"  Check that TRILIUM_ETAPI_TOKEN is correct")
+        print("  Check that TRILIUM_ETAPI_TOKEN is correct")
         return False
 
     # Test 2: Check if parent note exists
@@ -40,13 +40,13 @@ def test_trilium_connection():
         print(f"✓ Parent note found: '{note.get('title', 'Untitled')}'")
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 404:
-            print(f"✗ Parent note not found (404)")
+            print("✗ Parent note not found (404)")
             print(f"  The note ID '{config.trilium_parent_note_id}' does not exist")
-            print(f"  To get a valid note ID:")
-            print(f"  1. Open Trilium Notes")
-            print(f"  2. Right-click on the note where you want summaries")
-            print(f"  3. Select 'Copy Note ID'")
-            print(f"  4. Update TRILIUM_PARENT_NOTE_ID in your .env file")
+            print("  To get a valid note ID:")
+            print("  1. Open Trilium Notes")
+            print("  2. Right-click on the note where you want summaries")
+            print("  3. Select 'Copy Note ID'")
+            print("  4. Update TRILIUM_PARENT_NOTE_ID in your .env file")
         else:
             print(f"✗ Error checking parent note: {e}")
         return False
@@ -68,10 +68,10 @@ def test_trilium_connection():
             print(f"✓ Successfully searched notes (found {len(results)} with youtube_id attribute)")
         else:
             print(f"⚠ Search returned status {response.status_code}")
-            print(f"  This might be okay - the deduplication may still work")
+            print("  This might be okay - the deduplication may still work")
     except Exception as e:
         print(f"⚠ Could not test search: {e}")
-        print(f"  This might be okay - the deduplication will be skipped if search fails")
+        print("  This might be okay - the deduplication will be skipped if search fails")
 
     print("\n" + "=" * 50)
     print("All critical tests passed! Trilium is configured correctly.")

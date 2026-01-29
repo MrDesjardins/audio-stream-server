@@ -5,10 +5,9 @@ import os
 import subprocess
 import tempfile
 import time
-from typing import Optional
-from openai import OpenAI
 
 from config import get_config
+from services.api_clients import get_openai_client
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +89,7 @@ def compress_audio_for_whisper(audio_path: str) -> str:
 
         return temp_path
 
-    except Exception as e:
+    except Exception:
         # Clean up temp file on error
         if os.path.exists(temp_path):
             os.unlink(temp_path)
@@ -121,7 +120,7 @@ def transcribe_audio(audio_path: str, retries: int = 3) -> str:
     if not config.openai_api_key:
         raise ValueError("OpenAI API key not configured")
 
-    client = OpenAI(api_key=config.openai_api_key)
+    client = get_openai_client()
 
     # Always compress audio to save costs and reduce upload time
     file_size = os.path.getsize(audio_path)

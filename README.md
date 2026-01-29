@@ -175,3 +175,10 @@ sudo systemctl status audio-stream
 journalctl -u audio-stream -n 100 -f
 ```
 
+# Lint
+
+```sh
+uv run ruff check --fix
+uv run mypy .
+uv run black .
+```

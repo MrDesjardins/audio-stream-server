@@ -49,17 +49,6 @@ extend-exclude = '''
 [tool.mypy]
 python_version = "3.12"
 warn_unused_configs = true
-ignore_missing_imports = true
-check_untyped_defs = false
-warn_redundant_casts = true
-warn_no_return = false
-strict_optional = false
-
-# Gradual typing - start lenient
-disallow_untyped_defs = false
-disallow_incomplete_defs = false
-disallow_any_generics = false
-no_implicit_optional = false
 
 # Ignore common patterns for now
 [[tool.mypy.overrides]]

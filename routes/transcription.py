@@ -111,24 +111,19 @@ def get_summary(video_id: str):
             if content:
                 # Extract summary from HTML content
                 # Remove the YouTube link section at the bottom
-                content = re.sub(
-                    r'<p style="margin-top.*?</p>',
-                    '',
-                    content,
-                    flags=re.DOTALL
-                )
+                content = re.sub(r'<p style="margin-top.*?</p>', "", content, flags=re.DOTALL)
 
                 # Convert HTML to text with line breaks
                 # Replace closing tags with newlines for better formatting
-                text_summary = re.sub(r'</p>', '\n\n', content)
-                text_summary = re.sub(r'</h[1-3]>', '\n\n', text_summary)
-                text_summary = re.sub(r'</li>', '\n', text_summary)
-                text_summary = re.sub(r'<ul>', '\n', text_summary)
-                text_summary = re.sub(r'</ul>', '\n', text_summary)
+                text_summary = re.sub(r"</p>", "\n\n", content)
+                text_summary = re.sub(r"</h[1-3]>", "\n\n", text_summary)
+                text_summary = re.sub(r"</li>", "\n", text_summary)
+                text_summary = re.sub(r"<ul>", "\n", text_summary)
+                text_summary = re.sub(r"</ul>", "\n", text_summary)
                 # Remove remaining HTML tags
-                text_summary = re.sub(r'<[^>]+>', '', text_summary)
+                text_summary = re.sub(r"<[^>]+>", "", text_summary)
                 # Clean up excessive whitespace
-                text_summary = re.sub(r'\n\s*\n\s*\n', '\n\n', text_summary)
+                text_summary = re.sub(r"\n\s*\n\s*\n", "\n\n", text_summary)
                 text_summary = text_summary.strip()
 
                 return JSONResponse(
@@ -141,9 +136,7 @@ def get_summary(video_id: str):
                 )
 
         # Not found anywhere
-        raise HTTPException(
-            status_code=404, detail=f"No summary found for video {video_id}"
-        )
+        raise HTTPException(status_code=404, detail=f"No summary found for video {video_id}")
 
     except HTTPException:
         raise

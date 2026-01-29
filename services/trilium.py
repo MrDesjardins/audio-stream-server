@@ -3,18 +3,19 @@
 import logging
 import json
 import os
-from typing import Optional, Dict
+from typing import Optional, Dict, Union
 import httpx
 
 from config import get_config
 from services.database import get_video_title_from_history
+from services.api_clients import get_httpx_client
 
 logger = logging.getLogger(__name__)
 
 
-def _build_url(base_url: str, path: str) -> str:
+def _build_url(base_url: Union[str, None], path: str) -> str:
     """Build a URL by joining base and path, handling trailing/leading slashes."""
-    base = base_url.rstrip("/")
+    base = base_url.rstrip("/") if base_url else ""
     path = path.lstrip("/")
     return f"{base}/{path}"
 
@@ -50,7 +51,8 @@ def check_video_exists(video_id: str) -> Optional[Dict[str, str]]:
 
         # Try to search using query parameter
         params = {"search": search_query}
-        response = httpx.get(url, headers=headers, params=params, timeout=10.0)
+        client = get_httpx_client()
+        response = client.get(url, headers=headers, params=params, timeout=10.0)
         response.raise_for_status()
 
         results = response.json()
@@ -78,7 +80,8 @@ def check_video_exists(video_id: str) -> Optional[Dict[str, str]]:
 
             logger.info(f"Found existing note for video {video_id}: {note_id}")
             # Construct note URL - hash fragment should be appended directly
-            note_url = f"{config.trilium_url.rstrip('/')}/#root/{note_id}"
+            config_trilium_url = config.trilium_url or ""
+            note_url = f"{config_trilium_url.rstrip('/')}/#root/{note_id}"
             return {"noteId": note_id, "url": note_url}
 
         logger.info(f"No existing note found for video {video_id}")
@@ -132,7 +135,10 @@ def create_trilium_note(video_id: str, transcript: str, summary: str) -> Dict[st
 </p>
 """
 
-        headers = {"Authorization": config.trilium_etapi_token, "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {config.trilium_etapi_token}",
+            "Content-Type": "application/json",
+        }
 
         # Step 1: Create the note (without attributes)
         payload = {
@@ -144,7 +150,8 @@ def create_trilium_note(video_id: str, transcript: str, summary: str) -> Dict[st
         }
 
         url = _build_url(config.trilium_url, "etapi/create-note")
-        response = httpx.post(url, headers=headers, json=payload, timeout=30.0)
+        client = get_httpx_client()
+        response = client.post(url, headers=headers, json=payload, timeout=30.0)
         response.raise_for_status()
 
         result = response.json()
@@ -164,7 +171,8 @@ def create_trilium_note(video_id: str, transcript: str, summary: str) -> Dict[st
         }
 
         attribute_url = _build_url(config.trilium_url, "etapi/attributes")
-        attr_response = httpx.post(
+        client = get_httpx_client()
+        attr_response = client.post(
             attribute_url, headers=headers, json=attribute_payload, timeout=30.0
         )
         attr_response.raise_for_status()
@@ -172,7 +180,8 @@ def create_trilium_note(video_id: str, transcript: str, summary: str) -> Dict[st
         logger.info(f"Added youtube_id attribute to note {note_id}")
 
         # Construct note URL - hash fragment should be appended directly
-        note_url = f"{config.trilium_url.rstrip('/')}/#root/{note_id}"
+        config_trilium_url = config.trilium_url or ""
+        note_url = f"{config_trilium_url.rstrip('/')}/#root/{note_id}"
         logger.info(f"Successfully created Trilium note: {note_id} with youtube_id attribute")
         return {"noteId": note_id, "url": note_url}
 
@@ -309,7 +318,8 @@ def get_note_content(note_id: str) -> Optional[str]:
         }
 
         url = _build_url(config.trilium_url, f"etapi/notes/{note_id}/content")
-        response = httpx.get(url, headers=headers, timeout=10.0)
+        client = get_httpx_client()
+        response = client.get(url, headers=headers, timeout=10.0)
         response.raise_for_status()
 
         content = response.text
