@@ -545,17 +545,20 @@
                 return;
             }
 
-            // Set metadata if available
-            if (trackInfo && trackInfo.thumbnail_url) {
+            // Always set metadata, even without thumbnail
+            if (trackInfo) {
+                // Use thumbnail if available, otherwise use a data URI for a default YouTube icon
+                const artwork = trackInfo.thumbnail_url ? [
+                    { src: trackInfo.thumbnail_url, sizes: '512x512', type: 'image/jpeg' },
+                    { src: trackInfo.thumbnail_url, sizes: '256x256', type: 'image/jpeg' },
+                    { src: trackInfo.thumbnail_url, sizes: '128x128', type: 'image/jpeg' }
+                ] : [];
+
                 navigator.mediaSession.metadata = new MediaMetadata({
-                    title: trackInfo.title,
+                    title: trackInfo.title || 'YouTube Audio',
                     artist: trackInfo.channel || 'YouTube',
                     album: 'YouTube Radio',
-                    artwork: [
-                        { src: trackInfo.thumbnail_url, sizes: '512x512', type: 'image/jpeg' },
-                        { src: trackInfo.thumbnail_url, sizes: '256x256', type: 'image/jpeg' },
-                        { src: trackInfo.thumbnail_url, sizes: '128x128', type: 'image/jpeg' }
-                    ]
+                    artwork: artwork
                 });
             }
 
