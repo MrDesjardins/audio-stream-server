@@ -166,6 +166,20 @@
             </div>
             {% endif %}
 
+            {% if weekly_summary_enabled %}
+            <div class="weekly-summaries-section">
+                <div class="summaries-header">
+                    <h2>
+                        <i class="fas fa-calendar-week"></i>
+                        Weekly Summaries
+                    </h2>
+                </div>
+                <div id="summaries-list" class="summaries-list">
+                    <p class="summaries-empty">No summaries yet</p>
+                </div>
+            </div>
+            {% endif %}
+
             <div class="history-section">
                 <div class="history-header">
                     <h2>
@@ -816,7 +830,12 @@
                 }
 
                 if (data.status === 'next') {
-                    await startStreamFromQueue(data.youtube_id, data.queue_id);
+                    // Check type and call appropriate function
+                    if (data.type === 'summary') {
+                        await startSummaryFromQueue(data.week_year, data.queue_id);
+                    } else {
+                        await startStreamFromQueue(data.youtube_id, data.queue_id);
+                    }
                     await renderQueue();
                 }
             } catch (error) {
@@ -891,6 +910,55 @@
             }
         }
 
+        async function startSummaryFromQueue(weekYear, queue_id) {
+            try {
+                // For summaries, we directly play the audio file from the server
+                updateStatus('Loading weekly summary...', 'streaming');
+
+                // Get the audio file URL
+                const audioUrl = `http://{{ host }}:{{ api_port }}/weekly-summaries/${weekYear}/audio?t=${Date.now()}`;
+
+                currentVideoId = null; // No video ID for summaries
+                currentQueueId = queue_id;
+                isPlaying = true;
+                prefetchTriggered = false;
+                cancelRetry();
+
+                // Update metadata & UI
+                const queue = await fetchQueue();
+                const currentItem = queue.find(item => item.id === queue_id);
+                if (currentItem) {
+                    updateWindowTitle(currentItem.title);
+                    // Setup MediaSession for summary (no thumbnail)
+                    if ('mediaSession' in navigator) {
+                        navigator.mediaSession.metadata = new MediaMetadata({
+                            title: currentItem.title,
+                            artist: 'Weekly Summary',
+                            album: 'Audio Stream Server',
+                        });
+                    }
+                }
+
+                await renderQueue();
+
+                // Load and play the audio
+                player.src = audioUrl;
+                player.load();
+
+                player.play().catch(e => {
+                    console.error('Audio playback failed:', e);
+                    updateStatus('Failed to play summary', 'error');
+                    isPlaying = false;
+                });
+
+                updateStatus('Playing: ' + (currentItem ? currentItem.title : 'Weekly Summary'), 'streaming');
+            } catch (error) {
+                updateStatus('Failed to play summary', 'error');
+                console.error(error);
+                isPlaying = false;
+            }
+        }
+
         async function renderQueue() {
             const queueContainer = document.getElementById('queue-list');
             const queueCountEl = document.getElementById('queue-count');
@@ -906,14 +974,28 @@
             queueContainer.innerHTML = queue.map((item, index) => {
                 const isCurrentlyPlaying = currentQueueId === item.id;
                 const positionBadge = `<span class="queue-position">${index + 1}</span>`;
+                const itemType = item.type || 'youtube';
+
+                // Different icons and badges for different types
+                let icon, badge, onClick;
+                if (itemType === 'summary') {
+                    icon = '<i class="fas fa-calendar-week"></i>';
+                    badge = '<span class="queue-badge summary-badge">Summary</span>';
+                    onClick = isCurrentlyPlaying ? '' : `startSummaryFromQueue('${item.week_year}', ${item.id})`;
+                } else {
+                    icon = '<i class="fab fa-youtube"></i>';
+                    badge = '';
+                    onClick = isCurrentlyPlaying ? '' : `startStreamFromQueue('${item.youtube_id}', ${item.id})`;
+                }
 
                 return `
                     <div class="queue-item ${isCurrentlyPlaying ? 'queue-item-playing' : ''}"
-                         onclick="${isCurrentlyPlaying ? '' : `startStreamFromQueue('${item.youtube_id}', ${item.id})`}">
+                         onclick="${onClick}">
                         <div class="queue-info">
                             ${positionBadge}
-                            <i class="fab fa-youtube"></i>
+                            ${icon}
                             <span class="queue-title">${escapeHtml(item.title)}</span>
+                            ${badge}
                             ${isCurrentlyPlaying ? '<i class="fas fa-volume-up queue-playing-icon"></i>' : ''}
                         </div>
                         <button onclick="event.stopPropagation(); removeFromQueue(${item.id})"
@@ -931,6 +1013,114 @@
             console.log('Track ended, playing next...');
             await playNext();
         });
+
+        // Weekly Summaries Management
+        const weeklySummaryEnabled = {{ 'true' if weekly_summary_enabled else 'false' }};
+
+        async function fetchWeeklySummaries() {
+            try {
+                const res = await fetch('/weekly-summaries?limit=10');
+                const data = await res.json();
+                return data || [];
+            } catch (e) {
+                console.error('Error fetching weekly summaries:', e);
+                return [];
+            }
+        }
+
+        async function renderWeeklySummaries() {
+            if (!weeklySummaryEnabled) return;
+
+            const summariesContainer = document.getElementById('summaries-list');
+            const summaries = await fetchWeeklySummaries();
+
+            if (summaries.length === 0) {
+                summariesContainer.innerHTML = '<p class="summaries-empty">No summaries yet</p>';
+                return;
+            }
+
+            summariesContainer.innerHTML = summaries.map(item => {
+                const hasAudio = item.audio_file_path && item.audio_file_path.trim() !== '';
+                const audioIcon = hasAudio ? '<i class="fas fa-volume-up"></i>' : '<i class="fas fa-file-text"></i>';
+                const duration = item.duration_seconds ? formatDuration(item.duration_seconds) : '';
+                const timeAgo = getTimeAgo(item.created_at);
+                const triliumUrl = item.trilium_note_id ? `{{ trilium_url }}/#root/${item.trilium_note_id}` : '';
+
+                // Queue button only if audio exists
+                const queueButton = hasAudio ?
+                    `<button class="summary-action-btn queue-btn" onclick="event.stopPropagation(); addSummaryToQueue('${item.week_year}')" title="Add to Queue">
+                        <i class="fas fa-plus-circle"></i>
+                    </button>` : '';
+
+                // Trilium button
+                const triliumButton = triliumUrl ?
+                    `<button class="summary-action-btn trilium-btn" onclick="event.stopPropagation(); window.open('${triliumUrl}', '_blank')" title="View in Trilium">
+                        <i class="fas fa-external-link-alt"></i>
+                    </button>` : '';
+
+                return `
+                    <div class="summary-item ${hasAudio ? '' : 'no-audio'}">
+                        <div class="summary-info" onclick="${hasAudio ? `playSummary('${item.week_year}')` : ''}">
+                            ${audioIcon}
+                            <span class="summary-title">${escapeHtml(item.title)}</span>
+                        </div>
+                        <div class="summary-meta">
+                            <div class="summary-meta-left">
+                                <span class="summary-badge">${item.week_year}</span>
+                                ${duration ? `<span class="summary-duration">${duration}</span>` : ''}
+                                <span class="summary-time">${timeAgo}</span>
+                            </div>
+                            <div class="summary-meta-right">
+                                ${queueButton}
+                                ${triliumButton}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function formatDuration(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        async function addSummaryToQueue(weekYear) {
+            try {
+                updateStatus('Adding summary to queue...', 'streaming');
+
+                const res = await fetch(`/queue/add-summary/${weekYear}`, {
+                    method: 'POST'
+                });
+                const data = await res.json();
+
+                if (res.ok) {
+                    updateStatus('Added summary to queue', 'streaming');
+                    await renderQueue();
+                } else {
+                    updateStatus('Failed to add summary to queue: ' + data.detail, 'error');
+                }
+            } catch (error) {
+                updateStatus('Failed to add summary to queue', 'error');
+                console.error(error);
+            }
+        }
+
+        async function playSummary(weekYear) {
+            try {
+                // Add to queue first
+                await addSummaryToQueue(weekYear);
+
+                // Then play next (which will start the summary if queue was empty)
+                if (!isPlaying) {
+                    await playNext();
+                }
+            } catch (error) {
+                console.error('Error playing summary:', error);
+                updateStatus('Failed to play summary', 'error');
+            }
+        }
 
         // History Management
         async function fetchHistory() {
@@ -1403,6 +1593,9 @@
         fetchStatus();
         renderQueue();
         renderHistory();
+        if (weeklySummaryEnabled) {
+            renderWeeklySummaries();
+        }
         if (transcriptionEnabled) {
             fetchTranscriptionStatus();
         }

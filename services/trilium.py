@@ -331,6 +331,108 @@ def get_note_content(note_id: str) -> Optional[str]:
         return None
 
 
+def attach_audio_to_note(note_id: str, audio_file_path: str, title: str) -> Dict[str, str]:
+    """
+    Attach an audio file to a Trilium note as a child file note.
+
+    Creates a child note of type "file" under the parent note.
+    This is the standard Trilium approach for file attachments.
+
+    Args:
+        note_id: The Trilium note ID to attach to
+        audio_file_path: Path to the audio file
+        title: Title for the file note
+
+    Returns:
+        Dict with noteId and success status
+
+    Raises:
+        Exception: If attachment fails
+    """
+    config = get_config()
+
+    if not all([config.trilium_url, config.trilium_etapi_token]):
+        raise ValueError("Trilium not properly configured")
+
+    try:
+        logger.info(f"Attaching audio file to note {note_id}: {audio_file_path}")
+
+        headers = {
+            "Authorization": f"Bearer {config.trilium_etapi_token}",
+            "Content-Type": "application/json",
+        }
+
+        # Step 1: Create a child note of type "file"
+        payload = {
+            "parentNoteId": note_id,
+            "title": title,
+            "type": "file",
+            "mime": "audio/mpeg",
+            "content": "",  # Content will be set in next step
+        }
+
+        url = _build_url(config.trilium_url, "etapi/create-note")
+        client = get_httpx_client()
+        response = client.post(url, headers=headers, json=payload, timeout=30.0)
+        response.raise_for_status()
+
+        result = response.json()
+        file_note_id = result.get("note", {}).get("noteId")
+
+        if not file_note_id:
+            raise Exception(f"Failed to get note ID from response: {result}")
+
+        logger.info(f"Created file note: {file_note_id}")
+
+        # Step 2: Upload the file content using a direct HTTP client
+        with open(audio_file_path, "rb") as f:
+            audio_data = f.read()
+
+        file_size_mb = len(audio_data) / (1024 * 1024)
+        logger.info(f"Uploading {file_size_mb:.2f} MB audio file to note {file_note_id}")
+        logger.info(f"Audio data size: {len(audio_data)} bytes")
+
+        content_url = _build_url(config.trilium_url, f"etapi/notes/{file_note_id}/content")
+
+        # Use a fresh httpx client for the content upload
+        content_headers = {
+            "Authorization": f"Bearer {config.trilium_etapi_token}",
+            "Content-Type": "application/octet-stream",  # Generic binary type
+        }
+
+        try:
+            # Create a fresh client for this request to avoid connection pooling issues
+            with httpx.Client(timeout=120.0) as upload_client:
+                content_response = upload_client.put(
+                    content_url,
+                    headers=content_headers,
+                    content=audio_data,  # Use content for raw binary
+                )
+                content_response.raise_for_status()
+        except Exception as e:
+            # Log the full response for debugging
+            logger.error(f"Failed to upload content. Status: {content_response.status_code}")
+            logger.error(f"Response body: {content_response.text[:500]}")
+            raise
+
+        logger.info(f"Successfully attached audio to note {note_id} as child note {file_note_id}")
+        return {"noteId": file_note_id, "status": "success"}
+
+    except Exception as e:
+        logger.error(f"Error attaching audio to note {note_id}: {e}")
+        # Save backup
+        try:
+            backup_dir = "/tmp/trilium-backup"
+            os.makedirs(backup_dir, exist_ok=True)
+            backup_file = os.path.join(backup_dir, f"{note_id}_audio.txt")
+            with open(backup_file, "w") as f:
+                f.write(f"Failed to attach: {audio_file_path}\nError: {e}\n")
+            logger.info(f"Saved attachment failure info to {backup_file}")
+        except Exception as backup_error:
+            logger.error(f"Failed to save backup: {backup_error}")
+        raise
+
+
 def _save_to_backup(video_id: str, transcript: str, summary: str) -> None:
     """Save transcript and summary to local backup file."""
     try:

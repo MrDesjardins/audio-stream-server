@@ -19,6 +19,7 @@ from routes.stream import router as stream_router, init_stream_globals
 from routes.queue import router as queue_router
 from routes.transcription import router as transcription_router
 from routes.admin import router as admin_router
+from routes.weekly_summaries import router as weekly_summaries_router
 from services.scheduler import init_scheduler, shutdown_scheduler
 
 # Load environment variables from .env file FIRST
@@ -61,6 +62,11 @@ init_database()
 
 # Audio download directory is always needed
 os.makedirs(config.temp_audio_dir, exist_ok=True)
+
+# Create TTS audio directory if TTS is enabled
+if config.tts_enabled:
+    logger.info(f"TTS enabled - creating audio directory: {config.weekly_summary_audio_dir}")
+    os.makedirs(config.weekly_summary_audio_dir, exist_ok=True)
 
 # Initialize background tasks if transcription is enabled
 if config.transcription_enabled:
@@ -156,6 +162,7 @@ app.include_router(stream_router)
 app.include_router(queue_router)
 app.include_router(transcription_router)
 app.include_router(admin_router)
+app.include_router(weekly_summaries_router)
 
 
 @app.get("/")
@@ -173,7 +180,9 @@ def index(request: Request):
             "api_port": api_port,
             "transcription_enabled": config.transcription_enabled,
             "book_suggestions_enabled": config.book_suggestions_enabled,
+            "weekly_summary_enabled": config.tts_enabled and config.weekly_summary_enabled,
             "prefetch_threshold_seconds": config.prefetch_threshold_seconds,
+            "trilium_url": config.trilium_url,
         },
     )
 

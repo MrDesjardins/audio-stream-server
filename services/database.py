@@ -128,7 +128,25 @@ def init_database():
                 channel TEXT,
                 thumbnail_url TEXT,
                 position INTEGER NOT NULL,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                type TEXT DEFAULT 'youtube',
+                week_year TEXT
+            )
+        """)
+
+        # Weekly summaries table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS weekly_summaries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                week_year TEXT NOT NULL UNIQUE,
+                year INTEGER NOT NULL,
+                week INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                trilium_note_id TEXT NOT NULL,
+                audio_file_path TEXT,
+                duration_seconds INTEGER,
+                created_at TEXT NOT NULL,
+                audio_generated_at TEXT
             )
         """)
 
@@ -373,3 +391,171 @@ def clear_queue():
         cursor = conn.cursor()
         cursor.execute("DELETE FROM queue")
         logger.info("Queue cleared")
+
+
+# Weekly summary functions
+
+
+def save_weekly_summary(
+    week_year: str,
+    year: int,
+    week: int,
+    title: str,
+    trilium_note_id: str,
+    audio_file_path: Optional[str] = None,
+    duration_seconds: Optional[int] = None,
+) -> int:
+    """
+    Save a weekly summary to the database.
+
+    Args:
+        week_year: Week identifier (e.g., "2026-W05")
+        year: Year number
+        week: Week number
+        title: Summary title
+        trilium_note_id: Trilium note ID
+        audio_file_path: Path to audio file (optional)
+        duration_seconds: Audio duration in seconds (optional)
+
+    Returns:
+        The ID of the inserted/updated record
+    """
+    timestamp = datetime.now(timezone.utc).isoformat()
+    audio_timestamp = timestamp if audio_file_path else None
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+
+        # Use UPSERT: Insert if new, update if exists
+        cursor.execute(
+            """
+            INSERT INTO weekly_summaries (
+                week_year, year, week, title, trilium_note_id,
+                audio_file_path, duration_seconds, created_at, audio_generated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(week_year) DO UPDATE SET
+                title = excluded.title,
+                trilium_note_id = excluded.trilium_note_id,
+                audio_file_path = excluded.audio_file_path,
+                duration_seconds = excluded.duration_seconds,
+                audio_generated_at = excluded.audio_generated_at
+        """,
+            (
+                week_year,
+                year,
+                week,
+                title,
+                trilium_note_id,
+                audio_file_path,
+                duration_seconds,
+                timestamp,
+                audio_timestamp,
+            ),
+        )
+
+        # Get the record ID
+        cursor.execute("SELECT id FROM weekly_summaries WHERE week_year = ?", (week_year,))
+        row = cursor.fetchone()
+        record_id = row["id"]
+
+        logger.info(f"Saved weekly summary: {week_year} - {title}")
+        return record_id
+
+
+def get_recent_summaries(limit: int = 10) -> List[Dict]:
+    """
+    Get recent weekly summaries, most recent first.
+
+    Args:
+        limit: Maximum number of records to return
+
+    Returns:
+        List of summary records as dictionaries
+    """
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT id, week_year, year, week, title, trilium_note_id,
+                   audio_file_path, duration_seconds, created_at, audio_generated_at
+            FROM weekly_summaries
+            ORDER BY year DESC, week DESC
+            LIMIT ?
+        """,
+            (limit,),
+        )
+
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+
+def get_summary_by_week_year(week_year: str) -> Optional[Dict]:
+    """
+    Get a specific weekly summary by week_year.
+
+    Args:
+        week_year: Week identifier (e.g., "2026-W05")
+
+    Returns:
+        Summary record dictionary or None if not found
+    """
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT id, week_year, year, week, title, trilium_note_id,
+                   audio_file_path, duration_seconds, created_at, audio_generated_at
+            FROM weekly_summaries
+            WHERE week_year = ?
+            LIMIT 1
+        """,
+            (week_year,),
+        )
+
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+
+def add_summary_to_queue(week_year: str) -> int:
+    """
+    Add a weekly summary to the playback queue.
+
+    Args:
+        week_year: Week identifier (e.g., "2026-W05")
+
+    Returns:
+        The ID of the inserted queue item
+
+    Raises:
+        ValueError: If summary not found or has no audio file
+    """
+    # Get summary details
+    summary = get_summary_by_week_year(week_year)
+    if not summary:
+        raise ValueError(f"Summary not found: {week_year}")
+
+    if not summary.get("audio_file_path"):
+        raise ValueError(f"Summary has no audio file: {week_year}")
+
+    timestamp = datetime.now(timezone.utc).isoformat()
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+
+        # Get the max position
+        cursor.execute("SELECT MAX(position) FROM queue")
+        max_pos = cursor.fetchone()[0]
+        next_position = (max_pos + 1) if max_pos is not None else 0
+
+        cursor.execute(
+            """
+            INSERT INTO queue (youtube_id, title, position, created_at, type, week_year)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """,
+            ("", summary["title"], next_position, timestamp, "summary", week_year),
+        )
+
+        record_id = cursor.lastrowid
+        logger.info(f"Added summary to queue (position {next_position}): {summary['title']}")
+        return record_id

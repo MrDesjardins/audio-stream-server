@@ -96,14 +96,21 @@ def play_next_in_queue():
         if not next_item:
             return JSONResponse({"status": "queue_empty", "message": "No more items in queue"})
 
-        return JSONResponse(
-            {
-                "status": "next",
-                "youtube_id": next_item["youtube_id"],
-                "title": next_item["title"],
-                "queue_id": next_item["id"],
-            }
-        )
+        # Build response based on type
+        response = {
+            "status": "next",
+            "title": next_item["title"],
+            "queue_id": next_item["id"],
+            "type": next_item.get("type", "youtube"),
+        }
+
+        # Add type-specific fields
+        if next_item.get("type") == "summary":
+            response["week_year"] = next_item.get("week_year")
+        else:
+            response["youtube_id"] = next_item["youtube_id"]
+
+        return JSONResponse(response)
     except Exception as e:
         logger.error(f"Error playing next in queue: {e}")
         raise HTTPException(status_code=500, detail=str(e))

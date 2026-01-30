@@ -84,6 +84,12 @@ class Config:
     # Weekly summary settings
     weekly_summary_enabled: bool
 
+    # TTS settings
+    tts_enabled: bool
+    elevenlabs_api_key: Optional[str]
+    elevenlabs_voice_id: str
+    weekly_summary_audio_dir: str
+
     @classmethod
     def load_from_env(cls) -> "Config":
         """Load configuration from environment variables."""
@@ -120,6 +126,11 @@ class Config:
             suggestions_ai_provider=os.getenv("SUGGESTIONS_AI_PROVIDER", "openai").lower(),
             # Weekly summary settings
             weekly_summary_enabled=os.getenv("WEEKLY_SUMMARY_ENABLED", "false").lower() == "true",
+            # TTS settings
+            tts_enabled=os.getenv("TTS_ENABLED", "false").lower() == "true",
+            elevenlabs_api_key=os.getenv("ELEVENLABS_API_KEY"),
+            elevenlabs_voice_id=os.getenv("ELEVENLABS_VOICE_ID", "pNInz6obpgDQGcFmaJgB"),  # Adam - free voice
+            weekly_summary_audio_dir=os.getenv("WEEKLY_SUMMARY_AUDIO_DIR", "/var/audio-summaries"),
         )
 
         # Validate configuration if transcription is enabled
@@ -129,6 +140,10 @@ class Config:
         # Validate book suggestions if enabled
         if config.book_suggestions_enabled:
             config.validate_book_suggestions()
+
+        # Validate TTS if enabled
+        if config.tts_enabled:
+            config.validate_tts()
 
         return config
 
@@ -196,9 +211,24 @@ class Config:
             )
             raise ValueError(error_msg)
 
+    def validate_tts(self) -> None:
+        """Validate that required configuration for TTS is present."""
+        errors = []
+
+        if not self.elevenlabs_api_key:
+            errors.append("ELEVENLABS_API_KEY is required when TTS_ENABLED=true")
+
+        if errors:
+            error_msg = "TTS configuration validation failed:\n  - " + "\n  - ".join(errors)
+            raise ValueError(error_msg)
+
     def get_audio_path(self, video_id: str) -> str:
         """Get the path for storing audio file for a video."""
         return os.path.join(self.temp_audio_dir, f"{video_id}.mp3")
+
+    def get_weekly_summary_audio_path(self, week_year: str) -> str:
+        """Get the path for storing weekly summary audio file."""
+        return os.path.join(self.weekly_summary_audio_dir, f"{week_year}.mp3")
 
 
 # Global config instance
