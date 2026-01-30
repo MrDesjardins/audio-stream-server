@@ -125,14 +125,14 @@
                     <button onclick="setSpeed(1.0)" class="btn btn-speed active" id="speed-1x">
                         <span class="btn-label">1x</span>
                     </button>
-                    <button onclick="setSpeed(1.2)" class="btn btn-speed" id="speed-1.2x">
+                    <button onclick="setSpeed(1.1)" class="btn btn-speed" id="speed-1.2x">
+                        <span class="btn-label">1.1x</span>
+                    </button>
+                    <button onclick="setSpeed(1.2)" class="btn btn-speed" id="speed-1.5x">
                         <span class="btn-label">1.2x</span>
                     </button>
-                    <button onclick="setSpeed(1.5)" class="btn btn-speed" id="speed-1.5x">
-                        <span class="btn-label">1.5x</span>
-                    </button>
-                    <button onclick="setSpeed(2.0)" class="btn btn-speed" id="speed-2x">
-                        <span class="btn-label">2x</span>
+                    <button onclick="setSpeed(1.3)" class="btn btn-speed" id="speed-2x">
+                        <span class="btn-label">1.3x</span>
                     </button>
                 </div>
             </div>
@@ -468,6 +468,11 @@
             hideStreamStatus();
             retryCount = 0; // Reset retry count when successfully playing
 
+            // Update MediaSession playback state
+            if ('mediaSession' in navigator && navigator.mediaSession.playbackState !== undefined) {
+                navigator.mediaSession.playbackState = 'playing';
+            }
+
             // Clear stalled timeout
             if (stalledTimeout) {
                 clearTimeout(stalledTimeout);
@@ -480,6 +485,11 @@
             // Don't show reconnection UI if user paused manually
             if (!isRetrying) {
                 hideStreamStatus();
+            }
+
+            // Update MediaSession playback state
+            if ('mediaSession' in navigator && navigator.mediaSession.playbackState !== undefined) {
+                navigator.mediaSession.playbackState = 'paused';
             }
         });
 
@@ -501,7 +511,26 @@
         });
 
         // Prefetch next queue item when current track is nearing its end
+        let lastPositionUpdate = 0;
         player.addEventListener('timeupdate', async function () {
+            // Update MediaSession position state (throttled to once per second)
+            const now = Date.now();
+            if ('mediaSession' in navigator && navigator.mediaSession.setPositionState && now - lastPositionUpdate > 1000) {
+                if (player.duration && !isNaN(player.duration) && isFinite(player.duration)) {
+                    try {
+                        navigator.mediaSession.setPositionState({
+                            duration: player.duration,
+                            playbackRate: player.playbackRate,
+                            position: player.currentTime
+                        });
+                        lastPositionUpdate = now;
+                    } catch (e) {
+                        // Some browsers don't support this or have restrictions
+                        console.debug('[MediaSession] setPositionState not supported or failed:', e.message);
+                    }
+                }
+            }
+
             if (!isPlaying || prefetchTriggered || !player.duration) return;
 
             const remaining = player.duration - player.currentTime;
@@ -547,18 +576,59 @@
 
             // Always set metadata, even without thumbnail
             if (trackInfo) {
-                // Use thumbnail if available, otherwise use a data URI for a default YouTube icon
-                const artwork = trackInfo.thumbnail_url ? [
-                    { src: trackInfo.thumbnail_url, sizes: '512x512', type: 'image/jpeg' },
-                    { src: trackInfo.thumbnail_url, sizes: '256x256', type: 'image/jpeg' },
-                    { src: trackInfo.thumbnail_url, sizes: '128x128', type: 'image/jpeg' }
-                ] : [];
+                // Build artwork array with multiple YouTube thumbnail sizes
+                // Tesla and other car systems may be strict about image requirements
+                const artwork = [];
+
+                if (trackInfo.thumbnail_url) {
+                    const videoId = trackInfo.youtube_id || trackInfo.youtube_video_id;
+                    if (videoId) {
+                        // Add multiple resolution options for better compatibility
+                        // maxresdefault: 1280x720 (not always available)
+                        artwork.push({
+                            src: `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
+                            sizes: '1280x720',
+                            type: 'image/jpeg'
+                        });
+                        // sddefault: 640x480 (usually available)
+                        artwork.push({
+                            src: `https://i.ytimg.com/vi/${videoId}/sddefault.jpg`,
+                            sizes: '640x480',
+                            type: 'image/jpeg'
+                        });
+                        // hqdefault: 480x360 (always available) - this is our fallback
+                        artwork.push({
+                            src: trackInfo.thumbnail_url,
+                            sizes: '480x360',
+                            type: 'image/jpeg'
+                        });
+                        // mqdefault: 320x180 (always available)
+                        artwork.push({
+                            src: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
+                            sizes: '320x180',
+                            type: 'image/jpeg'
+                        });
+                    } else {
+                        // Fallback: use thumbnail_url with generic size
+                        artwork.push({
+                            src: trackInfo.thumbnail_url,
+                            sizes: '480x360',
+                            type: 'image/jpeg'
+                        });
+                    }
+                }
 
                 navigator.mediaSession.metadata = new MediaMetadata({
                     title: trackInfo.title || 'YouTube Audio',
                     artist: trackInfo.channel || 'YouTube',
                     album: 'YouTube Radio',
                     artwork: artwork
+                });
+
+                console.log('[MediaSession] Updated metadata:', {
+                    title: trackInfo.title,
+                    artist: trackInfo.channel,
+                    artworkCount: artwork.length
                 });
             }
 

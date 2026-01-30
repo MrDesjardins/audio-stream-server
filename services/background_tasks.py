@@ -53,10 +53,19 @@ class TranscriptionQueue:
         self.lock = threading.Lock()
         self.max_job_age_hours = 24  # Keep jobs for 24 hours
 
-    def add_job(self, job: TranscriptionJob) -> None:
-        """Add a job to the queue."""
+    def add_job(self, job: TranscriptionJob) -> bool:
+        """
+        Add a job to the queue with deduplication.
+
+        Only blocks jobs that are currently active (PENDING, TRANSCRIBING, etc.).
+        Completed/skipped jobs can be re-queued - they will be caught by the
+        Trilium deduplication check during processing.
+
+        Returns:
+            True if job was added, False if it was a duplicate
+        """
         with self.lock:
-            # Don't add if already in queue or completed
+            # Don't add if already in queue with active status
             if job.video_id in self.jobs:
                 existing = self.jobs[job.video_id]
                 if existing.status not in [
@@ -65,13 +74,38 @@ class TranscriptionQueue:
                     JobStatus.SKIPPED,
                 ]:
                     logger.info(
-                        f"Job for {job.video_id} already exists with status {existing.status}"
+                        f"Job deduplication: {job.video_id} already queued with status {existing.status}"
                     )
-                    return
+                    return False
 
             self.jobs[job.video_id] = job
             self.queue.put(job)
             logger.info(f"Added transcription job for video {job.video_id}")
+            return True
+
+    def should_skip_transcription(self, video_id: str) -> tuple[bool, str]:
+        """
+        Check if transcription should be skipped for this video.
+
+        Only checks if already in queue with active status.
+        Completed/skipped jobs are allowed to be re-queued - they will be
+        caught by the Trilium deduplication check during processing.
+
+        Returns:
+            (should_skip, reason) tuple
+        """
+        with self.lock:
+            # Check if already in queue with active status
+            if video_id in self.jobs:
+                existing = self.jobs[video_id]
+                if existing.status not in [
+                    JobStatus.FAILED,
+                    JobStatus.COMPLETED,
+                    JobStatus.SKIPPED,
+                ]:
+                    return (True, f"Already queued with status {existing.status}")
+
+            return (False, "")
 
     def get_job(self, timeout: float = 1.0) -> Optional[TranscriptionJob]:
         """Get the next job from the queue (blocking with timeout)."""
@@ -193,9 +227,8 @@ class TranscriptionWorker:
                     job.video_id, JobStatus.FAILED, error=f"Unexpected error: {str(e)}"
                 )
             finally:
-                # Clean up old audio files (keep max 10)
-                audio_cache = get_audio_cache()
-                audio_cache.cleanup_old_files()
+                # Clean up old audio files asynchronously (non-blocking)
+                self._cleanup_audio_async()
 
         logger.info("Worker loop ended")
 
@@ -275,6 +308,23 @@ class TranscriptionWorker:
         except Exception as e:
             logger.exception(f"Error processing job {job.video_id}")
             self.queue.update_job_status(job.video_id, JobStatus.FAILED, error=str(e))
+
+    def _cleanup_audio_async(self) -> None:
+        """
+        Asynchronously clean up old audio files without blocking the worker thread.
+
+        Runs cleanup in a separate daemon thread to avoid blocking job processing.
+        """
+
+        def _do_cleanup():
+            try:
+                audio_cache = get_audio_cache()
+                audio_cache.cleanup_old_files()
+            except Exception as e:
+                logger.error(f"Error in async audio cleanup: {e}")
+
+        cleanup_thread = threading.Thread(target=_do_cleanup, daemon=True, name="AudioCleanup")
+        cleanup_thread.start()
 
     def _wait_for_file(self, audio_path: str, video_id: str, timeout: int = 1800) -> bool:
         """

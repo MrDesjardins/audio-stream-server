@@ -146,6 +146,15 @@ def finish_youtube_download(youtube_video_id: str, returncode: int):
         if os.path.exists(audio_path):
             file_size = os.path.getsize(audio_path)
             logger.info(f"Audio file downloaded: {audio_path} ({file_size / 1024 / 1024:.2f} MB)")
+
+            # Clean up old audio files to maintain cache limit
+            try:
+                from services.cache import get_audio_cache
+
+                audio_cache = get_audio_cache()
+                audio_cache.cleanup_old_files()
+            except Exception as e:
+                logger.error(f"Error during audio cache cleanup: {e}")
         else:
             logger.error(f"Download completed (rc=0) but output file not found: {audio_path}")
 

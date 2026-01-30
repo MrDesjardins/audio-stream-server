@@ -355,3 +355,46 @@ class TestFinishYoutubeDownload:
 
         # Should not raise even though marker doesn't exist
         finish_youtube_download("no_marker_vid", returncode=0)
+
+    @patch("services.streaming.config")
+    def test_calls_cleanup_on_success(self, mock_cfg, temp_audio_dir):
+        """Cleanup should be called after successful download."""
+        mock_cfg.temp_audio_dir = temp_audio_dir
+        mock_cfg.get_audio_path = lambda vid: os.path.join(temp_audio_dir, f"{vid}.mp3")
+
+        # Create a successful audio file
+        audio_path = os.path.join(temp_audio_dir, "cleanup_vid.mp3")
+        with open(audio_path, "wb") as f:
+            f.write(b"audio data")
+
+        from services.streaming import finish_youtube_download
+
+        with patch("services.cache.get_audio_cache") as mock_cache_getter:
+            mock_cache = Mock()
+            mock_cache.cleanup_old_files = Mock()
+            mock_cache_getter.return_value = mock_cache
+
+            finish_youtube_download("cleanup_vid", returncode=0)
+
+            # Verify cleanup was called
+            mock_cache_getter.assert_called_once()
+            mock_cache.cleanup_old_files.assert_called_once()
+
+    @patch("services.streaming.config")
+    def test_no_cleanup_on_failure(self, mock_cfg, temp_audio_dir):
+        """Cleanup should NOT be called when download fails."""
+        mock_cfg.temp_audio_dir = temp_audio_dir
+        mock_cfg.get_audio_path = lambda vid: os.path.join(temp_audio_dir, f"{vid}.mp3")
+
+        from services.streaming import finish_youtube_download
+
+        with patch("services.cache.get_audio_cache") as mock_cache_getter:
+            mock_cache = Mock()
+            mock_cache.cleanup_old_files = Mock()
+            mock_cache_getter.return_value = mock_cache
+
+            finish_youtube_download("fail_vid", returncode=1)
+
+            # Verify cleanup was NOT called (file failed)
+            mock_cache_getter.assert_not_called()
+            mock_cache.cleanup_old_files.assert_not_called()

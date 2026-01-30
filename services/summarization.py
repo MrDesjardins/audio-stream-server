@@ -13,8 +13,8 @@ SUMMARY_PROMPT_TEMPLATE = """You are summarizing a YouTube video transcript. Ple
 
 1. A clear and informative title for the video (max 60 characters)
 2. A concise 2-3 sentence overview of the main topic
-3. Key points discussed: 5-15 bullet points depending of the number of topics/laws/concepts/ideas/points covered
-4. Any important conclusions or takeaways
+3. If the audiobook covers 40 points, summarize the 40 points. If it covers 10 points, summarize the 10 points. If it is unclear use that heuristic: take the Key points discussed and focus on 5 to 10 bullet points depending of the number of topics/laws/concepts/ideas/points covered.
+4. Any important conclusions or takeaways. A paragraph of about 3 to 5 sentences.
 
 Keep the summary clear, well-structured, and informative.
 

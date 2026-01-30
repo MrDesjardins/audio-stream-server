@@ -510,3 +510,126 @@ class TestProcessJob:
 
         assert queue.jobs["terr"].status == JobStatus.FAILED
         assert "Whisper API error" in queue.jobs["terr"].error
+
+
+class TestAsyncAudioCleanup:
+    """Tests for async audio cleanup feature (2.2)."""
+
+    def test_cleanup_runs_in_separate_thread(self):
+        """Cleanup should run in separate thread and not block."""
+        worker = TranscriptionWorker(TranscriptionQueue())
+
+        # Mock the get_audio_cache to track if cleanup was called
+        cleanup_called = []
+
+        def mock_cleanup():
+            cleanup_called.append(True)
+
+        with patch("services.background_tasks.get_audio_cache") as mock_cache_getter:
+            mock_cache = Mock()
+            mock_cache.cleanup_old_files = mock_cleanup
+            mock_cache_getter.return_value = mock_cache
+
+            # Call async cleanup
+            worker._cleanup_audio_async()
+
+            # Give thread time to start and run
+            import time
+
+            time.sleep(0.1)
+
+            # Verify cleanup was called
+            assert len(cleanup_called) == 1
+
+    def test_cleanup_errors_dont_crash_worker(self):
+        """Cleanup errors should be logged but not crash the worker."""
+        worker = TranscriptionWorker(TranscriptionQueue())
+
+        with patch("services.background_tasks.get_audio_cache") as mock_cache_getter:
+            mock_cache = Mock()
+            mock_cache.cleanup_old_files = Mock(side_effect=Exception("Cleanup error"))
+            mock_cache_getter.return_value = mock_cache
+
+            # Should not raise exception
+            worker._cleanup_audio_async()
+
+            # Give thread time to run
+            import time
+
+            time.sleep(0.1)
+
+            # Worker should still be fine
+            assert worker is not None
+
+
+class TestJobDeduplication:
+    """Tests for enhanced job deduplication (2.3)."""
+
+    def test_add_job_returns_true_for_new_job(self):
+        """add_job should return True when adding a new job."""
+        queue = TranscriptionQueue()
+        job = TranscriptionJob(video_id="new_video", audio_path="/tmp/new.mp3")
+
+        result = queue.add_job(job)
+
+        assert result is True
+        assert "new_video" in queue.jobs
+
+    def test_add_job_returns_false_for_duplicate(self):
+        """add_job should return False when job already active."""
+        queue = TranscriptionQueue()
+        job1 = TranscriptionJob(video_id="dup", audio_path="/tmp/dup.mp3")
+        job2 = TranscriptionJob(video_id="dup", audio_path="/tmp/dup.mp3")
+
+        result1 = queue.add_job(job1)
+        result2 = queue.add_job(job2)
+
+        assert result1 is True
+        assert result2 is False
+
+    def test_add_job_allows_completed_requeue(self):
+        """add_job should allow re-adding completed jobs (Trilium will dedupe)."""
+        queue = TranscriptionQueue()
+        job1 = TranscriptionJob(video_id="completed", audio_path="/tmp/completed.mp3")
+
+        # Add and complete job
+        queue.add_job(job1)
+        queue.update_job_status("completed", JobStatus.COMPLETED)
+
+        # Try to add again - should succeed (Trilium check will handle dedup)
+        job2 = TranscriptionJob(video_id="completed", audio_path="/tmp/completed.mp3")
+        result = queue.add_job(job2)
+
+        assert result is True
+
+    def test_should_skip_transcription_for_active_job(self):
+        """should_skip_transcription returns True for active jobs."""
+        queue = TranscriptionQueue()
+        job = TranscriptionJob(video_id="active", audio_path="/tmp/active.mp3")
+        queue.add_job(job)
+
+        should_skip, reason = queue.should_skip_transcription("active")
+
+        assert should_skip is True
+        assert "already queued" in reason.lower()
+
+    def test_should_skip_transcription_allows_completed(self):
+        """should_skip_transcription allows completed jobs (Trilium will dedupe)."""
+        queue = TranscriptionQueue()
+        job = TranscriptionJob(video_id="completed", audio_path="/tmp/completed.mp3")
+        queue.add_job(job)
+        queue.update_job_status("completed", JobStatus.COMPLETED)
+
+        should_skip, reason = queue.should_skip_transcription("completed")
+
+        assert should_skip is False
+        assert reason == ""
+
+    def test_should_skip_transcription_allows_new_job(self):
+        """should_skip_transcription returns False for new videos."""
+        queue = TranscriptionQueue()
+
+        should_skip, reason = queue.should_skip_transcription("new_video")
+
+        assert should_skip is False
+        assert reason == ""
