@@ -18,6 +18,8 @@ from services.database import init_database
 from routes.stream import router as stream_router, init_stream_globals
 from routes.queue import router as queue_router
 from routes.transcription import router as transcription_router
+from routes.admin import router as admin_router
+from services.scheduler import init_scheduler, shutdown_scheduler
 
 # Load environment variables from .env file FIRST
 load_dotenv()
@@ -66,6 +68,14 @@ if config.transcription_enabled:
     init_background_tasks()
 else:
     logger.info("Transcription disabled")
+
+# Initialize scheduler for periodic tasks (e.g., weekly summary)
+if config.weekly_summary_enabled:
+
+    logger.info("Weekly summary enabled - initializing scheduler")
+    init_scheduler()
+else:
+    logger.info("Weekly summary disabled")
 
 # Mount static files and templates
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -119,6 +129,13 @@ def shutdown_handler(signum=None, frame=None):
         except Exception as e:
             logger.warning(f"Error stopping transcription queue: {e}")
 
+    # Stop scheduler if weekly summary enabled
+    if config.weekly_summary_enabled:
+        try:
+            shutdown_scheduler()
+        except Exception as e:
+            logger.warning(f"Error stopping scheduler: {e}")
+
     logger.info("Shutdown complete")
 
     # Exit the process if called by signal handler
@@ -138,6 +155,7 @@ init_stream_globals(process_lock)
 app.include_router(stream_router)
 app.include_router(queue_router)
 app.include_router(transcription_router)
+app.include_router(admin_router)
 
 
 @app.get("/")

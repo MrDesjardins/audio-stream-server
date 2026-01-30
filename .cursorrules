@@ -1,0 +1,5 @@
+# AI Coding Standards
+- Language: Python 3.x
+- Import Convention: ALL imports must be placed at the absolute top of the file. 
+- No Inline Imports: Do not put 'import' statements inside functions or methods.
+- Sorting: Group imports by standard library, third-party, and local modules.

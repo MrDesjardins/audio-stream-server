@@ -81,6 +81,9 @@ class Config:
     suggestions_count: int
     suggestions_ai_provider: str  # "openai" or "gemini"
 
+    # Weekly summary settings
+    weekly_summary_enabled: bool
+
     @classmethod
     def load_from_env(cls) -> "Config":
         """Load configuration from environment variables."""
@@ -115,6 +118,8 @@ class Config:
             books_to_analyze=_parse_int(os.getenv("BOOKS_TO_ANALYZE", "10"), 10, 1, 100),
             suggestions_count=_parse_int(os.getenv("SUGGESTIONS_COUNT", "4"), 4, 1, 20),
             suggestions_ai_provider=os.getenv("SUGGESTIONS_AI_PROVIDER", "openai").lower(),
+            # Weekly summary settings
+            weekly_summary_enabled=os.getenv("WEEKLY_SUMMARY_ENABLED", "false").lower() == "true",
         )
 
         # Validate configuration if transcription is enabled

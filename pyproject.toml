@@ -13,6 +13,8 @@ dependencies = [
     "google-genai",
     "httpx",
     "python-dotenv",
+    "apscheduler>=3.10.0",
+    "pytz",
 ]
 
 [project.optional-dependencies]
