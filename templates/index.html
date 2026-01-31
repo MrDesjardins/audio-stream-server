@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>YouTube Radio</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link rel="stylesheet" href="/static/style.css?v=1737847300">
+    <link rel="stylesheet" href="/static/style.css?v=1737847301">
 </head>
 
 <body>
@@ -125,13 +125,13 @@
                     <button onclick="setSpeed(1.0)" class="btn btn-speed active" id="speed-1x">
                         <span class="btn-label">1x</span>
                     </button>
-                    <button onclick="setSpeed(1.1)" class="btn btn-speed" id="speed-1.2x">
+                    <button onclick="setSpeed(1.1)" class="btn btn-speed" id="speed-1.1x">
                         <span class="btn-label">1.1x</span>
                     </button>
-                    <button onclick="setSpeed(1.2)" class="btn btn-speed" id="speed-1.5x">
+                    <button onclick="setSpeed(1.2)" class="btn btn-speed" id="speed-1.2x">
                         <span class="btn-label">1.2x</span>
                     </button>
-                    <button onclick="setSpeed(1.3)" class="btn btn-speed" id="speed-2x">
+                    <button onclick="setSpeed(1.3)" class="btn btn-speed" id="speed-1.3x">
                         <span class="btn-label">1.3x</span>
                     </button>
                 </div>
@@ -222,6 +222,7 @@
         let isRetrying = false;
         let stalledTimeout = null;
         let bufferingStartTime = null;
+        let isSeeking = false;
 
         // Theme Management
         function getSystemTheme() {
@@ -414,6 +415,15 @@
             hideStreamStatus();
         }
 
+        // Track seeking to avoid false error triggers
+        player.addEventListener('seeking', function () {
+            isSeeking = true;
+        });
+
+        player.addEventListener('seeked', function () {
+            isSeeking = false;
+        });
+
         // Audio Player Event Handlers for Resilience
         player.addEventListener('error', function (e) {
             console.error('Audio player error:', e);
@@ -421,7 +431,14 @@
             if (error) {
                 console.error(`Error code: ${error.code}, message: ${error.message}`);
 
-                // Only retry if we're supposed to be playing
+                // Don't retry on user-initiated actions (seeking, abort)
+                // Error code 1 = MEDIA_ERR_ABORTED (user aborted)
+                if (error.code === 1 || isSeeking) {
+                    console.log('User-initiated action, not retrying');
+                    return;
+                }
+
+                // Only retry on actual playback errors (network, decode)
                 if (isPlaying && !isRetrying) {
                     console.log('Stream error detected, attempting to reconnect...');
                     retryStream();
@@ -467,6 +484,17 @@
             if (stalledTimeout) {
                 clearTimeout(stalledTimeout);
                 stalledTimeout = null;
+            }
+        });
+
+        // Intercept native play button clicks
+        player.addEventListener('play', async function (e) {
+            // If no valid source is loaded, prevent play and start queue instead
+            if (!player.src || player.src === '' || player.src === window.location.href) {
+                console.log('Play pressed with no source, starting queue...');
+                e.preventDefault();
+                player.pause(); // Ensure it's paused
+                await playQueue();
             }
         });
 
@@ -542,6 +570,15 @@
                         // Some browsers don't support this or have restrictions
                         console.debug('[MediaSession] setPositionState not supported or failed:', e.message);
                     }
+                }
+            }
+
+            // Update progress bar on currently playing queue item
+            if (isPlaying && player.duration && !isNaN(player.duration) && isFinite(player.duration)) {
+                const progress = (player.currentTime / player.duration) * 100;
+                const progressBar = document.querySelector('.queue-progress-bar');
+                if (progressBar) {
+                    progressBar.style.width = `${progress}%`;
                 }
             }
 
@@ -991,6 +1028,7 @@
                 return `
                     <div class="queue-item ${isCurrentlyPlaying ? 'queue-item-playing' : ''}"
                          onclick="${onClick}">
+                        ${isCurrentlyPlaying ? '<div class="queue-progress-bar"></div>' : ''}
                         <div class="queue-info">
                             ${positionBadge}
                             ${icon}
@@ -1011,6 +1049,11 @@
         // Auto-play next track when current track ends
         player.addEventListener('ended', async function () {
             console.log('Track ended, playing next...');
+            // Reset progress bar
+            const progressBar = document.querySelector('.queue-progress-bar');
+            if (progressBar) {
+                progressBar.style.width = '0%';
+            }
             await playNext();
         });
 
@@ -1355,6 +1398,12 @@
             // Reset browser window title
             updateWindowTitle(null);
 
+            // Reset progress bar
+            const progressBar = document.querySelector('.queue-progress-bar');
+            if (progressBar) {
+                progressBar.style.width = '0%';
+            }
+
             // Then call server to stop the stream
             try {
                 const res = await fetch('/stop', { method: 'POST' });
@@ -1373,8 +1422,14 @@
             player.pause();
         }
 
-        function playAudio() {
-            player.play();
+        async function playAudio() {
+            // If nothing is loaded/playing, start the queue
+            if (!player.src || player.src === '' || (!isPlaying && player.paused && player.currentTime === 0)) {
+                console.log('No audio loaded, starting queue...');
+                await playQueue();
+            } else {
+                player.play();
+            }
         }
 
         function rewind() {
