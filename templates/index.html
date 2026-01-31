@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>YouTube Radio</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link rel="stylesheet" href="/static/style.css?v=1737847301">
+    <link rel="stylesheet" href="/static/style.css?v=1737847302">
 </head>
 
 <body>
@@ -625,62 +625,82 @@
                 return;
             }
 
-            // Always set metadata, even without thumbnail
-            if (trackInfo) {
-                // Build artwork array with multiple YouTube thumbnail sizes
-                // Tesla and other car systems may be strict about image requirements
-                const artwork = [];
+            if (!trackInfo) {
+                return;
+            }
 
+            // Try to set metadata with artwork first, fallback to without artwork if it fails
+            // Some car systems (Tesla) reject metadata with artwork issues
+            try {
+                // Only include artwork if we have a thumbnail
+                // Don't include empty artwork array - some systems reject it
+                const metadataOptions = {
+                    title: trackInfo.title || 'YouTube Audio',
+                    artist: trackInfo.channel || 'YouTube',
+                    album: 'YouTube Radio'
+                };
+
+                // Only add artwork if we have thumbnail data
                 if (trackInfo.thumbnail_url) {
                     const videoId = trackInfo.youtube_id || trackInfo.youtube_video_id;
+                    const artwork = [];
+
                     if (videoId) {
                         // Add multiple resolution options for better compatibility
-                        // maxresdefault: 1280x720 (not always available)
+                        // Using direct YouTube thumbnail URLs
                         artwork.push({
                             src: `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
                             sizes: '1280x720',
                             type: 'image/jpeg'
                         });
-                        // sddefault: 640x480 (usually available)
                         artwork.push({
                             src: `https://i.ytimg.com/vi/${videoId}/sddefault.jpg`,
                             sizes: '640x480',
                             type: 'image/jpeg'
                         });
-                        // hqdefault: 480x360 (always available) - this is our fallback
                         artwork.push({
                             src: trackInfo.thumbnail_url,
                             sizes: '480x360',
                             type: 'image/jpeg'
                         });
-                        // mqdefault: 320x180 (always available)
                         artwork.push({
                             src: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
                             sizes: '320x180',
                             type: 'image/jpeg'
                         });
                     } else {
-                        // Fallback: use thumbnail_url with generic size
                         artwork.push({
                             src: trackInfo.thumbnail_url,
                             sizes: '480x360',
                             type: 'image/jpeg'
                         });
                     }
+
+                    metadataOptions.artwork = artwork;
                 }
 
-                navigator.mediaSession.metadata = new MediaMetadata({
-                    title: trackInfo.title || 'YouTube Audio',
-                    artist: trackInfo.channel || 'YouTube',
-                    album: 'YouTube Radio',
-                    artwork: artwork
-                });
+                navigator.mediaSession.metadata = new MediaMetadata(metadataOptions);
 
                 console.log('[MediaSession] Updated metadata:', {
-                    title: trackInfo.title,
-                    artist: trackInfo.channel,
-                    artworkCount: artwork.length
+                    title: metadataOptions.title,
+                    artist: metadataOptions.artist,
+                    hasArtwork: !!metadataOptions.artwork,
+                    artworkCount: metadataOptions.artwork ? metadataOptions.artwork.length : 0
                 });
+            } catch (e) {
+                // Fallback: set metadata without artwork
+                // This fixes compatibility with strict car systems like Tesla
+                console.warn('[MediaSession] Failed to set metadata with artwork, trying without:', e);
+                try {
+                    navigator.mediaSession.metadata = new MediaMetadata({
+                        title: trackInfo.title || 'YouTube Audio',
+                        artist: trackInfo.channel || 'YouTube',
+                        album: 'YouTube Radio'
+                    });
+                    console.log('[MediaSession] Set metadata without artwork (fallback)');
+                } catch (fallbackError) {
+                    console.error('[MediaSession] Failed to set metadata even without artwork:', fallbackError);
+                }
             }
 
             // Set up action handlers for background playback
