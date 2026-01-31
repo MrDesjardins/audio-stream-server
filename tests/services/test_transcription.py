@@ -15,7 +15,9 @@ class TestCompressAudioForWhisper:
     @patch("services.transcription.os.path.getsize")
     @patch("services.transcription.os.close")
     @patch("services.transcription.tempfile.mkstemp")
-    def test_compress_audio_success(self, mock_mkstemp, mock_close, mock_getsize, mock_run):
+    def test_compress_audio_success(
+        self, mock_mkstemp, mock_close, mock_getsize, mock_run
+    ):
         """Test successful audio compression."""
         # Mock temp file creation
         mock_mkstemp.return_value = (123, "/tmp/whisper_compressed_test.mp3")
@@ -43,7 +45,9 @@ class TestCompressAudioForWhisper:
     @patch("services.transcription.os.path.getsize")
     @patch("services.transcription.os.close")
     @patch("services.transcription.tempfile.mkstemp")
-    def test_compress_audio_ffmpeg_fails(self, mock_mkstemp, mock_close, mock_getsize, mock_run):
+    def test_compress_audio_ffmpeg_fails(
+        self, mock_mkstemp, mock_close, mock_getsize, mock_run
+    ):
         """Test compression when ffmpeg fails."""
         mock_mkstemp.return_value = (123, "/tmp/test.mp3")
         mock_getsize.return_value = 10 * 1024 * 1024
@@ -186,7 +190,13 @@ class TestTranscribeAudio:
     @patch("services.transcription.get_config")
     @patch("services.transcription.time.sleep")
     def test_transcribe_audio_retries_on_failure(
-        self, mock_sleep, mock_config, mock_unlink, mock_exists, mock_getsize, mock_compress
+        self,
+        mock_sleep,
+        mock_config,
+        mock_unlink,
+        mock_exists,
+        mock_getsize,
+        mock_compress,
     ):
         """Test transcription retries on failure."""
         config = Mock()
@@ -221,7 +231,13 @@ class TestTranscribeAudio:
     @patch("services.transcription.get_config")
     @patch("services.transcription.time.sleep")
     def test_transcribe_audio_fails_after_retries(
-        self, mock_sleep, mock_config, mock_unlink, mock_exists, mock_getsize, mock_compress
+        self,
+        mock_sleep,
+        mock_config,
+        mock_unlink,
+        mock_exists,
+        mock_getsize,
+        mock_compress,
     ):
         """Test transcription fails after all retries."""
         config = Mock()
@@ -238,7 +254,9 @@ class TestTranscribeAudio:
             mock_get_client.return_value = mock_client
 
             with patch("builtins.open", mock_open(read_data=b"audio data")):
-                with pytest.raises(Exception, match="Transcription failed after 3 attempts"):
+                with pytest.raises(
+                    Exception, match="Transcription failed after 3 attempts"
+                ):
                     transcribe_audio("/path/to/audio.mp3", retries=3)
 
     @patch("services.transcription.compress_audio_for_whisper")
@@ -261,7 +279,9 @@ class TestTranscribeAudio:
         with patch("services.transcription.get_openai_client") as mock_get_client:
             mock_client = Mock()
             # API returns string directly
-            mock_client.audio.transcriptions.create.return_value = "Direct string response"
+            mock_client.audio.transcriptions.create.return_value = (
+                "Direct string response"
+            )
             mock_get_client.return_value = mock_client
 
             with patch("builtins.open", mock_open(read_data=b"audio data")):

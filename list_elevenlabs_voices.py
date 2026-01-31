@@ -23,7 +23,7 @@ try:
     response = httpx.get(
         "https://api.elevenlabs.io/v1/voices",
         headers={"xi-api-key": api_key},
-        timeout=10
+        timeout=10,
     )
 
     response.raise_for_status()
@@ -105,11 +105,13 @@ try:
         print("\n📝 RECOMMENDATION:")
         print(f"   Use one of the {len(premade)} PRE-MADE voices listed above.")
         print("   Copy a voice ID and update your .env file:")
-        print(f"\n   ELEVENLABS_VOICE_ID=<voice_id_here>")
+        print("\n   ELEVENLABS_VOICE_ID=<voice_id_here>")
     else:
         print("\n⚠️  No pre-made voices found. You may need to:")
         print("   1. Check your API key is correct")
-        print("   2. Visit https://elevenlabs.io and add pre-made voices to your account")
+        print(
+            "   2. Visit https://elevenlabs.io and add pre-made voices to your account"
+        )
 
     print("\n" + "=" * 80)
 

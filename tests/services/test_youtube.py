@@ -61,7 +61,9 @@ class TestGetVideoTitle:
         # Mock successful yt-dlp response
         mock_result = Mock()
         mock_result.returncode = 0
-        mock_result.stdout = json.dumps({"title": "Test Video Title", "id": "dQw4w9WgXcQ"})
+        mock_result.stdout = json.dumps(
+            {"title": "Test Video Title", "id": "dQw4w9WgXcQ"}
+        )
         mock_run.return_value = mock_result
 
         title = get_video_title("dQw4w9WgXcQ")
@@ -116,7 +118,9 @@ class TestGetVideoTitle:
         # Mock response without title
         mock_result = Mock()
         mock_result.returncode = 0
-        mock_result.stdout = json.dumps({"id": "dQw4w9WgXcQ", "description": "Some description"})
+        mock_result.stdout = json.dumps(
+            {"id": "dQw4w9WgXcQ", "description": "Some description"}
+        )
         mock_run.return_value = mock_result
 
         title = get_video_title("dQw4w9WgXcQ")

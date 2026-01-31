@@ -75,7 +75,9 @@ def check_video_exists(video_id: str) -> Optional[Dict[str, str]]:
             note_id = first_note.get("noteId")
 
             if not note_id:
-                logger.warning(f"Found search result but no noteId in response: {first_note}")
+                logger.warning(
+                    f"Found search result but no noteId in response: {first_note}"
+                )
                 return None
 
             logger.info(f"Found existing note for video {video_id}: {note_id}")
@@ -88,7 +90,9 @@ def check_video_exists(video_id: str) -> Optional[Dict[str, str]]:
         return None
 
     except Exception as e:
-        logger.warning(f"Could not check Trilium for existing note (will skip deduplication): {e}")
+        logger.warning(
+            f"Could not check Trilium for existing note (will skip deduplication): {e}"
+        )
         # Don't fail the entire process, just continue without deduplication
         return None
 
@@ -110,7 +114,9 @@ def create_trilium_note(video_id: str, transcript: str, summary: str) -> Dict[st
     """
     config = get_config()
 
-    if not all([config.trilium_url, config.trilium_etapi_token, config.trilium_parent_note_id]):
+    if not all(
+        [config.trilium_url, config.trilium_etapi_token, config.trilium_parent_note_id]
+    ):
         raise ValueError("Trilium not properly configured")
 
     try:
@@ -182,7 +188,9 @@ def create_trilium_note(video_id: str, transcript: str, summary: str) -> Dict[st
         # Construct note URL - hash fragment should be appended directly
         config_trilium_url = config.trilium_url or ""
         note_url = f"{config_trilium_url.rstrip('/')}/#root/{note_id}"
-        logger.info(f"Successfully created Trilium note: {note_id} with youtube_id attribute")
+        logger.info(
+            f"Successfully created Trilium note: {note_id} with youtube_id attribute"
+        )
         return {"noteId": note_id, "url": note_url}
 
     except httpx.HTTPError as e:
@@ -190,7 +198,9 @@ def create_trilium_note(video_id: str, transcript: str, summary: str) -> Dict[st
         logger.error(
             f"Check that TRILIUM_URL ({config.trilium_url}) is correct and Trilium is running"
         )
-        logger.error(f"Check that TRILIUM_PARENT_NOTE_ID ({config.trilium_parent_note_id}) exists")
+        logger.error(
+            f"Check that TRILIUM_PARENT_NOTE_ID ({config.trilium_parent_note_id}) exists"
+        )
         # Save to backup file
         _save_to_backup(video_id, transcript, summary)
         raise Exception(f"Failed to create Trilium note (check logs for details): {e}")
@@ -331,7 +341,9 @@ def get_note_content(note_id: str) -> Optional[str]:
         return None
 
 
-def attach_audio_to_note(note_id: str, audio_file_path: str, title: str) -> Dict[str, str]:
+def attach_audio_to_note(
+    note_id: str, audio_file_path: str, title: str
+) -> Dict[str, str]:
     """
     Attach an audio file to a Trilium note as a child file note.
 
@@ -389,10 +401,14 @@ def attach_audio_to_note(note_id: str, audio_file_path: str, title: str) -> Dict
             audio_data = f.read()
 
         file_size_mb = len(audio_data) / (1024 * 1024)
-        logger.info(f"Uploading {file_size_mb:.2f} MB audio file to note {file_note_id}")
+        logger.info(
+            f"Uploading {file_size_mb:.2f} MB audio file to note {file_note_id}"
+        )
         logger.info(f"Audio data size: {len(audio_data)} bytes")
 
-        content_url = _build_url(config.trilium_url, f"etapi/notes/{file_note_id}/content")
+        content_url = _build_url(
+            config.trilium_url, f"etapi/notes/{file_note_id}/content"
+        )
 
         # Use a fresh httpx client for the content upload
         content_headers = {
@@ -409,13 +425,17 @@ def attach_audio_to_note(note_id: str, audio_file_path: str, title: str) -> Dict
                     content=audio_data,  # Use content for raw binary
                 )
                 content_response.raise_for_status()
-        except Exception as e:
+        except Exception:
             # Log the full response for debugging
-            logger.error(f"Failed to upload content. Status: {content_response.status_code}")
+            logger.error(
+                f"Failed to upload content. Status: {content_response.status_code}"
+            )
             logger.error(f"Response body: {content_response.text[:500]}")
             raise
 
-        logger.info(f"Successfully attached audio to note {note_id} as child note {file_note_id}")
+        logger.info(
+            f"Successfully attached audio to note {note_id} as child note {file_note_id}"
+        )
         return {"noteId": file_note_id, "status": "success"}
 
     except Exception as e:

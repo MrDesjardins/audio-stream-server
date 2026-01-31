@@ -141,7 +141,9 @@ class TestStartTranscription:
 
     @patch("routes.transcription.os.path.exists")
     @patch("routes.transcription.config")
-    def test_start_transcription_audio_not_found(self, mock_config, mock_exists, client):
+    def test_start_transcription_audio_not_found(
+        self, mock_config, mock_exists, client
+    ):
         """Test start when audio file doesn't exist."""
         mock_config.transcription_enabled = True
         mock_config.get_audio_path.return_value = "/tmp/test123.mp3"
@@ -155,7 +157,9 @@ class TestStartTranscription:
     @patch("routes.transcription.get_transcription_queue")
     @patch("routes.transcription.os.path.exists")
     @patch("routes.transcription.config")
-    def test_start_transcription_success(self, mock_config, mock_exists, mock_get_queue, client):
+    def test_start_transcription_success(
+        self, mock_config, mock_exists, mock_get_queue, client
+    ):
         """Test successful transcription start."""
         mock_config.transcription_enabled = True
         mock_config.get_audio_path.return_value = "/tmp/test123.mp3"
@@ -180,7 +184,9 @@ class TestStartTranscription:
     @patch("routes.transcription.get_transcription_queue")
     @patch("routes.transcription.os.path.exists")
     @patch("routes.transcription.config")
-    def test_start_transcription_error(self, mock_config, mock_exists, mock_get_queue, client):
+    def test_start_transcription_error(
+        self, mock_config, mock_exists, mock_get_queue, client
+    ):
         """Test start transcription with error."""
         mock_config.transcription_enabled = True
         mock_config.get_audio_path.return_value = "/tmp/test123.mp3"

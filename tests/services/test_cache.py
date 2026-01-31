@@ -5,7 +5,12 @@ import tempfile
 import time
 from pathlib import Path
 from unittest.mock import patch, Mock
-from services.cache import AudioCache, TranscriptionCache, get_audio_cache, get_transcript_cache
+from services.cache import (
+    AudioCache,
+    TranscriptionCache,
+    get_audio_cache,
+    get_transcript_cache,
+)
 
 
 class TestAudioCache:

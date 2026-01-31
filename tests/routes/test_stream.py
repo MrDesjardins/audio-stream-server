@@ -65,7 +65,10 @@ class TestStreamState:
         lock = threading.Lock()
         state = StreamState(lock)
 
-        with patch("services.streaming.start_youtube_download", return_value=(mock_proc, "vid1")):
+        with patch(
+            "services.streaming.start_youtube_download",
+            return_value=(mock_proc, "vid1"),
+        ):
             with patch("services.streaming.finish_youtube_download"):
                 state.start_stream("vid1", skip_transcription=False)
                 assert state.is_streaming() is True
@@ -82,7 +85,10 @@ class TestStreamState:
         lock = threading.Lock()
         state = StreamState(lock)
 
-        with patch("services.streaming.start_youtube_download", return_value=(mock_proc, "vid1")):
+        with patch(
+            "services.streaming.start_youtube_download",
+            return_value=(mock_proc, "vid1"),
+        ):
             with patch("services.streaming.finish_youtube_download"):
                 state.start_stream("vid1", skip_transcription=False)
                 result = state.stop_stream()
@@ -153,7 +159,10 @@ class TestStreamState:
         lock = threading.Lock()
         state = StreamState(lock)
 
-        with patch("services.streaming.start_youtube_download", return_value=(mock_proc, "vid1")):
+        with patch(
+            "services.streaming.start_youtube_download",
+            return_value=(mock_proc, "vid1"),
+        ):
             with patch("services.streaming.finish_youtube_download"):
                 state.start_stream("vid1", skip_transcription=False)
                 state.stop_stream()
@@ -192,7 +201,10 @@ class TestStreamEndpoint:
         assert data["youtube_video_id"] == "test123"
         assert data["title"] == "Test Audiobook"
         mock_history.assert_called_once_with(
-            "test123", "Test Audiobook", "Books Channel", "https://example.com/thumb.jpg"
+            "test123",
+            "Test Audiobook",
+            "Books Channel",
+            "https://example.com/thumb.jpg",
         )
         state.start_stream.assert_called_once_with("test123", False)
 
@@ -227,7 +239,11 @@ class TestStreamEndpoint:
     ):
         """Transcription job is queued when enabled and not skipped."""
         mock_extract.return_value = "trans_vid"
-        mock_metadata.return_value = {"title": "Title", "channel": None, "thumbnail_url": None}
+        mock_metadata.return_value = {
+            "title": "Title",
+            "channel": None,
+            "thumbnail_url": None,
+        }
         mock_cfg.transcription_enabled = True
         mock_cfg.get_audio_path = lambda vid: f"/tmp/{vid}.mp3"
         mock_state.return_value = Mock()
@@ -235,7 +251,8 @@ class TestStreamEndpoint:
         mock_queue = Mock()
         with patch("routes.stream.get_transcription_queue", return_value=mock_queue):
             response = client.post(
-                "/stream", json={"youtube_video_id": "trans_vid", "skip_transcription": False}
+                "/stream",
+                json={"youtube_video_id": "trans_vid", "skip_transcription": False},
             )
 
         assert response.status_code == 200
@@ -253,14 +270,19 @@ class TestStreamEndpoint:
     ):
         """No transcription job when skip_transcription=True."""
         mock_extract.return_value = "skip_vid"
-        mock_metadata.return_value = {"title": "Title", "channel": None, "thumbnail_url": None}
+        mock_metadata.return_value = {
+            "title": "Title",
+            "channel": None,
+            "thumbnail_url": None,
+        }
         mock_cfg.transcription_enabled = True
         mock_state.return_value = Mock()
 
         mock_queue = Mock()
         with patch("routes.stream.get_transcription_queue", return_value=mock_queue):
             response = client.post(
-                "/stream", json={"youtube_video_id": "skip_vid", "skip_transcription": True}
+                "/stream",
+                json={"youtube_video_id": "skip_vid", "skip_transcription": True},
             )
 
         assert response.status_code == 200
@@ -307,7 +329,9 @@ class TestAudioFileEndpoint:
 
     @patch("routes.stream.config")
     @patch("routes.stream._audio_is_ready")
-    def test_returns_404_when_downloading(self, mock_ready, mock_cfg, client, temp_audio_dir):
+    def test_returns_404_when_downloading(
+        self, mock_ready, mock_cfg, client, temp_audio_dir
+    ):
         """Returns 404 with Retry-After when file is still downloading."""
         mock_cfg.get_audio_path = lambda vid: os.path.join(temp_audio_dir, f"{vid}.mp3")
         mock_ready.return_value = False
@@ -321,7 +345,9 @@ class TestAudioFileEndpoint:
 
     @patch("routes.stream.config")
     @patch("routes.stream._audio_is_ready")
-    def test_returns_404_when_file_missing(self, mock_ready, mock_cfg, client, temp_audio_dir):
+    def test_returns_404_when_file_missing(
+        self, mock_ready, mock_cfg, client, temp_audio_dir
+    ):
         """Returns 404 when file doesn't exist at all."""
         mock_cfg.get_audio_path = lambda vid: os.path.join(temp_audio_dir, f"{vid}.mp3")
         mock_ready.return_value = False
@@ -352,7 +378,9 @@ class TestHeadAudioEndpoint:
 
     @patch("routes.stream.config")
     @patch("routes.stream._audio_is_ready")
-    def test_returns_404_when_not_ready(self, mock_ready, mock_cfg, client, temp_audio_dir):
+    def test_returns_404_when_not_ready(
+        self, mock_ready, mock_cfg, client, temp_audio_dir
+    ):
         """HEAD returns 404 when file is not ready."""
         mock_cfg.get_audio_path = lambda vid: os.path.join(temp_audio_dir, f"{vid}.mp3")
         mock_ready.return_value = False
@@ -384,7 +412,9 @@ class TestAudioIsReady:
 
     @patch("services.streaming.is_download_in_progress")
     @patch("routes.stream.config")
-    def test_not_ready_when_still_downloading(self, mock_cfg, mock_in_progress, temp_audio_dir):
+    def test_not_ready_when_still_downloading(
+        self, mock_cfg, mock_in_progress, temp_audio_dir
+    ):
         """Returns False when marker file still exists."""
         audio_path = os.path.join(temp_audio_dir, "dl_vid.mp3")
         with open(audio_path, "w") as f:
@@ -398,7 +428,9 @@ class TestAudioIsReady:
 
     @patch("services.streaming.is_download_in_progress")
     @patch("routes.stream.config")
-    def test_not_ready_when_file_missing(self, mock_cfg, mock_in_progress, temp_audio_dir):
+    def test_not_ready_when_file_missing(
+        self, mock_cfg, mock_in_progress, temp_audio_dir
+    ):
         """Returns False when audio file doesn't exist."""
         mock_cfg.get_audio_path = lambda vid: os.path.join(temp_audio_dir, f"{vid}.mp3")
         mock_in_progress.return_value = False

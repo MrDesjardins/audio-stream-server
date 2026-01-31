@@ -90,7 +90,9 @@ def get_books_from_trilium_last_week() -> List[Dict[str, str]]:
                 title = note.get("title", "Unknown Title")
 
                 # Fetch attributes to get youtube_id
-                attr_url = _build_url(config.trilium_url, f"/etapi/notes/{note_id}/attributes")
+                attr_url = _build_url(
+                    config.trilium_url, f"/etapi/notes/{note_id}/attributes"
+                )
                 attr_response = client.get(
                     attr_url,
                     headers={"Authorization": f"Bearer {config.trilium_etapi_token}"},
@@ -103,13 +105,17 @@ def get_books_from_trilium_last_week() -> List[Dict[str, str]]:
                         if attr.get("name") == "youtube_id":
                             video_id = attr.get("value")
                             if video_id:
-                                weekly_books.append({"video_id": video_id, "title": title})
+                                weekly_books.append(
+                                    {"video_id": video_id, "title": title}
+                                )
                             break
 
             logger.info(f"Found {len(weekly_books)} books from Trilium (last 7 days)")
             return weekly_books
         else:
-            logger.error(f"Failed to search Trilium: {response.status_code} - {response.text}")
+            logger.error(
+                f"Failed to search Trilium: {response.status_code} - {response.text}"
+            )
             return []
 
     except Exception as e:
@@ -196,7 +202,9 @@ def fetch_book_summaries(books: List[Dict[str, str]]) -> List[Dict[str, str]]:
                 if content:
                     # Extract summary from HTML content
                     # Remove the YouTube link section at the bottom
-                    content = re.sub(r'<p style="margin-top.*?</p>', "", content, flags=re.DOTALL)
+                    content = re.sub(
+                        r'<p style="margin-top.*?</p>', "", content, flags=re.DOTALL
+                    )
 
                     # Strip HTML tags to get plain text
                     text_summary = re.sub(r"<[^>]+>", " ", content)
@@ -394,7 +402,9 @@ def create_weekly_summary_note(
         # Build book list section
         books_html = "<h3>Books Read This Week</h3>\n<ul>\n"
         for book in book_links:
-            books_html += f'  <li><a href="{book["note_url"]}">{book["title"]}</a></li>\n'
+            books_html += (
+                f'  <li><a href="{book["note_url"]}">{book["title"]}</a></li>\n'
+            )
         books_html += "</ul>\n\n"
 
         # Convert markdown summary to HTML
@@ -456,7 +466,9 @@ def create_weekly_summary_note(
                 logger.error("No noteId in response")
                 return None
         else:
-            logger.error(f"Failed to create note: {response.status_code} - {response.text}")
+            logger.error(
+                f"Failed to create note: {response.status_code} - {response.text}"
+            )
             return None
 
     except Exception as e:
@@ -578,7 +590,9 @@ def generate_and_save_weekly_summary() -> Optional[Dict[str, str]]:
                         )
                         # Will attach below
                 except Exception as e:
-                    logger.warning(f"Could not check Trilium children: {e}, will try to attach")
+                    logger.warning(
+                        f"Could not check Trilium children: {e}, will try to attach"
+                    )
 
                 # Attach the existing file to Trilium
                 if config.tts_enabled:
@@ -592,7 +606,9 @@ def generate_and_save_weekly_summary() -> Optional[Dict[str, str]]:
                             audio_file_path=audio_file_path,
                             title=f"{week_year}.mp3",
                         )
-                        logger.info(f"Attached existing audio to Trilium: {attach_result}")
+                        logger.info(
+                            f"Attached existing audio to Trilium: {attach_result}"
+                        )
 
                         # Update database
                         save_weekly_summary(
@@ -620,7 +636,7 @@ def generate_and_save_weekly_summary() -> Optional[Dict[str, str]]:
             if config.tts_enabled:
                 try:
                     # Generate TTS
-                    logger.info(f"Audio file not found, generating TTS...")
+                    logger.info("Audio file not found, generating TTS...")
 
                     # Get note content for TTS
                     note_content = get_note_content(note_id)
@@ -666,7 +682,7 @@ def generate_and_save_weekly_summary() -> Optional[Dict[str, str]]:
                         audio_file_path=audio_file_path,
                         duration_seconds=duration,
                     )
-                    logger.info(f"Updated database with audio info")
+                    logger.info("Updated database with audio info")
 
                     return {
                         "noteId": note_id,
@@ -675,7 +691,8 @@ def generate_and_save_weekly_summary() -> Optional[Dict[str, str]]:
 
                 except Exception as tts_error:
                     logger.error(
-                        f"TTS generation failed for existing summary: {tts_error}", exc_info=True
+                        f"TTS generation failed for existing summary: {tts_error}",
+                        exc_info=True,
                     )
                     # If we couldn't get note content, the note might not exist
                     # Return None to indicate failure
@@ -699,7 +716,7 @@ def generate_and_save_weekly_summary() -> Optional[Dict[str, str]]:
                 }
 
         # No existing summary - proceed with full generation
-        logger.info(f"No existing summary found, proceeding with full generation")
+        logger.info("No existing summary found, proceeding with full generation")
 
         # Step 1: Get books from last week (prefer Trilium as source of truth)
         logger.info("Fetching books from Trilium (last 7 days)...")
@@ -821,9 +838,13 @@ def generate_and_save_weekly_summary() -> Optional[Dict[str, str]]:
                     )
 
                     if audio_already_attached:
-                        logger.info("Audio already attached to Trilium note, skipping attachment")
+                        logger.info(
+                            "Audio already attached to Trilium note, skipping attachment"
+                        )
                 except Exception as e:
-                    logger.warning(f"Could not check Trilium children: {e}, will try to attach")
+                    logger.warning(
+                        f"Could not check Trilium children: {e}, will try to attach"
+                    )
 
                 # Attach to Trilium note if not already attached
                 if not audio_already_attached:
@@ -844,10 +865,13 @@ def generate_and_save_weekly_summary() -> Optional[Dict[str, str]]:
                     audio_file_path=audio_path,
                     duration_seconds=duration,
                 )
-                logger.info(f"Updated database with audio info")
+                logger.info("Updated database with audio info")
 
             except Exception as tts_error:
-                logger.error(f"TTS generation failed (note still created): {tts_error}", exc_info=True)
+                logger.error(
+                    f"TTS generation failed (note still created): {tts_error}",
+                    exc_info=True,
+                )
                 # Don't fail the whole process if TTS fails
 
         return note_info

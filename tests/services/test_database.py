@@ -60,7 +60,9 @@ class TestDatabaseInit:
             assert cursor.fetchone() is not None
 
             # Check queue table
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='queue'")
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='queue'"
+            )
             assert cursor.fetchone() is not None
 
     def test_init_database_idempotent(self, db_path):

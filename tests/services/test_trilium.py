@@ -169,7 +169,9 @@ class TestCheckVideoExists:
 
     @patch("services.trilium.get_config")
     @patch("services.trilium.get_httpx_client")
-    def test_check_video_exists_found_dict_format(self, mock_client_factory, mock_config):
+    def test_check_video_exists_found_dict_format(
+        self, mock_client_factory, mock_config
+    ):
         """Test finding existing video note with dict response."""
         config = Mock()
         config.trilium_url = "http://localhost:8080"
@@ -241,7 +243,9 @@ class TestCheckVideoExists:
 
     @patch("services.trilium.get_config")
     @patch("services.trilium.get_httpx_client")
-    def test_check_video_exists_no_note_id_in_result(self, mock_client_factory, mock_config):
+    def test_check_video_exists_no_note_id_in_result(
+        self, mock_client_factory, mock_config
+    ):
         """Test handling response without noteId."""
         config = Mock()
         config.trilium_url = "http://localhost:8080"
@@ -267,7 +271,9 @@ class TestCreateTriliumNote:
     @patch("services.trilium.get_video_title_from_history")
     @patch("services.trilium.get_config")
     @patch("services.trilium.get_httpx_client")
-    def test_create_trilium_note_success(self, mock_client_factory, mock_config, mock_get_title):
+    def test_create_trilium_note_success(
+        self, mock_client_factory, mock_config, mock_get_title
+    ):
         """Test successful note creation."""
         config = Mock()
         config.trilium_url = "http://localhost:8080"

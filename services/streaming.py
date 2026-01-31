@@ -88,7 +88,9 @@ def start_youtube_download(youtube_video_id: str, skip_transcription: bool):
                 stderr=stderr_file,
             )
 
-        logger.info(f"Started downloading audio for video {youtube_video_id} to {audio_path}")
+        logger.info(
+            f"Started downloading audio for video {youtube_video_id} to {audio_path}"
+        )
         return proc, youtube_video_id
 
     except Exception as e:
@@ -145,7 +147,9 @@ def finish_youtube_download(youtube_video_id: str, returncode: int):
         # Success — verify the file exists
         if os.path.exists(audio_path):
             file_size = os.path.getsize(audio_path)
-            logger.info(f"Audio file downloaded: {audio_path} ({file_size / 1024 / 1024:.2f} MB)")
+            logger.info(
+                f"Audio file downloaded: {audio_path} ({file_size / 1024 / 1024:.2f} MB)"
+            )
 
             # Clean up old audio files to maintain cache limit
             try:
@@ -156,7 +160,9 @@ def finish_youtube_download(youtube_video_id: str, returncode: int):
             except Exception as e:
                 logger.error(f"Error during audio cache cleanup: {e}")
         else:
-            logger.error(f"Download completed (rc=0) but output file not found: {audio_path}")
+            logger.error(
+                f"Download completed (rc=0) but output file not found: {audio_path}"
+            )
 
     # Always remove the marker file — download is no longer in progress
     try:

@@ -88,14 +88,18 @@ class TestGenerateThemeOpenAI:
 
     @patch("services.book_suggestions.OpenAI")
     @patch("services.book_suggestions.config")
-    def test_generate_theme_success(self, mock_config_module, mock_openai_class, mock_config):
+    def test_generate_theme_success(
+        self, mock_config_module, mock_openai_class, mock_config
+    ):
         """Test successful theme generation."""
         mock_config_module.openai_api_key = mock_config.openai_api_key
 
         # Mock OpenAI response - returns a single theme sentence
         mock_response = Mock()
         mock_response.choices = [Mock()]
-        mock_response.choices[0].message.content = (
+        mock_response.choices[
+            0
+        ].message.content = (
             "Personal development and productivity improvement strategies"
         )
 
@@ -114,7 +118,9 @@ class TestGenerateThemeOpenAI:
 
     @patch("services.book_suggestions.OpenAI")
     @patch("services.book_suggestions.config")
-    def test_generate_theme_error(self, mock_config_module, mock_openai_class, mock_config):
+    def test_generate_theme_error(
+        self, mock_config_module, mock_openai_class, mock_config
+    ):
         """Test error handling in OpenAI theme generation."""
         mock_config_module.openai_api_key = mock_config.openai_api_key
 
@@ -354,7 +360,9 @@ class TestGetVideoSuggestions:
 
     @patch("services.book_suggestions.get_recent_summaries")
     @patch("services.book_suggestions.config")
-    async def test_no_summaries_found(self, mock_config_module, mock_get_summaries, mock_config):
+    async def test_no_summaries_found(
+        self, mock_config_module, mock_get_summaries, mock_config
+    ):
         """Test when no summaries found."""
         mock_config_module.book_suggestions_enabled = True
         mock_get_summaries.return_value = []

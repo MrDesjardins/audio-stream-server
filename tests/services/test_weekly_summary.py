@@ -1,8 +1,7 @@
 """Tests for weekly summary service."""
 
-import pytest
 from datetime import datetime, timedelta, timezone
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 
 from services.weekly_summary import (
     get_week_number,
@@ -50,9 +49,17 @@ class TestGetBooksFromLastWeek:
         old = (now - timedelta(days=10)).isoformat()
 
         mock_get_history.return_value = [
-            {"youtube_id": "recent1", "title": "Recent Book 1", "last_played_at": recent},
+            {
+                "youtube_id": "recent1",
+                "title": "Recent Book 1",
+                "last_played_at": recent,
+            },
             {"youtube_id": "old1", "title": "Old Book", "last_played_at": old},
-            {"youtube_id": "recent2", "title": "Recent Book 2", "last_played_at": recent},
+            {
+                "youtube_id": "recent2",
+                "title": "Recent Book 2",
+                "last_played_at": recent,
+            },
         ]
 
         books = get_books_from_last_week()
@@ -92,7 +99,11 @@ class TestGetBooksFromLastWeek:
 
         mock_get_history.return_value = [
             {"youtube_id": "valid", "title": "Valid", "last_played_at": valid},
-            {"youtube_id": "invalid", "title": "Invalid", "last_played_at": "not-a-date"},
+            {
+                "youtube_id": "invalid",
+                "title": "Invalid",
+                "last_played_at": "not-a-date",
+            },
         ]
 
         books = get_books_from_last_week()
@@ -310,7 +321,9 @@ class TestGenerateWeeklySummaryGemini:
         summaries = [{"title": "Book 1", "summary": "Summary 1"}]
 
         mock_client_instance = Mock()
-        mock_client_instance.models.generate_content.side_effect = Exception("API Error")
+        mock_client_instance.models.generate_content.side_effect = Exception(
+            "API Error"
+        )
         mock_gemini_client.return_value = mock_client_instance
 
         result = generate_weekly_summary_gemini(summaries)
@@ -408,8 +421,18 @@ class TestGenerateAndSaveWeeklySummary:
 
         # Mock summaries
         mock_fetch_summaries.return_value = [
-            {"video_id": "vid1", "title": "Book 1", "summary": "Summary 1", "note_url": "url1"},
-            {"video_id": "vid2", "title": "Book 2", "summary": "Summary 2", "note_url": "url2"},
+            {
+                "video_id": "vid1",
+                "title": "Book 1",
+                "summary": "Summary 1",
+                "note_url": "url1",
+            },
+            {
+                "video_id": "vid2",
+                "title": "Book 2",
+                "summary": "Summary 2",
+                "note_url": "url2",
+            },
         ]
 
         # Mock AI summary
@@ -498,10 +521,18 @@ class TestGenerateAndSaveWeeklySummary:
         # Mock the regeneration workflow
         mock_get_books.return_value = [{"video_id": "vid1", "title": "Book 1"}]
         mock_fetch_summaries.return_value = [
-            {"video_id": "vid1", "title": "Book 1", "summary": "Summary 1", "note_url": "url1"}
+            {
+                "video_id": "vid1",
+                "title": "Book 1",
+                "summary": "Summary 1",
+                "note_url": "url1",
+            }
         ]
         mock_generate_summary.return_value = "## New Summary"
-        mock_create_note.return_value = {"noteId": "new-note-123", "url": "http://localhost:8080/#root/new-note-123"}
+        mock_create_note.return_value = {
+            "noteId": "new-note-123",
+            "url": "http://localhost:8080/#root/new-note-123",
+        }
 
         result = generate_and_save_weekly_summary()
 

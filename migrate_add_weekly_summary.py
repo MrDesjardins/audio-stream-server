@@ -39,7 +39,7 @@ def check_if_migration_needed(conn):
     # Check if queue table has 'type' column
     cursor.execute("PRAGMA table_info(queue)")
     columns = {row[1] for row in cursor.fetchall()}
-    has_type_column = 'type' in columns
+    has_type_column = "type" in columns
 
     if has_summaries_table and has_type_column:
         print("✓ Migration already applied, skipping")
@@ -90,11 +90,11 @@ def migrate_database():
         cursor.execute("PRAGMA table_info(queue)")
         columns = {row[1] for row in cursor.fetchall()}
 
-        if 'type' not in columns:
+        if "type" not in columns:
             print("Adding 'type' column to queue table...")
             cursor.execute("ALTER TABLE queue ADD COLUMN type TEXT DEFAULT 'youtube'")
 
-        if 'week_year' not in columns:
+        if "week_year" not in columns:
             print("Adding 'week_year' column to queue table...")
             cursor.execute("ALTER TABLE queue ADD COLUMN week_year TEXT")
 

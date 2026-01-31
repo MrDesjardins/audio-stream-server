@@ -61,9 +61,9 @@ uv run mypy services/
 
 ```bash
 # Check
-uv run ruff check 
+uv run ruff check
 
-# Fix 
+# Fix
 uv run ruff check --fix
 ```
 ## CI Integration

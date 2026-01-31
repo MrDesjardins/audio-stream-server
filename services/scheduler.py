@@ -37,7 +37,6 @@ def init_scheduler() -> None:
 
         # Add weekly summary job (every Friday at 11pm Pacific)
         if config.weekly_summary_enabled:
-
             _scheduler.add_job(
                 func=generate_and_save_weekly_summary,
                 trigger=CronTrigger(
@@ -96,7 +95,6 @@ def trigger_weekly_summary_now() -> None:
     Useful for testing or manual runs.
     """
     try:
-
         logger.info("Manually triggering weekly summary")
         result = generate_and_save_weekly_summary()
 

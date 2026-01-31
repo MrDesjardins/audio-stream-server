@@ -14,7 +14,10 @@ def test_trilium_connection():
     print(f"TRILIUM_PARENT_NOTE_ID: {config.trilium_parent_note_id}")
     print()
 
-    headers = {"Authorization": config.trilium_etapi_token, "Content-Type": "application/json"}
+    headers = {
+        "Authorization": config.trilium_etapi_token,
+        "Content-Type": "application/json",
+    }
 
     # Test 1: Check if Trilium is reachable
     print("Test 1: Checking if Trilium is reachable...")
@@ -33,7 +36,10 @@ def test_trilium_connection():
     # Test 2: Check if parent note exists
     print("\nTest 2: Checking if parent note exists...")
     try:
-        url = config.trilium_url.rstrip("/") + f"/etapi/notes/{config.trilium_parent_note_id}"
+        url = (
+            config.trilium_url.rstrip("/")
+            + f"/etapi/notes/{config.trilium_parent_note_id}"
+        )
         response = httpx.get(url, headers=headers, timeout=5.0)
         response.raise_for_status()
         note = response.json()
@@ -65,13 +71,17 @@ def test_trilium_connection():
 
         if response.status_code == 200:
             results = response.json()
-            print(f"✓ Successfully searched notes (found {len(results)} with youtube_id attribute)")
+            print(
+                f"✓ Successfully searched notes (found {len(results)} with youtube_id attribute)"
+            )
         else:
             print(f"⚠ Search returned status {response.status_code}")
             print("  This might be okay - the deduplication may still work")
     except Exception as e:
         print(f"⚠ Could not test search: {e}")
-        print("  This might be okay - the deduplication will be skipped if search fails")
+        print(
+            "  This might be okay - the deduplication will be skipped if search fails"
+        )
 
     print("\n" + "=" * 50)
     print("All critical tests passed! Trilium is configured correctly.")

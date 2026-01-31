@@ -86,7 +86,9 @@ class TestStartYoutubeDownload:
     @patch("services.streaming.subprocess.Popen")
     @patch("services.streaming.get_audio_cache")
     @patch("services.streaming.config")
-    def test_returns_none_when_cached(self, mock_cfg, mock_get_cache, mock_popen, temp_audio_dir):
+    def test_returns_none_when_cached(
+        self, mock_cfg, mock_get_cache, mock_popen, temp_audio_dir
+    ):
         """Returns (None, video_id) when file already exists in cache."""
         mock_cfg.temp_audio_dir = temp_audio_dir
         mock_cfg.get_audio_path = lambda vid: os.path.join(temp_audio_dir, f"{vid}.mp3")
@@ -105,7 +107,9 @@ class TestStartYoutubeDownload:
     @patch("services.streaming.subprocess.Popen")
     @patch("services.streaming.get_audio_cache")
     @patch("services.streaming.config")
-    def test_creates_marker_file(self, mock_cfg, mock_get_cache, mock_popen, temp_audio_dir):
+    def test_creates_marker_file(
+        self, mock_cfg, mock_get_cache, mock_popen, temp_audio_dir
+    ):
         """Creates .downloading marker before starting yt-dlp."""
         mock_cfg.temp_audio_dir = temp_audio_dir
         mock_cfg.audio_quality = 4
@@ -125,7 +129,9 @@ class TestStartYoutubeDownload:
     @patch("services.streaming.subprocess.Popen")
     @patch("services.streaming.get_audio_cache")
     @patch("services.streaming.config")
-    def test_returns_process_on_success(self, mock_cfg, mock_get_cache, mock_popen, temp_audio_dir):
+    def test_returns_process_on_success(
+        self, mock_cfg, mock_get_cache, mock_popen, temp_audio_dir
+    ):
         """Returns (proc, video_id) when download starts successfully."""
         mock_cfg.temp_audio_dir = temp_audio_dir
         mock_cfg.audio_quality = 6
@@ -188,7 +194,9 @@ class TestStartYoutubeDownload:
         cmd = mock_popen.call_args[0][0]
         output_idx = cmd.index("-o")
         output_path = cmd[output_idx + 1]
-        assert not output_path.endswith(".mp3"), "Output path must not include .mp3 extension"
+        assert not output_path.endswith(
+            ".mp3"
+        ), "Output path must not include .mp3 extension"
 
     @patch("services.streaming.subprocess.Popen")
     @patch("services.streaming.get_audio_cache")

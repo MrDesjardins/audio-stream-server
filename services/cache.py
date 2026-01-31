@@ -42,7 +42,10 @@ class TranscriptionCache:
             with open(cache_file, "r") as f:
                 data = json.load(f)
             logger.info(f"Found cached transcript/summary for video {video_id}")
-            return {"transcript": data.get("transcript"), "summary": data.get("summary")}
+            return {
+                "transcript": data.get("transcript"),
+                "summary": data.get("summary"),
+            }
         except Exception as e:
             logger.error(f"Error reading cache for {video_id}: {e}")
             return None
@@ -100,7 +103,9 @@ class AudioCache:
         config = get_config()
         self.audio_dir = Path(config.temp_audio_dir)
         self.audio_dir.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Audio cache initialized: max {max_files} files in {self.audio_dir}")
+        logger.info(
+            f"Audio cache initialized: max {max_files} files in {self.audio_dir}"
+        )
 
     def cleanup_old_files(self) -> None:
         """Remove oldest audio files if we exceed max_files limit."""

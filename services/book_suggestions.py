@@ -32,7 +32,9 @@ async def get_recent_summaries(limit: int) -> List[Dict[str, str]]:
 
     try:
         # Get recent history
-        history = get_history(limit=limit * 2)  # Get more to account for videos without summaries
+        history = get_history(
+            limit=limit * 2
+        )  # Get more to account for videos without summaries
 
         if not history:
             logger.warning("No history found")
@@ -57,7 +59,9 @@ async def get_recent_summaries(limit: int) -> List[Dict[str, str]]:
                 if content:
                     # Extract summary from HTML content
                     # Remove the YouTube link section at the bottom
-                    content = re.sub(r'<p style="margin-top.*?</p>', "", content, flags=re.DOTALL)
+                    content = re.sub(
+                        r'<p style="margin-top.*?</p>', "", content, flags=re.DOTALL
+                    )
 
                     # Strip HTML tags to get plain text
                     text_summary = re.sub(r"<[^>]+>", " ", content)
@@ -66,9 +70,15 @@ async def get_recent_summaries(limit: int) -> List[Dict[str, str]]:
 
                     if text_summary:
                         summaries.append(
-                            {"video_id": video_id, "title": title, "summary": text_summary}
+                            {
+                                "video_id": video_id,
+                                "title": title,
+                                "summary": text_summary,
+                            }
                         )
-                        logger.debug(f"Extracted summary for {title} ({len(text_summary)} chars)")
+                        logger.debug(
+                            f"Extracted summary for {title} ({len(text_summary)} chars)"
+                        )
 
                         # Stop when we have enough
                         if len(summaries) >= limit:
@@ -170,7 +180,9 @@ The sentence should be:
 
 Respond with ONLY the theme sentence, nothing else."""
 
-        response = client.models.generate_content(model="gemini-1.5-flash", contents=prompt)
+        response = client.models.generate_content(
+            model="gemini-1.5-flash", contents=prompt
+        )
         theme = response.text
         theme = theme.strip() if theme else None
         logger.info(f"Generated theme: {theme}")
@@ -196,7 +208,9 @@ def search_youtube_by_theme(theme: str, count: int) -> List[Dict[str, str]]:
 
     try:
         # Search YouTube using the theme
-        search_url = f"ytsearch{count * 2}:{theme}"  # Get more than needed for filtering
+        search_url = (
+            f"ytsearch{count * 2}:{theme}"  # Get more than needed for filtering
+        )
         logger.info(f"Searching YouTube for theme: {theme}")
         logger.debug(f"YT-DLP search URL: {search_url}")
         result = subprocess.run(
@@ -214,7 +228,9 @@ def search_youtube_by_theme(theme: str, count: int) -> List[Dict[str, str]]:
         )
 
         if result.returncode != 0:
-            logger.warning(f"YouTube search failed for theme '{theme}': {result.stderr}")
+            logger.warning(
+                f"YouTube search failed for theme '{theme}': {result.stderr}"
+            )
             return []
 
         videos = []

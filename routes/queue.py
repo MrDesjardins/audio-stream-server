@@ -36,7 +36,10 @@ def add_video_to_queue(request: QueueRequest):
 
         if metadata:
             queue_id = add_to_queue(
-                video_id, metadata["title"], metadata.get("channel"), metadata.get("thumbnail_url")
+                video_id,
+                metadata["title"],
+                metadata.get("channel"),
+                metadata.get("thumbnail_url"),
             )
             video_title = metadata["title"]
         else:
@@ -44,7 +47,12 @@ def add_video_to_queue(request: QueueRequest):
             queue_id = add_to_queue(video_id, video_title)
 
         return JSONResponse(
-            {"status": "added", "queue_id": queue_id, "youtube_id": video_id, "title": video_title}
+            {
+                "status": "added",
+                "queue_id": queue_id,
+                "youtube_id": video_id,
+                "title": video_title,
+            }
         )
     except Exception as e:
         logger.error(f"Error adding to queue: {e}")
@@ -85,7 +93,9 @@ def play_next_in_queue():
         next_item = get_next_in_queue()
 
         if not next_item:
-            return JSONResponse({"status": "queue_empty", "message": "No more items in queue"})
+            return JSONResponse(
+                {"status": "queue_empty", "message": "No more items in queue"}
+            )
 
         # Remove the current first item
         remove_from_queue(next_item["id"])
@@ -94,7 +104,9 @@ def play_next_in_queue():
         next_item = get_next_in_queue()
 
         if not next_item:
-            return JSONResponse({"status": "queue_empty", "message": "No more items in queue"})
+            return JSONResponse(
+                {"status": "queue_empty", "message": "No more items in queue"}
+            )
 
         # Build response based on type
         response = {
@@ -247,7 +259,9 @@ async def generate_and_queue_suggestions():
 
             except Exception as e:
                 logger.error(f"Failed to add suggestion to queue: {e}")
-                failed.append({"title": suggestion.get("title", "Unknown"), "error": str(e)})
+                failed.append(
+                    {"title": suggestion.get("title", "Unknown"), "error": str(e)}
+                )
 
         return JSONResponse(
             {
@@ -261,4 +275,6 @@ async def generate_and_queue_suggestions():
 
     except Exception as e:
         logger.error(f"Error generating suggestions: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to generate suggestions: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to generate suggestions: {str(e)}"
+        )

@@ -27,7 +27,9 @@ def get_openai_client() -> OpenAI:
         with _client_lock:
             if _openai_client is None:
                 config = get_config()
-                _openai_client = OpenAI(api_key=config.openai_api_key, timeout=60.0, max_retries=2)
+                _openai_client = OpenAI(
+                    api_key=config.openai_api_key, timeout=60.0, max_retries=2
+                )
                 logger.info("Initialized OpenAI client with connection pooling")
     return _openai_client
 
@@ -47,7 +49,9 @@ def get_httpx_client() -> httpx.Client:
             if _httpx_client is None:
                 _httpx_client = httpx.Client(
                     timeout=30.0,
-                    limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+                    limits=httpx.Limits(
+                        max_connections=10, max_keepalive_connections=5
+                    ),
                 )
                 logger.info("Initialized httpx client with connection pooling")
     return _httpx_client

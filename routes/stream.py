@@ -50,7 +50,9 @@ class StreamState:
         proc, vid = start_youtube_download(video_id, skip_transcription)
 
         with self._lock:
-            self._current_process = proc  # Store immediately so stop_stream() can kill it
+            self._current_process = (
+                proc  # Store immediately so stop_stream() can kill it
+            )
 
         def target():
             if proc is not None:
@@ -113,9 +115,14 @@ def stream_video(request: StreamRequest):
         metadata = get_video_metadata(video_id)
         if metadata:
             add_to_history(
-                video_id, metadata["title"], metadata.get("channel"), metadata.get("thumbnail_url")
+                video_id,
+                metadata["title"],
+                metadata.get("channel"),
+                metadata.get("thumbnail_url"),
             )
-            logger.info(f"Added to history: {metadata['title']} by {metadata.get('channel')}")
+            logger.info(
+                f"Added to history: {metadata['title']} by {metadata.get('channel')}"
+            )
             video_title = metadata["title"]
         else:
             add_to_history(video_id, f"YouTube Video {video_id}")
@@ -129,9 +136,13 @@ def stream_video(request: StreamRequest):
     if config.transcription_enabled and not request.skip_transcription:
         try:
             queue = get_transcription_queue()
-            job = TranscriptionJob(video_id=video_id, audio_path=config.get_audio_path(video_id))
+            job = TranscriptionJob(
+                video_id=video_id, audio_path=config.get_audio_path(video_id)
+            )
             queue.add_job(job)
-            logger.info(f"Queued transcription job for {video_id} (will start after download)")
+            logger.info(
+                f"Queued transcription job for {video_id} (will start after download)"
+            )
         except Exception as e:
             logger.error(f"Failed to queue transcription job: {e}")
     elif config.transcription_enabled and request.skip_transcription:

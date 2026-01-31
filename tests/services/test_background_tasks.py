@@ -318,7 +318,9 @@ class TestWaitForFile:
             with open(audio_path, "w") as f:
                 f.write("audio data")
 
-            with patch("services.streaming.is_download_in_progress", return_value=False):
+            with patch(
+                "services.streaming.is_download_in_progress", return_value=False
+            ):
                 result = worker._wait_for_file(audio_path, "vid", timeout=5)
 
         assert result is True
@@ -331,7 +333,9 @@ class TestWaitForFile:
         with tempfile.TemporaryDirectory() as tmpdir:
             audio_path = os.path.join(tmpdir, "missing.mp3")
 
-            with patch("services.streaming.is_download_in_progress", return_value=False):
+            with patch(
+                "services.streaming.is_download_in_progress", return_value=False
+            ):
                 result = worker._wait_for_file(audio_path, "missing", timeout=1)
 
         assert result is False
@@ -352,7 +356,10 @@ class TestWaitForFile:
             with open(audio_path, "w") as f:
                 f.write("data")
 
-            with patch("services.streaming.is_download_in_progress", side_effect=fake_in_progress):
+            with patch(
+                "services.streaming.is_download_in_progress",
+                side_effect=fake_in_progress,
+            ):
                 result = worker._wait_for_file(audio_path, "wait_vid", timeout=5)
 
         assert result is True
@@ -367,7 +374,9 @@ class TestWaitForFile:
             audio_path = os.path.join(tmpdir, "empty.mp3")
             open(audio_path, "w").close()  # 0 bytes
 
-            with patch("services.streaming.is_download_in_progress", return_value=False):
+            with patch(
+                "services.streaming.is_download_in_progress", return_value=False
+            ):
                 result = worker._wait_for_file(audio_path, "empty", timeout=1)
 
         assert result is False
@@ -407,7 +416,9 @@ class TestProcessJob:
 
         with (
             patch.object(worker, "_wait_for_file", return_value=True),
-            patch("services.background_tasks.get_transcript_cache") as mock_cache_getter,
+            patch(
+                "services.background_tasks.get_transcript_cache"
+            ) as mock_cache_getter,
         ):
             mock_cache = Mock()
             mock_cache.get_cached = Mock(return_value=None)
@@ -434,7 +445,9 @@ class TestProcessJob:
 
         with (
             patch.object(worker, "_wait_for_file", return_value=True),
-            patch("services.background_tasks.get_transcript_cache") as mock_cache_getter,
+            patch(
+                "services.background_tasks.get_transcript_cache"
+            ) as mock_cache_getter,
         ):
             mock_cache = Mock()
             mock_cache.get_cached = Mock(
@@ -460,7 +473,9 @@ class TestProcessJob:
 
         with (
             patch.object(worker, "_wait_for_file", return_value=True),
-            patch("services.background_tasks.get_transcript_cache") as mock_cache_getter,
+            patch(
+                "services.background_tasks.get_transcript_cache"
+            ) as mock_cache_getter,
         ):
             mock_cache = Mock()
             mock_cache.get_cached = Mock(
@@ -500,7 +515,9 @@ class TestProcessJob:
 
         with (
             patch.object(worker, "_wait_for_file", return_value=True),
-            patch("services.background_tasks.get_transcript_cache") as mock_cache_getter,
+            patch(
+                "services.background_tasks.get_transcript_cache"
+            ) as mock_cache_getter,
         ):
             mock_cache = Mock()
             mock_cache.get_cached = Mock(return_value=None)

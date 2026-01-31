@@ -23,7 +23,9 @@ class TestAddToQueueEndpoint:
     @patch("routes.queue.get_video_metadata")
     @patch("routes.queue.extract_video_id")
     @patch("routes.queue.add_to_queue")
-    def test_add_to_queue_success(self, mock_add, mock_extract, mock_get_metadata, client):
+    def test_add_to_queue_success(
+        self, mock_add, mock_extract, mock_get_metadata, client
+    ):
         """Test successfully adding video to queue."""
         mock_extract.return_value = "test123"
         mock_get_metadata.return_value = {
@@ -45,7 +47,9 @@ class TestAddToQueueEndpoint:
     @patch("routes.queue.get_video_metadata")
     @patch("routes.queue.extract_video_id")
     @patch("routes.queue.add_to_queue")
-    def test_add_to_queue_with_url(self, mock_add, mock_extract, mock_get_metadata, client):
+    def test_add_to_queue_with_url(
+        self, mock_add, mock_extract, mock_get_metadata, client
+    ):
         """Test adding video with URL instead of ID."""
         mock_extract.return_value = "extracted123"
         mock_get_metadata.return_value = {
@@ -56,7 +60,8 @@ class TestAddToQueueEndpoint:
         mock_add.return_value = 2
 
         response = client.post(
-            "/queue/add", json={"youtube_video_id": "https://www.youtube.com/watch?v=extracted123"}
+            "/queue/add",
+            json={"youtube_video_id": "https://www.youtube.com/watch?v=extracted123"},
         )
 
         assert response.status_code == 200
@@ -291,7 +296,12 @@ class TestSuggestionsEndpoint:
     @patch("routes.queue.config")
     @pytest.mark.asyncio
     async def test_suggestions_success(
-        self, mock_config, mock_get_suggestions, mock_add_to_queue, mock_get_metadata, client
+        self,
+        mock_config,
+        mock_get_suggestions,
+        mock_add_to_queue,
+        mock_get_metadata,
+        client,
     ):
         """Test successful suggestion generation and queuing."""
         mock_config.book_suggestions_enabled = True
@@ -341,7 +351,9 @@ class TestSuggestionsEndpoint:
     @patch("services.book_suggestions.get_video_suggestions")
     @patch("routes.queue.config")
     @pytest.mark.asyncio
-    async def test_suggestions_no_results(self, mock_config, mock_get_suggestions, client):
+    async def test_suggestions_no_results(
+        self, mock_config, mock_get_suggestions, client
+    ):
         """Test when no suggestions are generated."""
         mock_config.book_suggestions_enabled = True
         mock_get_suggestions.return_value = []
@@ -359,7 +371,12 @@ class TestSuggestionsEndpoint:
     @patch("routes.queue.config")
     @pytest.mark.asyncio
     async def test_suggestions_partial_failure(
-        self, mock_config, mock_get_suggestions, mock_add_to_queue, mock_get_metadata, client
+        self,
+        mock_config,
+        mock_get_suggestions,
+        mock_add_to_queue,
+        mock_get_metadata,
+        client,
     ):
         """Test when some suggestions fail to add."""
         mock_config.book_suggestions_enabled = True
@@ -392,7 +409,9 @@ class TestSuggestionsEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "success"
-        assert len(data["added"]) == 2  # Both should be added (second uses fallback title)
+        assert (
+            len(data["added"]) == 2
+        )  # Both should be added (second uses fallback title)
 
     @patch("services.book_suggestions.get_video_suggestions")
     @patch("routes.queue.config")

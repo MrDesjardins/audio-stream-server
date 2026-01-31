@@ -67,7 +67,10 @@ def _summarize_with_openai(transcript: str, video_id: str) -> str:
                     "role": "system",
                     "content": "You are a helpful assistant that creates clear, concise summaries of video transcripts.",
                 },
-                {"role": "user", "content": SUMMARY_PROMPT_TEMPLATE.format(transcript=transcript)},
+                {
+                    "role": "user",
+                    "content": SUMMARY_PROMPT_TEMPLATE.format(transcript=transcript),
+                },
             ],
             temperature=0.7,
             max_tokens=1000,
@@ -101,7 +104,8 @@ def _summarize_with_gemini(transcript: str, video_id: str) -> str:
 
         # Generate content using the new API
         response = client.models.generate_content(
-            model="gemini-1.5-flash", contents=prompt  # Using cost-effective model
+            model="gemini-1.5-flash",
+            contents=prompt,  # Using cost-effective model
         )
 
         summary = response.text

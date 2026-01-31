@@ -47,7 +47,9 @@ logger.info("SERVER CONFIGURATION")
 logger.info(f"ENV: {env}")
 logger.info(f"FASTAPI_HOST: {host}")
 logger.info(f"FASTAPI_API_PORT: {api_port}")
-logger.info(f"Audio files will be served from: http://{host}:{api_port}/audio/{{video_id}}")
+logger.info(
+    f"Audio files will be served from: http://{host}:{api_port}/audio/{{video_id}}"
+)
 logger.info("=" * 60)
 
 # Initialize FastAPI app
@@ -65,7 +67,9 @@ os.makedirs(config.temp_audio_dir, exist_ok=True)
 
 # Create TTS audio directory if TTS is enabled
 if config.tts_enabled:
-    logger.info(f"TTS enabled - creating audio directory: {config.weekly_summary_audio_dir}")
+    logger.info(
+        f"TTS enabled - creating audio directory: {config.weekly_summary_audio_dir}"
+    )
     os.makedirs(config.weekly_summary_audio_dir, exist_ok=True)
 
 # Initialize background tasks if transcription is enabled
@@ -77,7 +81,6 @@ else:
 
 # Initialize scheduler for periodic tasks (e.g., weekly summary)
 if config.weekly_summary_enabled:
-
     logger.info("Weekly summary enabled - initializing scheduler")
     init_scheduler()
 else:
@@ -171,7 +174,9 @@ def index(request: Request):
     server_host = request.url.hostname
     client = request.client
     logger.info(f"📄 Index page requested by {client.host if client else 'unknown'}")
-    logger.info(f"   Audio files served from: http://{server_host}:{api_port}/audio/{{video_id}}")
+    logger.info(
+        f"   Audio files served from: http://{server_host}:{api_port}/audio/{{video_id}}"
+    )
     return templates.TemplateResponse(
         "index.html",
         {
@@ -180,7 +185,8 @@ def index(request: Request):
             "api_port": api_port,
             "transcription_enabled": config.transcription_enabled,
             "book_suggestions_enabled": config.book_suggestions_enabled,
-            "weekly_summary_enabled": config.tts_enabled and config.weekly_summary_enabled,
+            "weekly_summary_enabled": config.tts_enabled
+            and config.weekly_summary_enabled,
             "prefetch_threshold_seconds": config.prefetch_threshold_seconds,
             "trilium_url": config.trilium_url,
         },
@@ -195,6 +201,10 @@ if __name__ == "__main__":
     print(f"   Host: {host}")
     print(f"   Port: {api_port}")
     print(f"   Audio endpoint: http://{host}:{api_port}/audio/{{video_id}}")
-    print(f"   Transcription: {'enabled' if config.transcription_enabled else 'disabled'}")
+    print(
+        f"   Transcription: {'enabled' if config.transcription_enabled else 'disabled'}"
+    )
     print("=" * 70)
-    uvicorn.run("main:app", host=host, port=api_port, reload=is_reloading_on_file_change)
+    uvicorn.run(
+        "main:app", host=host, port=api_port, reload=is_reloading_on_file_change
+    )

@@ -21,7 +21,9 @@ def trigger_weekly_summary():
     Useful for testing the weekly summary feature without waiting for Friday 11pm.
     """
     if not config.weekly_summary_enabled:
-        raise HTTPException(status_code=400, detail="Weekly summary feature is disabled")
+        raise HTTPException(
+            status_code=400, detail="Weekly summary feature is disabled"
+        )
 
     try:
         from services.scheduler import trigger_weekly_summary_now
@@ -47,7 +49,9 @@ def get_next_run_time():
     Get the next scheduled run time for the weekly summary job.
     """
     if not config.weekly_summary_enabled:
-        raise HTTPException(status_code=400, detail="Weekly summary feature is disabled")
+        raise HTTPException(
+            status_code=400, detail="Weekly summary feature is disabled"
+        )
 
     try:
         from services.scheduler import get_next_run_time
@@ -64,7 +68,10 @@ def get_next_run_time():
             )
         else:
             return JSONResponse(
-                {"status": "not_scheduled", "message": "Weekly summary job is not scheduled"}
+                {
+                    "status": "not_scheduled",
+                    "message": "Weekly summary job is not scheduled",
+                }
             )
 
     except Exception as e:

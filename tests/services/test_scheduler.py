@@ -1,7 +1,6 @@
 """Tests for scheduler service."""
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 
 from services.scheduler import (
     init_scheduler,
@@ -23,7 +22,9 @@ class TestInitScheduler:
 
     @patch("services.scheduler.config")
     @patch("services.scheduler.BackgroundScheduler")
-    def test_initializes_scheduler_when_enabled(self, mock_scheduler_class, mock_config):
+    def test_initializes_scheduler_when_enabled(
+        self, mock_scheduler_class, mock_config
+    ):
         """Should initialize scheduler when weekly_summary_enabled is True."""
         mock_config.weekly_summary_enabled = True
 

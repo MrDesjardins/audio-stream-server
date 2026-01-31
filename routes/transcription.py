@@ -7,7 +7,11 @@ import logging
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from config import get_config
-from services.background_tasks import get_transcription_queue, TranscriptionJob, JobStatus
+from services.background_tasks import (
+    get_transcription_queue,
+    TranscriptionJob,
+    JobStatus,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -90,7 +94,11 @@ def get_summary(video_id: str):
         job = queue.get_job_status(video_id)
 
         # If job exists and has summary, return it
-        if job and job.status in [JobStatus.COMPLETED, JobStatus.SKIPPED] and job.summary:
+        if (
+            job
+            and job.status in [JobStatus.COMPLETED, JobStatus.SKIPPED]
+            and job.summary
+        ):
             return JSONResponse(
                 {
                     "video_id": video_id,
@@ -112,7 +120,9 @@ def get_summary(video_id: str):
             if content:
                 # Extract summary from HTML content
                 # Remove the YouTube link section at the bottom
-                content = re.sub(r'<p style="margin-top.*?</p>', "", content, flags=re.DOTALL)
+                content = re.sub(
+                    r'<p style="margin-top.*?</p>', "", content, flags=re.DOTALL
+                )
 
                 # Convert HTML to text with line breaks
                 # Replace closing tags with newlines for better formatting
@@ -137,7 +147,9 @@ def get_summary(video_id: str):
                 )
 
         # Not found anywhere
-        raise HTTPException(status_code=404, detail=f"No summary found for video {video_id}")
+        raise HTTPException(
+            status_code=404, detail=f"No summary found for video {video_id}"
+        )
 
     except HTTPException:
         raise

@@ -41,7 +41,9 @@ class TranscriptionJob:
     trilium_note_url: Optional[str] = None
     summary: Optional[str] = None
     transcript: Optional[str] = None
-    completed_at: Optional[datetime] = None  # Timestamp when job completed/failed/skipped
+    completed_at: Optional[datetime] = (
+        None  # Timestamp when job completed/failed/skipped
+    )
 
 
 class TranscriptionQueue:
@@ -66,11 +68,17 @@ class TranscriptionQueue:
         """
         # Validate job before adding
         if not job.video_id or not job.video_id.strip():
-            logger.error(f"Rejected invalid job: video_id is empty or None")
+            logger.error("Rejected invalid job: video_id is empty or None")
             return False
 
-        if not job.audio_path or not job.audio_path.strip() or job.audio_path.endswith("/.mp3"):
-            logger.error(f"Rejected invalid job: audio_path is invalid: {job.audio_path}")
+        if (
+            not job.audio_path
+            or not job.audio_path.strip()
+            or job.audio_path.endswith("/.mp3")
+        ):
+            logger.error(
+                f"Rejected invalid job: audio_path is invalid: {job.audio_path}"
+            )
             return False
 
         with self.lock:
@@ -258,7 +266,9 @@ class TranscriptionWorker:
             # Step 0: Wait for the audio file to be ready
             if not self._wait_for_file(job.audio_path, job.video_id):
                 self.queue.update_job_status(
-                    job.video_id, JobStatus.FAILED, error="Audio file download timeout or failed"
+                    job.video_id,
+                    JobStatus.FAILED,
+                    error="Audio file download timeout or failed",
                 )
                 return
 
@@ -280,7 +290,9 @@ class TranscriptionWorker:
                     if content:
                         # Extract summary from HTML content (same logic as /transcription/summary endpoint)
                         # Remove the YouTube link section at the bottom
-                        content = re.sub(r'<p style="margin-top.*?</p>', "", content, flags=re.DOTALL)
+                        content = re.sub(
+                            r'<p style="margin-top.*?</p>', "", content, flags=re.DOTALL
+                        )
 
                         # Convert HTML to text with line breaks
                         text_summary = re.sub(r"</p>", "\n\n", content)
@@ -291,7 +303,9 @@ class TranscriptionWorker:
                         text_summary = re.sub(r"<[^>]+>", "", text_summary)
                         text_summary = re.sub(r"\n\s*\n\s*\n", "\n\n", text_summary)
                         summary = text_summary.strip()
-                        logger.info(f"Fetched summary from existing Trilium note for {job.video_id}")
+                        logger.info(
+                            f"Fetched summary from existing Trilium note for {job.video_id}"
+                        )
                 except Exception as e:
                     logger.warning(f"Failed to fetch summary from Trilium note: {e}")
 
@@ -326,7 +340,9 @@ class TranscriptionWorker:
                 summary = summarize_transcript(transcript, job.video_id)
                 cache.save_summary(job.video_id, summary)
 
-            self.queue.update_job_status(job.video_id, JobStatus.SUMMARIZING, summary=summary)
+            self.queue.update_job_status(
+                job.video_id, JobStatus.SUMMARIZING, summary=summary
+            )
 
             # Step 4: Post to Trilium
             self.queue.update_job_status(job.video_id, JobStatus.POSTING)
@@ -359,10 +375,14 @@ class TranscriptionWorker:
             except Exception as e:
                 logger.error(f"Error in async audio cleanup: {e}")
 
-        cleanup_thread = threading.Thread(target=_do_cleanup, daemon=True, name="AudioCleanup")
+        cleanup_thread = threading.Thread(
+            target=_do_cleanup, daemon=True, name="AudioCleanup"
+        )
         cleanup_thread.start()
 
-    def _wait_for_file(self, audio_path: str, video_id: str, timeout: int = 300) -> bool:
+    def _wait_for_file(
+        self, audio_path: str, video_id: str, timeout: int = 300
+    ) -> bool:
         """
         Wait for the audio file to be fully downloaded.
 
@@ -407,8 +427,14 @@ class TranscriptionWorker:
             # Log periodic progress
             elapsed = time.time() - start_time
             if int(elapsed) % 10 == 0:
-                status = "downloading" if still_downloading else "waiting for download to start"
-                logger.debug(f"Audio file {video_id}: {status} ({elapsed:.0f}s elapsed)")
+                status = (
+                    "downloading"
+                    if still_downloading
+                    else "waiting for download to start"
+                )
+                logger.debug(
+                    f"Audio file {video_id}: {status} ({elapsed:.0f}s elapsed)"
+                )
 
             time.sleep(2)
 

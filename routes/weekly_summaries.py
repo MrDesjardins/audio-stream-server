@@ -6,7 +6,11 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from typing import List, Dict
 
-from services.database import get_recent_summaries, get_summary_by_week_year, add_summary_to_queue
+from services.database import (
+    get_recent_summaries,
+    get_summary_by_week_year,
+    add_summary_to_queue,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +52,9 @@ async def stream_summary_audio(week_year: str):
         summary = get_summary_by_week_year(week_year)
 
         if not summary:
-            raise HTTPException(status_code=404, detail=f"Summary not found: {week_year}")
+            raise HTTPException(
+                status_code=404, detail=f"Summary not found: {week_year}"
+            )
 
         audio_path = summary.get("audio_file_path")
         if not audio_path:

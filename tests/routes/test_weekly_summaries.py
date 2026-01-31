@@ -83,11 +83,12 @@ class TestListSummaries:
 
         # Find the summary we created in the fixture
         created_summary = next(
-            (s for s in data if s["week_year"] == sample_summary["week_year"]),
-            None
+            (s for s in data if s["week_year"] == sample_summary["week_year"]), None
         )
 
-        assert created_summary is not None, f"Could not find summary {sample_summary['week_year']} in {[s['week_year'] for s in data]}"
+        assert (
+            created_summary is not None
+        ), f"Could not find summary {sample_summary['week_year']} in {[s['week_year'] for s in data]}"
         assert created_summary["title"] == "Summary of week 2026-W50"
         assert created_summary["year"] == 2026
         assert created_summary["week"] == 50
@@ -231,7 +232,9 @@ class TestAddSummaryToQueue:
         assert response.status_code == 404
         assert "no audio file" in response.json()["detail"].lower()
 
-    def test_adds_multiple_summaries_to_queue(self, client, sample_summary, temp_audio_dir):
+    def test_adds_multiple_summaries_to_queue(
+        self, client, sample_summary, temp_audio_dir
+    ):
         """Should be able to add multiple summaries to queue."""
         # Create another summary
         week_year_2 = "2026-W05"

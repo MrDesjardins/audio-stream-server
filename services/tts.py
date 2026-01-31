@@ -13,16 +13,19 @@ from bs4 import BeautifulSoup
 
 class TTSError(Exception):
     """Base exception for TTS-related errors."""
+
     pass
 
 
 class TTSAPIError(TTSError):
     """Error communicating with TTS API."""
+
     pass
 
 
 class TTSTextTooLongError(TTSError):
     """Text exceeds maximum length for TTS."""
+
     pass
 
 
@@ -48,12 +51,12 @@ def extract_summary_text_for_tts(html_content: str) -> str:
         Clean text suitable for TTS
     """
     # Parse HTML
-    soup = BeautifulSoup(html_content, 'html.parser')
+    soup = BeautifulSoup(html_content, "html.parser")
 
     # Find the "Books Read This Week" heading
     books_heading = None
-    for heading in soup.find_all(['h2', 'h3', 'h4']):
-        if 'books read' in heading.get_text().lower():
+    for heading in soup.find_all(["h2", "h3", "h4"]):
+        if "books read" in heading.get_text().lower():
             books_heading = heading
             break
 
@@ -67,7 +70,7 @@ def extract_summary_text_for_tts(html_content: str) -> str:
         # Add all siblings between books heading and the next h2 (Overview)
         for sibling in books_heading.find_next_siblings():
             # Stop when we hit the next major heading (Overview, etc.)
-            if sibling.name == 'h2':
+            if sibling.name == "h2":
                 break
             elements_to_remove.append(sibling)
 
@@ -79,8 +82,8 @@ def extract_summary_text_for_tts(html_content: str) -> str:
     text = soup.get_text()
 
     # Clean up whitespace
-    text = re.sub(r'\n\s*\n+', '\n\n', text)  # Multiple newlines to double
-    text = re.sub(r' +', ' ', text)  # Multiple spaces to single
+    text = re.sub(r"\n\s*\n+", "\n\n", text)  # Multiple newlines to double
+    text = re.sub(r" +", " ", text)  # Multiple spaces to single
     text = text.strip()
 
     return text

@@ -1,15 +1,13 @@
 """Tests for TTS service."""
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
-from pathlib import Path
+from unittest.mock import Mock, patch
 
 from services.tts import (
     extract_summary_text_for_tts,
     generate_audio,
     save_audio_file,
     get_audio_duration,
-    TTSError,
     TTSAPIError,
 )
 
@@ -125,7 +123,7 @@ class TestGenerateAudio:
         long_text = "x" * 45000
 
         # Call function with default model (eleven_flash_v2_5)
-        result = generate_audio(
+        generate_audio(
             text=long_text,
             voice_id="test-voice-id",
             api_key="test-api-key",

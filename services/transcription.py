@@ -34,7 +34,9 @@ def compress_audio_for_whisper(audio_path: str) -> str:
     Raises:
         Exception: If compression fails
     """
-    logger.info(f"Compressing audio file {audio_path} for Whisper (1.5x speed, saves API costs)")
+    logger.info(
+        f"Compressing audio file {audio_path} for Whisper (1.5x speed, saves API costs)"
+    )
 
     # Create temporary file for compressed audio
     temp_fd, temp_path = tempfile.mkstemp(suffix=".mp3", prefix="whisper_compressed_")
@@ -65,7 +67,10 @@ def compress_audio_for_whisper(audio_path: str) -> str:
         ]
 
         result = subprocess.run(
-            compress_cmd, capture_output=True, text=True, timeout=300  # 5 minute timeout
+            compress_cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,  # 5 minute timeout
         )
 
         if result.returncode != 0:
@@ -153,7 +158,9 @@ def transcribe_audio(audio_path: str, retries: int = 3) -> str:
                     )
 
                 transcript = response if isinstance(response, str) else response.text
-                logger.info(f"Successfully transcribed audio ({len(transcript)} characters)")
+                logger.info(
+                    f"Successfully transcribed audio ({len(transcript)} characters)"
+                )
                 return transcript
 
             except Exception as e:
@@ -166,7 +173,9 @@ def transcribe_audio(audio_path: str, retries: int = 3) -> str:
                     logger.info(f"Retrying in {wait_time} seconds...")
                     time.sleep(wait_time)
                 else:
-                    logger.error(f"All transcription attempts failed for {file_to_transcribe}")
+                    logger.error(
+                        f"All transcription attempts failed for {file_to_transcribe}"
+                    )
 
         raise Exception(f"Transcription failed after {retries} attempts: {last_error}")
 
@@ -177,4 +186,6 @@ def transcribe_audio(audio_path: str, retries: int = 3) -> str:
                 os.unlink(compressed_path)
                 logger.info(f"Cleaned up compressed file: {compressed_path}")
             except Exception as e:
-                logger.warning(f"Failed to clean up compressed file {compressed_path}: {e}")
+                logger.warning(
+                    f"Failed to clean up compressed file {compressed_path}: {e}"
+                )

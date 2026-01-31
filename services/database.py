@@ -160,7 +160,10 @@ def init_database():
 
 
 def add_to_history(
-    youtube_id: str, title: str, channel: Optional[str] = None, thumbnail_url: Optional[str] = None
+    youtube_id: str,
+    title: str,
+    channel: Optional[str] = None,
+    thumbnail_url: Optional[str] = None,
 ) -> int:
     """
     Add a video to play history or increment play count if it already exists.
@@ -196,13 +199,16 @@ def add_to_history(
 
         # Get the record ID
         cursor.execute(
-            "SELECT id, play_count FROM play_history WHERE youtube_id = ?", (youtube_id,)
+            "SELECT id, play_count FROM play_history WHERE youtube_id = ?",
+            (youtube_id,),
         )
         row = cursor.fetchone()
         record_id = row["id"]
         play_count = row["play_count"]
 
-        logger.info(f"Updated history: {title} ({youtube_id}) - Play count: {play_count}")
+        logger.info(
+            f"Updated history: {title} ({youtube_id}) - Play count: {play_count}"
+        )
         return record_id
 
 
@@ -270,7 +276,10 @@ def clear_history():
 
 
 def add_to_queue(
-    youtube_id: str, title: str, channel: Optional[str] = None, thumbnail_url: Optional[str] = None
+    youtube_id: str,
+    title: str,
+    channel: Optional[str] = None,
+    thumbnail_url: Optional[str] = None,
 ) -> int:
     """
     Add a video to the end of the queue.
@@ -303,7 +312,9 @@ def add_to_queue(
         )
 
         record_id = cursor.lastrowid
-        logger.info(f"Added to queue (position {next_position}): {title} ({youtube_id})")
+        logger.info(
+            f"Added to queue (position {next_position}): {title} ({youtube_id})"
+        )
         return record_id
 
 
@@ -455,7 +466,9 @@ def save_weekly_summary(
         )
 
         # Get the record ID
-        cursor.execute("SELECT id FROM weekly_summaries WHERE week_year = ?", (week_year,))
+        cursor.execute(
+            "SELECT id FROM weekly_summaries WHERE week_year = ?", (week_year,)
+        )
         row = cursor.fetchone()
         record_id = row["id"]
 
@@ -557,5 +570,7 @@ def add_summary_to_queue(week_year: str) -> int:
         )
 
         record_id = cursor.lastrowid
-        logger.info(f"Added summary to queue (position {next_position}): {summary['title']}")
+        logger.info(
+            f"Added summary to queue (position {next_position}): {summary['title']}"
+        )
         return record_id

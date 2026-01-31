@@ -57,7 +57,11 @@ def get_video_metadata(youtube_id: str) -> Optional[dict]:
             # More reliable: hqdefault (480x360) or sddefault (640x480)
             thumbnail_url = f"https://i.ytimg.com/vi/{youtube_id}/hqdefault.jpg"
 
-            metadata = {"title": title, "channel": channel, "thumbnail_url": thumbnail_url}
+            metadata = {
+                "title": title,
+                "channel": channel,
+                "thumbnail_url": thumbnail_url,
+            }
 
             logger.info(f"Fetched metadata for {youtube_id}: {title} by {channel}")
             return metadata
