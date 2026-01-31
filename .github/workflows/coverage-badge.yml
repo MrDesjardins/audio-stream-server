@@ -1,5 +1,14 @@
 name: Coverage Badge
 
+# This workflow generates a coverage badge using GitHub Gist.
+# To enable the badge, configure these secrets in your repository:
+#   1. GIST_SECRET: Personal Access Token with 'gist' scope
+#      Create at: https://github.com/settings/tokens/new?scopes=gist&description=Coverage%20Badge
+#   2. GIST_ID: Create a new gist at https://gist.github.com/ and copy the ID from the URL
+#      (e.g., https://gist.github.com/username/abc123def456 -> use "abc123def456")
+#
+# If not configured, the badge step will be skipped (not fail).
+
 on:
   push:
     branches: [ main ]
@@ -45,6 +54,8 @@ jobs:
         echo "Coverage: $COVERAGE%"
 
     - name: Create coverage badge
+      if: ${{ secrets.GIST_SECRET != '' && secrets.GIST_ID != '' }}
+      continue-on-error: true
       uses: schneegans/dynamic-badges-action@v1.7.0
       with:
         auth: ${{ secrets.GIST_SECRET }}
