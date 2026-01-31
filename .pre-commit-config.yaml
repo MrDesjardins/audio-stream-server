@@ -1,0 +1,54 @@
+# Pre-commit hooks configuration
+# See https://pre-commit.com for more information
+
+repos:
+  # Ruff - Fast Python linter and formatter
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.6
+    hooks:
+      # Run the linter with auto-fix
+      - id: ruff
+        args: [--fix]
+        name: ruff-lint
+        description: Run Ruff linter with auto-fix
+
+      # Run the formatter
+      - id: ruff-format
+        name: ruff-format
+        description: Format code with Ruff
+
+  # Basic file checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      # Prevent committing large files
+      - id: check-added-large-files
+        args: ['--maxkb=10240']  # 10MB limit
+
+      # Check for files that would conflict in case-insensitive filesystems
+      - id: check-case-conflict
+
+      # Check for merge conflicts
+      - id: check-merge-conflict
+
+      # Check YAML syntax
+      - id: check-yaml
+        exclude: ^.github/workflows/  # CI workflows may have templating
+
+      # Check TOML syntax
+      - id: check-toml
+
+      # Ensure files end with newline
+      - id: end-of-file-fixer
+        exclude: ^tests/.*\.txt$
+
+      # Trim trailing whitespace
+      - id: trailing-whitespace
+        exclude: ^tests/.*\.txt$
+
+# Global settings
+default_language_version:
+  python: python3
+
+# Skip hooks on merge commits (optional)
+# exclude: '^$'

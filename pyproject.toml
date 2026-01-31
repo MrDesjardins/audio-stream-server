@@ -30,6 +30,8 @@ test = [
 dev = [
     "mypy>=1.8.0",
     "black>=24.0.0",
+    "ruff>=0.8.0",
+    "pre-commit>=4.0.0",
 ]
 
 [tool.black]
@@ -58,4 +60,3 @@ warn_unused_configs = true
 [[tool.mypy.overrides]]
 module = "tests.*"
 ignore_errors = true
-

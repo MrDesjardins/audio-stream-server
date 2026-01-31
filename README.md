@@ -23,7 +23,7 @@ uv sync
 sudo nano /etc/icecast2/icecast.xml
 ```
 
-Change: 
+Change:
 ```
 <hostname>mini-pc</hostname>
 <location>Home</location>
@@ -175,10 +175,34 @@ sudo systemctl status audio-stream
 journalctl -u audio-stream -n 100 -f
 ```
 
-# Lint
+# Development
+
+## Pre-commit Hooks (Automatic Linting)
+
+Pre-commit hooks automatically lint and fix code before each commit:
 
 ```sh
+# One-time setup: install the hooks
+uv run pre-commit install
+
+# The hooks now run automatically on `git commit`
+# They will auto-fix issues and add fixes to your commit
+```
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for detailed development guidelines.
+
+## Manual Linting
+
+```sh
+# Lint and auto-fix with Ruff
 uv run ruff check --fix
+
+# Format code with Ruff
+uv run ruff format .
+
+# Type checking
 uv run mypy .
-uv run black .
+
+# Run all pre-commit hooks manually
+uv run pre-commit run --all-files
 ```
