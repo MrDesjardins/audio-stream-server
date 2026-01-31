@@ -1,5 +1,12 @@
+# Audio Stream Server
 
-# Install Dependencies
+[![Tests](https://github.com/MrDesjardins/audio-stream-server/actions/workflows/ci.yml/badge.svg)](https://github.com/MrDesjardins/audio-stream-server/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/MrDesjardins/d9131b4d9c9e24e0530314bb5410a6f9/raw/audio-stream-server-coverage.json)](https://github.com/MrDesjardins/audio-stream-server/actions)
+[![Code Quality](https://github.com/MrDesjardins/audio-stream-server/actions/workflows/ci.yml/badge.svg?event=push)](https://github.com/MrDesjardins/audio-stream-server/actions)
+
+Stream audio from YouTube videos as MP3 over HTTP with automatic transcription and AI-powered summaries.
+
+## Install Dependencies
 
 ```sh
 sudo apt update
