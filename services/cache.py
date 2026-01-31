@@ -13,6 +13,11 @@ from config import get_config
 logger = logging.getLogger(__name__)
 
 
+def _get_current_timestamp() -> str:
+    """Get current timestamp in ISO 8601 format."""
+    return datetime.now().isoformat()
+
+
 class TranscriptionCache:
     """Manages caching of transcripts and summaries."""
 
@@ -63,7 +68,7 @@ class TranscriptionCache:
                         data = json.load(f)
 
                 data["transcript"] = transcript
-                data["transcript_timestamp"] = datetime.now().isoformat()
+                data["transcript_timestamp"] = _get_current_timestamp()
 
                 with open(cache_file, "w") as f:
                     json.dump(data, f, indent=2)
@@ -85,7 +90,7 @@ class TranscriptionCache:
                         data = json.load(f)
 
                 data["summary"] = summary
-                data["summary_timestamp"] = datetime.now().isoformat()
+                data["summary_timestamp"] = _get_current_timestamp()
 
                 with open(cache_file, "w") as f:
                     json.dump(data, f, indent=2)

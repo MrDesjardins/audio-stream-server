@@ -20,6 +20,38 @@ def _build_url(base_url: Union[str, None], path: str) -> str:
     return f"{base}/{path}"
 
 
+def _get_trilium_headers(content_type: str = "application/json") -> Dict[str, str]:
+    """
+    Get standard Trilium API headers with authorization.
+
+    Args:
+        content_type: Content-Type header value (default: "application/json")
+
+    Returns:
+        Dict with Authorization and Content-Type headers
+    """
+    config = get_config()
+    return {
+        "Authorization": f"Bearer {config.trilium_etapi_token}",
+        "Content-Type": content_type,
+    }
+
+
+def _get_trilium_note_url(note_id: str) -> str:
+    """
+    Construct Trilium note URL from note ID.
+
+    Args:
+        note_id: The Trilium note ID
+
+    Returns:
+        Full URL to view the note in Trilium
+    """
+    config = get_config()
+    base_url = (config.trilium_url or "").rstrip("/")
+    return f"{base_url}/#root/{note_id}"
+
+
 def check_video_exists(video_id: str) -> Optional[Dict[str, str]]:
     """
     Check if a note already exists in Trilium for this video using attributes.
@@ -39,20 +71,16 @@ def check_video_exists(video_id: str) -> Optional[Dict[str, str]]:
     try:
         logger.info(f"Searching for existing note with youtube_id={video_id}")
 
-        headers = {
-            "Authorization": f"Bearer {config.trilium_etapi_token}",
-            "Content-Type": "application/json",
-        }
-
         # Search for notes with youtube_id attribute
-        # Using the search endpoint to find notes by attribute
         search_query = f'#youtube_id="{video_id}"'
         url = _build_url(config.trilium_url, "etapi/notes")
 
         # Try to search using query parameter
         params = {"search": search_query}
         client = get_httpx_client()
-        response = client.get(url, headers=headers, params=params, timeout=10.0)
+        response = client.get(
+            url, headers=_get_trilium_headers(), params=params, timeout=10.0
+        )
         response.raise_for_status()
 
         results = response.json()
@@ -81,10 +109,7 @@ def check_video_exists(video_id: str) -> Optional[Dict[str, str]]:
                 return None
 
             logger.info(f"Found existing note for video {video_id}: {note_id}")
-            # Construct note URL - hash fragment should be appended directly
-            config_trilium_url = config.trilium_url or ""
-            note_url = f"{config_trilium_url.rstrip('/')}/#root/{note_id}"
-            return {"noteId": note_id, "url": note_url}
+            return {"noteId": note_id, "url": _get_trilium_note_url(note_id)}
 
         logger.info(f"No existing note found for video {video_id}")
         return None
@@ -141,11 +166,6 @@ def create_trilium_note(video_id: str, transcript: str, summary: str) -> Dict[st
 </p>
 """
 
-        headers = {
-            "Authorization": f"Bearer {config.trilium_etapi_token}",
-            "Content-Type": "application/json",
-        }
-
         # Step 1: Create the note (without attributes)
         payload = {
             "parentNoteId": config.trilium_parent_note_id,
@@ -157,7 +177,9 @@ def create_trilium_note(video_id: str, transcript: str, summary: str) -> Dict[st
 
         url = _build_url(config.trilium_url, "etapi/create-note")
         client = get_httpx_client()
-        response = client.post(url, headers=headers, json=payload, timeout=30.0)
+        response = client.post(
+            url, headers=_get_trilium_headers(), json=payload, timeout=30.0
+        )
         response.raise_for_status()
 
         result = response.json()
@@ -179,19 +201,18 @@ def create_trilium_note(video_id: str, transcript: str, summary: str) -> Dict[st
         attribute_url = _build_url(config.trilium_url, "etapi/attributes")
         client = get_httpx_client()
         attr_response = client.post(
-            attribute_url, headers=headers, json=attribute_payload, timeout=30.0
+            attribute_url,
+            headers=_get_trilium_headers(),
+            json=attribute_payload,
+            timeout=30.0,
         )
         attr_response.raise_for_status()
 
         logger.info(f"Added youtube_id attribute to note {note_id}")
-
-        # Construct note URL - hash fragment should be appended directly
-        config_trilium_url = config.trilium_url or ""
-        note_url = f"{config_trilium_url.rstrip('/')}/#root/{note_id}"
         logger.info(
             f"Successfully created Trilium note: {note_id} with youtube_id attribute"
         )
-        return {"noteId": note_id, "url": note_url}
+        return {"noteId": note_id, "url": _get_trilium_note_url(note_id)}
 
     except httpx.HTTPError as e:
         logger.error(f"HTTP error creating Trilium note: {e}")
@@ -322,14 +343,9 @@ def get_note_content(note_id: str) -> Optional[str]:
         return None
 
     try:
-        headers = {
-            "Authorization": f"Bearer {config.trilium_etapi_token}",
-            "Content-Type": "application/json",
-        }
-
         url = _build_url(config.trilium_url, f"etapi/notes/{note_id}/content")
         client = get_httpx_client()
-        response = client.get(url, headers=headers, timeout=10.0)
+        response = client.get(url, headers=_get_trilium_headers(), timeout=10.0)
         response.raise_for_status()
 
         content = response.text
@@ -369,11 +385,6 @@ def attach_audio_to_note(
     try:
         logger.info(f"Attaching audio file to note {note_id}: {audio_file_path}")
 
-        headers = {
-            "Authorization": f"Bearer {config.trilium_etapi_token}",
-            "Content-Type": "application/json",
-        }
-
         # Step 1: Create a child note of type "file"
         payload = {
             "parentNoteId": note_id,
@@ -385,7 +396,9 @@ def attach_audio_to_note(
 
         url = _build_url(config.trilium_url, "etapi/create-note")
         client = get_httpx_client()
-        response = client.post(url, headers=headers, json=payload, timeout=30.0)
+        response = client.post(
+            url, headers=_get_trilium_headers(), json=payload, timeout=30.0
+        )
         response.raise_for_status()
 
         result = response.json()
@@ -411,17 +424,12 @@ def attach_audio_to_note(
         )
 
         # Use a fresh httpx client for the content upload
-        content_headers = {
-            "Authorization": f"Bearer {config.trilium_etapi_token}",
-            "Content-Type": "application/octet-stream",  # Generic binary type
-        }
-
         try:
             # Create a fresh client for this request to avoid connection pooling issues
             with httpx.Client(timeout=120.0) as upload_client:
                 content_response = upload_client.put(
                     content_url,
-                    headers=content_headers,
+                    headers=_get_trilium_headers("application/octet-stream"),
                     content=audio_data,  # Use content for raw binary
                 )
                 content_response.raise_for_status()

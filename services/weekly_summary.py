@@ -20,6 +20,8 @@ from services.trilium import (
     check_video_exists,
     get_note_content,
     _build_url,
+    _get_trilium_headers,
+    _get_trilium_note_url,
     _markdown_to_html,
     attach_audio_to_note,
 )
@@ -73,10 +75,7 @@ def get_books_from_trilium_last_week() -> List[Dict[str, str]]:
         params = {"search": search_query}
 
         response = client.get(
-            url,
-            params=params,
-            headers={"Authorization": f"Bearer {config.trilium_etapi_token}"},
-            timeout=30,
+            url, params=params, headers=_get_trilium_headers(), timeout=30
         )
 
         if response.status_code == 200:
@@ -94,9 +93,7 @@ def get_books_from_trilium_last_week() -> List[Dict[str, str]]:
                     config.trilium_url, f"/etapi/notes/{note_id}/attributes"
                 )
                 attr_response = client.get(
-                    attr_url,
-                    headers={"Authorization": f"Bearer {config.trilium_etapi_token}"},
-                    timeout=10,
+                    attr_url, headers=_get_trilium_headers(), timeout=10
                 )
 
                 if attr_response.status_code == 200:
@@ -426,10 +423,7 @@ def create_weekly_summary_note(
         }
 
         response = client.post(
-            url,
-            json=payload,
-            headers={"Authorization": f"Bearer {config.trilium_etapi_token}"},
-            timeout=30,
+            url, json=payload, headers=_get_trilium_headers(), timeout=30
         )
 
         if response.status_code == 201:
@@ -452,7 +446,7 @@ def create_weekly_summary_note(
                 attr_response = client.post(
                     attr_url,
                     json=attr_payload,
-                    headers={"Authorization": f"Bearer {config.trilium_etapi_token}"},
+                    headers=_get_trilium_headers(),
                     timeout=10,
                 )
 
@@ -474,6 +468,142 @@ def create_weekly_summary_note(
     except Exception as e:
         logger.error(f"Error creating weekly summary note: {e}", exc_info=True)
         return None
+
+
+def _verify_trilium_note_exists(note_id: str) -> bool:
+    """
+    Verify that a Trilium note still exists.
+
+    Args:
+        note_id: The Trilium note ID to check
+
+    Returns:
+        True if note exists, False if deleted (404) or on error
+    """
+    try:
+        client = get_httpx_client()
+        note_url = _build_url(config.trilium_url, f"etapi/notes/{note_id}")
+        response = client.get(note_url, headers=_get_trilium_headers(), timeout=10.0)
+
+        if response.status_code == 404:
+            logger.warning(
+                f"Trilium note {note_id} no longer exists (404). "
+                f"Database entry is stale."
+            )
+            return False
+        elif response.status_code != 200:
+            logger.warning(
+                f"Could not verify Trilium note {note_id}: HTTP {response.status_code}. "
+                f"Proceeding anyway..."
+            )
+        return True
+    except Exception as e:
+        logger.warning(
+            f"Could not verify Trilium note {note_id}: {e}. Proceeding anyway..."
+        )
+        return True
+
+
+def _check_audio_already_attached(note_id: str, filename: str) -> bool:
+    """
+    Check if audio file is already attached to a Trilium note.
+
+    Args:
+        note_id: The Trilium note ID
+        filename: Expected filename (e.g., "2024-W01.mp3")
+
+    Returns:
+        True if audio is already attached, False otherwise
+    """
+    try:
+        client = get_httpx_client()
+        children_url = _build_url(config.trilium_url, f"etapi/notes/{note_id}/children")
+        response = client.get(
+            children_url, headers=_get_trilium_headers(), timeout=10.0
+        )
+        response.raise_for_status()
+
+        children = response.json()
+        return any(child.get("title") == filename for child in children)
+    except Exception as e:
+        logger.warning(f"Could not check Trilium children: {e}")
+        return False
+
+
+def _generate_and_attach_tts(
+    note_id: str, week_year: str, year: int, week: int, note_title: str
+) -> Optional[Dict[str, str]]:
+    """
+    Generate TTS audio for a weekly summary and attach to Trilium note.
+
+    Args:
+        note_id: The Trilium note ID
+        week_year: Week identifier (e.g., "2024-W01")
+        year: Year number
+        week: Week number
+        note_title: Title of the note
+
+    Returns:
+        Dict with noteId and url on success, None on failure
+    """
+    if not config.tts_enabled:
+        logger.info("TTS not enabled")
+        return {"noteId": note_id, "url": _get_trilium_note_url(note_id)}
+
+    try:
+        audio_path = config.get_weekly_summary_audio_path(week_year)
+
+        # Check if audio file already exists
+        if Path(audio_path).exists():
+            logger.info(f"Audio file already exists: {audio_path}")
+            duration = get_audio_duration(audio_path)
+            if duration is None:
+                duration = 0
+        else:
+            # Generate new audio
+            logger.info("Generating TTS audio...")
+            note_content = get_note_content(note_id)
+            if not note_content:
+                raise Exception("Could not fetch note content")
+
+            tts_text = extract_summary_text_for_tts(note_content)
+            if not tts_text or len(tts_text) < 50:
+                raise Exception("Text too short for TTS")
+
+            logger.info(f"Generating TTS audio ({len(tts_text)} chars)...")
+            audio_data = generate_audio(
+                text=tts_text,
+                voice_id=config.elevenlabs_voice_id,
+                api_key=config.elevenlabs_api_key,
+            )
+            duration = save_audio_file(audio_data, audio_path)
+            logger.info(f"Saved audio file: {audio_path} ({duration}s)")
+
+        # Check if already attached
+        if not _check_audio_already_attached(note_id, f"{week_year}.mp3"):
+            attach_result = attach_audio_to_note(
+                note_id=note_id, audio_file_path=audio_path, title=f"{week_year}.mp3"
+            )
+            logger.info(f"Attached audio to Trilium: {attach_result}")
+
+        # Update database
+        save_weekly_summary(
+            week_year=week_year,
+            year=year,
+            week=week,
+            title=note_title,
+            trilium_note_id=note_id,
+            audio_file_path=audio_path,
+            duration_seconds=duration,
+        )
+
+        return {"noteId": note_id, "url": _get_trilium_note_url(note_id)}
+
+    except Exception as e:
+        logger.error(f"TTS generation failed: {e}", exc_info=True)
+        if "Could not fetch note content" in str(e):
+            return None
+        return {"noteId": note_id, "url": _get_trilium_note_url(note_id)}
 
 
 def generate_and_save_weekly_summary() -> Optional[Dict[str, str]]:
@@ -519,201 +649,21 @@ def generate_and_save_weekly_summary() -> Optional[Dict[str, str]]:
 
             note_id = existing_summary["trilium_note_id"]
             note_title = existing_summary["title"]
-            audio_file_path = config.get_weekly_summary_audio_path(week_year)
 
             # Verify the Trilium note still exists
-            # If it was deleted from Trilium, regenerate the summary
-            if note_id:
-                try:
-                    client = get_httpx_client()
-                    note_url = _build_url(config.trilium_url, f"etapi/notes/{note_id}")
-                    headers = {"Authorization": f"Bearer {config.trilium_etapi_token}"}
-                    response = client.get(note_url, headers=headers, timeout=10.0)
-
-                    if response.status_code == 404:
-                        logger.warning(
-                            f"Trilium note {note_id} no longer exists (404). "
-                            f"Database entry is stale. Regenerating summary..."
-                        )
-                        # Clear the stale database entry by setting existing_summary to None
-                        # This will cause the code to proceed with full generation below
-                        existing_summary = None
-                    elif response.status_code != 200:
-                        logger.warning(
-                            f"Could not verify Trilium note {note_id}: HTTP {response.status_code}. "
-                            f"Proceeding anyway..."
-                        )
-                except Exception as e:
-                    logger.warning(
-                        f"Could not verify Trilium note {note_id}: {e}. "
-                        f"Proceeding anyway..."
-                    )
+            if note_id and not _verify_trilium_note_exists(note_id):
+                logger.warning("Regenerating summary...")
+                existing_summary = None
 
         if existing_summary:
-            # Note exists in Trilium, proceed with existing summary logic
-
-            # Check if audio file exists on disk
-            audio_path = existing_summary.get("audio_file_path")
-            has_audio_file = audio_path and Path(audio_path).exists()
-
-            if has_audio_file:
-                logger.info(f"Audio file exists on disk: {audio_path}")
-
-                # Check if Trilium already has the child file note attached
-                try:
-                    # Get child notes to check if audio is already attached
-                    client = get_httpx_client()
-                    children_url = _build_url(
-                        config.trilium_url, f"etapi/notes/{note_id}/children"
-                    )
-                    headers = {"Authorization": f"Bearer {config.trilium_etapi_token}"}
-                    response = client.get(children_url, headers=headers, timeout=10.0)
-                    response.raise_for_status()
-
-                    children = response.json()
-                    # Check if any child is the audio file
-                    audio_already_attached = any(
-                        child.get("title") == f"{week_year}.mp3" for child in children
-                    )
-
-                    if audio_already_attached:
-                        logger.info(
-                            "Audio already attached to Trilium note, skipping completely"
-                        )
-                        return {
-                            "noteId": note_id,
-                            "url": f"{config.trilium_url}/#root/{note_id}",
-                        }
-                    else:
-                        logger.info(
-                            "Audio file exists but not attached to Trilium, attaching now..."
-                        )
-                        # Will attach below
-                except Exception as e:
-                    logger.warning(
-                        f"Could not check Trilium children: {e}, will try to attach"
-                    )
-
-                # Attach the existing file to Trilium
-                if config.tts_enabled:
-                    try:
-                        duration = get_audio_duration(audio_file_path)
-                        if duration is None:
-                            duration = 0
-
-                        attach_result = attach_audio_to_note(
-                            note_id=note_id,
-                            audio_file_path=audio_file_path,
-                            title=f"{week_year}.mp3",
-                        )
-                        logger.info(
-                            f"Attached existing audio to Trilium: {attach_result}"
-                        )
-
-                        # Update database
-                        save_weekly_summary(
-                            week_year=week_year,
-                            year=year,
-                            week=week,
-                            title=note_title,
-                            trilium_note_id=note_id,
-                            audio_file_path=audio_file_path,
-                            duration_seconds=duration,
-                        )
-
-                        return {
-                            "noteId": note_id,
-                            "url": f"{config.trilium_url}/#root/{note_id}",
-                        }
-                    except Exception as e:
-                        logger.error(f"Failed to attach existing audio: {e}")
-                        return {
-                            "noteId": note_id,
-                            "url": f"{config.trilium_url}/#root/{note_id}",
-                        }
-
-            # Summary exists but no audio file on disk - generate TTS
-            if config.tts_enabled:
-                try:
-                    # Generate TTS
-                    logger.info("Audio file not found, generating TTS...")
-
-                    # Get note content for TTS
-                    note_content = get_note_content(note_id)
-                    if not note_content:
-                        logger.error("Could not fetch note content for TTS")
-                        raise Exception("Could not fetch note content")
-
-                    # Extract clean text (remove books section)
-                    tts_text = extract_summary_text_for_tts(note_content)
-
-                    if not tts_text or len(tts_text) < 50:
-                        logger.warning("Extracted text too short for TTS, skipping")
-                        raise Exception("Text too short for TTS")
-
-                    logger.info(f"Generating TTS audio ({len(tts_text)} chars)...")
-
-                    # Generate audio
-                    audio_data = generate_audio(
-                        text=tts_text,
-                        voice_id=config.elevenlabs_voice_id,
-                        api_key=config.elevenlabs_api_key,
-                    )
-
-                    # Save audio file
-                    duration = save_audio_file(audio_data, audio_file_path)
-                    logger.info(f"Saved audio file: {audio_file_path} ({duration}s)")
-
-                    # Attach to Trilium note
-                    attach_result = attach_audio_to_note(
-                        note_id=note_id,
-                        audio_file_path=audio_file_path,
-                        title=f"{week_year}.mp3",
-                    )
-                    logger.info(f"Attached audio to Trilium note: {attach_result}")
-
-                    # Update database with audio info
-                    save_weekly_summary(
-                        week_year=week_year,
-                        year=year,
-                        week=week,
-                        title=note_title,
-                        trilium_note_id=note_id,
-                        audio_file_path=audio_file_path,
-                        duration_seconds=duration,
-                    )
-                    logger.info("Updated database with audio info")
-
-                    return {
-                        "noteId": note_id,
-                        "url": f"{config.trilium_url}/#root/{note_id}",
-                    }
-
-                except Exception as tts_error:
-                    logger.error(
-                        f"TTS generation failed for existing summary: {tts_error}",
-                        exc_info=True,
-                    )
-                    # If we couldn't get note content, the note might not exist
-                    # Return None to indicate failure
-                    if "Could not fetch note content" in str(tts_error):
-                        logger.error(
-                            f"Cannot generate TTS because Trilium note {note_id} is inaccessible. "
-                            f"Summary may need to be regenerated."
-                        )
-                        return None
-
-                    # For other TTS errors, return existing note (summary exists, just no audio)
-                    return {
-                        "noteId": note_id,
-                        "url": f"{config.trilium_url}/#root/{note_id}",
-                    }
-            else:
-                logger.info("TTS not enabled, returning existing summary")
-                return {
-                    "noteId": note_id,
-                    "url": f"{config.trilium_url}/#root/{note_id}",
-                }
+            # Note exists in Trilium, handle TTS if needed
+            return _generate_and_attach_tts(
+                note_id=note_id,
+                week_year=week_year,
+                year=year,
+                week=week,
+                note_title=note_title,
+            )
 
         # No existing summary - proceed with full generation
         logger.info("No existing summary found, proceeding with full generation")
@@ -778,105 +728,7 @@ def generate_and_save_weekly_summary() -> Optional[Dict[str, str]]:
         logger.info(f"Saved weekly summary to database: {week_year}")
 
         # Step 5: Generate TTS audio if enabled
-        if config.tts_enabled:
-            try:
-                logger.info("TTS enabled, checking for audio file...")
-
-                audio_path = config.get_weekly_summary_audio_path(week_year)
-
-                # Check if audio file already exists on disk
-                if Path(audio_path).exists():
-                    logger.info(
-                        f"Audio file already exists, skipping TTS generation (cost saving): {audio_path}"
-                    )
-                    # Get duration from existing file
-                    duration = get_audio_duration(audio_path)
-                    if duration is None:
-                        duration = 0
-                else:
-                    # Generate new audio
-                    logger.info("Audio file not found, generating TTS...")
-
-                    # Get note content for TTS
-                    note_content = get_note_content(note_id)
-                    if not note_content:
-                        logger.error("Could not fetch note content for TTS")
-                        raise Exception("Could not fetch note content")
-
-                    # Extract clean text (remove books section)
-                    tts_text = extract_summary_text_for_tts(note_content)
-
-                    if not tts_text or len(tts_text) < 50:
-                        logger.warning("Extracted text too short for TTS, skipping")
-                        raise Exception("Text too short for TTS")
-
-                    logger.info(f"Generating TTS audio ({len(tts_text)} chars)...")
-
-                    # Generate audio
-                    audio_data = generate_audio(
-                        text=tts_text,
-                        voice_id=config.elevenlabs_voice_id,
-                        api_key=config.elevenlabs_api_key,
-                    )
-
-                    # Save audio file
-                    duration = save_audio_file(audio_data, audio_path)
-                    logger.info(f"Saved audio file: {audio_path} ({duration}s)")
-
-                # Check if audio is already attached to Trilium note
-                audio_already_attached = False
-                try:
-                    client = get_httpx_client()
-                    children_url = _build_url(
-                        config.trilium_url, f"etapi/notes/{note_id}/children"
-                    )
-                    headers = {"Authorization": f"Bearer {config.trilium_etapi_token}"}
-                    response = client.get(children_url, headers=headers, timeout=10.0)
-                    response.raise_for_status()
-
-                    children = response.json()
-                    audio_already_attached = any(
-                        child.get("title") == f"{week_year}.mp3" for child in children
-                    )
-
-                    if audio_already_attached:
-                        logger.info(
-                            "Audio already attached to Trilium note, skipping attachment"
-                        )
-                except Exception as e:
-                    logger.warning(
-                        f"Could not check Trilium children: {e}, will try to attach"
-                    )
-
-                # Attach to Trilium note if not already attached
-                if not audio_already_attached:
-                    attach_result = attach_audio_to_note(
-                        note_id=note_id,
-                        audio_file_path=audio_path,
-                        title=f"{week_year}.mp3",
-                    )
-                    logger.info(f"Attached audio to Trilium note: {attach_result}")
-
-                # Update database with audio info
-                save_weekly_summary(
-                    week_year=week_year,
-                    year=year,
-                    week=week,
-                    title=note_title,
-                    trilium_note_id=note_id,
-                    audio_file_path=audio_path,
-                    duration_seconds=duration,
-                )
-                logger.info("Updated database with audio info")
-
-            except Exception as tts_error:
-                logger.error(
-                    f"TTS generation failed (note still created): {tts_error}",
-                    exc_info=True,
-                )
-                # Don't fail the whole process if TTS fails
-
-        return note_info
+        return _generate_and_attach_tts(note_id, week_year, year, week, note_title)
 
     except Exception as e:
         logger.error(f"Error in weekly summary generation: {e}", exc_info=True)

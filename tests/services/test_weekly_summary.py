@@ -409,7 +409,7 @@ class TestGenerateAndSaveWeeklySummary:
         mock_save_summary,
     ):
         """Should complete full weekly summary workflow."""
-        mock_config.summary_provider = "openai"
+        mock_config.weekly_summary_provider = "openai"
         mock_config.tts_enabled = False  # Disable TTS for this test
         mock_get_existing_summary.return_value = None  # No existing summary
 
@@ -500,7 +500,7 @@ class TestGenerateAndSaveWeeklySummary:
         """Should regenerate summary when database entry exists but Trilium note is 404."""
         mock_config.trilium_url = "http://localhost:8080"
         mock_config.trilium_etapi_token = "test-token"
-        mock_config.summary_provider = "openai"
+        mock_config.weekly_summary_provider = "openai"
         mock_config.tts_enabled = False
 
         # Mock existing summary in database with a note ID that doesn't exist
