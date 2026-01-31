@@ -133,14 +133,6 @@ class AudioCache:
         audio_file = self.audio_dir / f"{video_id}.mp3"
         return audio_file.exists()
 
-    def should_keep_file(self, video_id: str) -> bool:
-        """
-        Check if we should keep the audio file.
-
-        Always returns True now - cleanup is done by cleanup_old_files()
-        """
-        return True
-
 
 # Global cache instances
 _transcript_cache: Optional[TranscriptionCache] = None

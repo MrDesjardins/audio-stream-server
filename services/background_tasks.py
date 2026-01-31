@@ -64,6 +64,15 @@ class TranscriptionQueue:
         Returns:
             True if job was added, False if it was a duplicate
         """
+        # Validate job before adding
+        if not job.video_id or not job.video_id.strip():
+            logger.error(f"Rejected invalid job: video_id is empty or None")
+            return False
+
+        if not job.audio_path or not job.audio_path.strip() or job.audio_path.endswith("/.mp3"):
+            logger.error(f"Rejected invalid job: audio_path is invalid: {job.audio_path}")
+            return False
+
         with self.lock:
             # Don't add if already in queue with active status
             if job.video_id in self.jobs:
@@ -260,11 +269,38 @@ class TranscriptionWorker:
                 logger.info(
                     f"Video {job.video_id} already exists in Trilium: {existing_note['noteId']}"
                 )
+
+                # Fetch the summary from Trilium for display
+                from services.trilium import get_note_content
+                import re
+
+                summary = None
+                try:
+                    content = get_note_content(existing_note["noteId"])
+                    if content:
+                        # Extract summary from HTML content (same logic as /transcription/summary endpoint)
+                        # Remove the YouTube link section at the bottom
+                        content = re.sub(r'<p style="margin-top.*?</p>', "", content, flags=re.DOTALL)
+
+                        # Convert HTML to text with line breaks
+                        text_summary = re.sub(r"</p>", "\n\n", content)
+                        text_summary = re.sub(r"</h[1-3]>", "\n\n", text_summary)
+                        text_summary = re.sub(r"</li>", "\n", text_summary)
+                        text_summary = re.sub(r"<ul>", "\n", text_summary)
+                        text_summary = re.sub(r"</ul>", "\n", text_summary)
+                        text_summary = re.sub(r"<[^>]+>", "", text_summary)
+                        text_summary = re.sub(r"\n\s*\n\s*\n", "\n\n", text_summary)
+                        summary = text_summary.strip()
+                        logger.info(f"Fetched summary from existing Trilium note for {job.video_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to fetch summary from Trilium note: {e}")
+
                 self.queue.update_job_status(
                     job.video_id,
                     JobStatus.SKIPPED,
                     trilium_note_id=existing_note["noteId"],
                     trilium_note_url=existing_note["url"],
+                    summary=summary,
                 )
                 return
 
@@ -326,7 +362,7 @@ class TranscriptionWorker:
         cleanup_thread = threading.Thread(target=_do_cleanup, daemon=True, name="AudioCleanup")
         cleanup_thread.start()
 
-    def _wait_for_file(self, audio_path: str, video_id: str, timeout: int = 1800) -> bool:
+    def _wait_for_file(self, audio_path: str, video_id: str, timeout: int = 300) -> bool:
         """
         Wait for the audio file to be fully downloaded.
 
@@ -337,12 +373,21 @@ class TranscriptionWorker:
         Args:
             audio_path: Path to the audio file
             video_id: Video ID for logging
-            timeout: Maximum seconds to wait (default: 30 minutes)
+            timeout: Maximum seconds to wait (default: 5 minutes)
 
         Returns:
             True if file is ready, False if timeout or error
         """
         from services.streaming import is_download_in_progress
+
+        # Validate inputs to fail fast on invalid jobs
+        if not video_id or not video_id.strip():
+            logger.error("Invalid job: video_id is empty or None")
+            return False
+
+        if not audio_path or not audio_path.strip() or audio_path.endswith("/.mp3"):
+            logger.error(f"Invalid job: audio_path is invalid: {audio_path}")
+            return False
 
         logger.info(f"Waiting for audio file to be ready: {audio_path}")
         start_time = time.time()

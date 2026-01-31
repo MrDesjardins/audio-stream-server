@@ -89,7 +89,8 @@ def get_summary(video_id: str):
         queue = get_transcription_queue()
         job = queue.get_job_status(video_id)
 
-        if job and job.status in [JobStatus.COMPLETED, JobStatus.SKIPPED]:
+        # If job exists and has summary, return it
+        if job and job.status in [JobStatus.COMPLETED, JobStatus.SKIPPED] and job.summary:
             return JSONResponse(
                 {
                     "video_id": video_id,
@@ -99,7 +100,7 @@ def get_summary(video_id: str):
                 }
             )
 
-        # If not in queue, try to fetch from Trilium
+        # If not in queue OR job doesn't have summary, try to fetch from Trilium
         from services.trilium import check_video_exists, get_note_content
         import re
 
