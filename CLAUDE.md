@@ -6,6 +6,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Audio Stream Server is a FastAPI application that streams audio from YouTube videos as MP3 over HTTP. It uses yt-dlp to extract audio and ffmpeg to convert and stream it in real-time. The application provides a simple web interface for controlling playback.
 
+## Coding Standards
+
+### Import Statements
+
+**CRITICAL: ALL imports must be at the top of the file.**
+
+- NEVER add imports in the middle of functions or classes
+- ALWAYS add new imports at the top of the file with other imports
+- Group imports in standard Python order:
+  1. Standard library imports
+  2. Third-party imports
+  3. Local application imports
+- Do not use inline imports inside functions unless absolutely necessary for circular import resolution
+
 ## Development Commands
 
 ### Install Dependencies

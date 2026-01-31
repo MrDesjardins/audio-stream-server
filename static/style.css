@@ -539,8 +539,8 @@ main {
     height: 100%;
     width: 0%;
     background: linear-gradient(to right,
-        #7c3aed 0%,
-        #7c3aed 90%,
+        rgba(124, 58, 237, 0.5) 0%,
+        rgba(124, 58, 237, 0.5) 90%,
         transparent 100%
     );
     transition: width 0.5s linear;
@@ -1283,7 +1283,7 @@ audio {
 
 .summary-meta {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     gap: 12px;
 }
 
@@ -1297,7 +1297,7 @@ audio {
 .summary-meta-right {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 16px;
 }
 
 .summary-badge {

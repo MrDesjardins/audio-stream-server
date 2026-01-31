@@ -105,7 +105,7 @@ class TestGetBooksFromTriliumLastWeek:
     """Tests for get_books_from_trilium_last_week function."""
 
     @patch("services.weekly_summary.config")
-    @patch("services.api_clients.get_httpx_client")
+    @patch("services.weekly_summary.get_httpx_client")
     def test_searches_trilium_for_recent_notes(self, mock_client_getter, mock_config):
         """Should search Trilium for notes with youtube_id from last 7 days."""
         mock_config.trilium_url = "http://localhost:8080"
@@ -146,7 +146,7 @@ class TestGetBooksFromTriliumLastWeek:
         assert books[1]["video_id"] == "vid2"
 
     @patch("services.weekly_summary.config")
-    @patch("services.api_clients.get_httpx_client")
+    @patch("services.weekly_summary.get_httpx_client")
     def test_handles_empty_search_results(self, mock_client_getter, mock_config):
         """Should return empty list when no notes found."""
         mock_config.trilium_url = "http://localhost:8080"
@@ -165,7 +165,7 @@ class TestGetBooksFromTriliumLastWeek:
         assert len(books) == 0
 
     @patch("services.weekly_summary.config")
-    @patch("services.api_clients.get_httpx_client")
+    @patch("services.weekly_summary.get_httpx_client")
     def test_handles_trilium_error(self, mock_client_getter, mock_config):
         """Should return empty list on Trilium API error."""
         mock_config.trilium_url = "http://localhost:8080"
@@ -322,7 +322,7 @@ class TestCreateWeeklySummaryNote:
     """Tests for create_weekly_summary_note function."""
 
     @patch("services.weekly_summary.config")
-    @patch("services.api_clients.get_httpx_client")
+    @patch("services.weekly_summary.get_httpx_client")
     def test_creates_trilium_note(self, mock_client_getter, mock_config):
         """Should create Trilium note with summary."""
         mock_config.trilium_url = "http://localhost:8080"
@@ -355,7 +355,7 @@ class TestCreateWeeklySummaryNote:
         assert "weekly123" in result["url"]
 
     @patch("services.weekly_summary.config")
-    @patch("services.api_clients.get_httpx_client")
+    @patch("services.weekly_summary.get_httpx_client")
     def test_handles_trilium_create_error(self, mock_client_getter, mock_config):
         """Should return None on Trilium note creation error."""
         mock_config.trilium_url = "http://localhost:8080"
@@ -378,6 +378,8 @@ class TestCreateWeeklySummaryNote:
 class TestGenerateAndSaveWeeklySummary:
     """Tests for generate_and_save_weekly_summary function."""
 
+    @patch("services.weekly_summary.save_weekly_summary")
+    @patch("services.weekly_summary.get_summary_by_week_year")
     @patch("services.weekly_summary.create_weekly_summary_note")
     @patch("services.weekly_summary.generate_weekly_summary_openai")
     @patch("services.weekly_summary.fetch_book_summaries")
@@ -390,9 +392,13 @@ class TestGenerateAndSaveWeeklySummary:
         mock_fetch_summaries,
         mock_generate_summary,
         mock_create_note,
+        mock_get_existing_summary,
+        mock_save_summary,
     ):
         """Should complete full weekly summary workflow."""
         mock_config.summary_provider = "openai"
+        mock_config.tts_enabled = False  # Disable TTS for this test
+        mock_get_existing_summary.return_value = None  # No existing summary
 
         # Mock books from Trilium
         mock_get_books_trilium.return_value = [
@@ -416,13 +422,16 @@ class TestGenerateAndSaveWeeklySummary:
 
         assert result is not None
         assert result["noteId"] == "weekly123"
+        mock_save_summary.assert_called_once()
 
+    @patch("services.weekly_summary.get_summary_by_week_year")
     @patch("services.weekly_summary.get_books_from_trilium_last_week")
     @patch("services.weekly_summary.get_books_from_last_week")
     def test_falls_back_to_database_when_trilium_fails(
-        self, mock_get_books_db, mock_get_books_trilium
+        self, mock_get_books_db, mock_get_books_trilium, mock_get_existing_summary
     ):
         """Should fallback to database when Trilium search fails."""
+        mock_get_existing_summary.return_value = None  # No existing summary
         mock_get_books_trilium.return_value = []  # Trilium returns nothing
         mock_get_books_db.return_value = []  # Database also empty
 
@@ -431,10 +440,14 @@ class TestGenerateAndSaveWeeklySummary:
         assert result is None
         mock_get_books_db.assert_called_once()
 
+    @patch("services.weekly_summary.get_summary_by_week_year")
     @patch("services.weekly_summary.fetch_book_summaries")
     @patch("services.weekly_summary.get_books_from_trilium_last_week")
-    def test_skips_when_no_summaries_found(self, mock_get_books, mock_fetch_summaries):
+    def test_skips_when_no_summaries_found(
+        self, mock_get_books, mock_fetch_summaries, mock_get_existing_summary
+    ):
         """Should skip when no summaries found in Trilium."""
+        mock_get_existing_summary.return_value = None  # No existing summary
         mock_get_books.return_value = [{"video_id": "vid1", "title": "Book 1"}]
         mock_fetch_summaries.return_value = []  # No summaries
 
