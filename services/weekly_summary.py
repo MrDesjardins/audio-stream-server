@@ -509,6 +509,37 @@ def generate_and_save_weekly_summary() -> Optional[Dict[str, str]]:
             note_title = existing_summary["title"]
             audio_file_path = config.get_weekly_summary_audio_path(week_year)
 
+            # Verify the Trilium note still exists
+            # If it was deleted from Trilium, regenerate the summary
+            if note_id:
+                try:
+                    client = get_httpx_client()
+                    note_url = _build_url(config.trilium_url, f"etapi/notes/{note_id}")
+                    headers = {"Authorization": f"Bearer {config.trilium_etapi_token}"}
+                    response = client.get(note_url, headers=headers, timeout=10.0)
+
+                    if response.status_code == 404:
+                        logger.warning(
+                            f"Trilium note {note_id} no longer exists (404). "
+                            f"Database entry is stale. Regenerating summary..."
+                        )
+                        # Clear the stale database entry by setting existing_summary to None
+                        # This will cause the code to proceed with full generation below
+                        existing_summary = None
+                    elif response.status_code != 200:
+                        logger.warning(
+                            f"Could not verify Trilium note {note_id}: HTTP {response.status_code}. "
+                            f"Proceeding anyway..."
+                        )
+                except Exception as e:
+                    logger.warning(
+                        f"Could not verify Trilium note {note_id}: {e}. "
+                        f"Proceeding anyway..."
+                    )
+
+        if existing_summary:
+            # Note exists in Trilium, proceed with existing summary logic
+
             # Check if audio file exists on disk
             audio_path = existing_summary.get("audio_file_path")
             has_audio_file = audio_path and Path(audio_path).exists()
@@ -646,7 +677,16 @@ def generate_and_save_weekly_summary() -> Optional[Dict[str, str]]:
                     logger.error(
                         f"TTS generation failed for existing summary: {tts_error}", exc_info=True
                     )
-                    # Return existing note even if TTS fails
+                    # If we couldn't get note content, the note might not exist
+                    # Return None to indicate failure
+                    if "Could not fetch note content" in str(tts_error):
+                        logger.error(
+                            f"Cannot generate TTS because Trilium note {note_id} is inaccessible. "
+                            f"Summary may need to be regenerated."
+                        )
+                        return None
+
+                    # For other TTS errors, return existing note (summary exists, just no audio)
                     return {
                         "noteId": note_id,
                         "url": f"{config.trilium_url}/#root/{note_id}",

@@ -454,3 +454,58 @@ class TestGenerateAndSaveWeeklySummary:
         result = generate_and_save_weekly_summary()
 
         assert result is None
+
+    @patch("services.weekly_summary.save_weekly_summary")
+    @patch("services.weekly_summary.create_weekly_summary_note")
+    @patch("services.weekly_summary.generate_weekly_summary_openai")
+    @patch("services.weekly_summary.fetch_book_summaries")
+    @patch("services.weekly_summary.get_books_from_trilium_last_week")
+    @patch("services.weekly_summary.get_httpx_client")
+    @patch("services.weekly_summary.get_summary_by_week_year")
+    @patch("services.weekly_summary.config")
+    def test_regenerates_when_trilium_note_missing(
+        self,
+        mock_config,
+        mock_get_existing_summary,
+        mock_httpx_client,
+        mock_get_books,
+        mock_fetch_summaries,
+        mock_generate_summary,
+        mock_create_note,
+        mock_save_summary,
+    ):
+        """Should regenerate summary when database entry exists but Trilium note is 404."""
+        mock_config.trilium_url = "http://localhost:8080"
+        mock_config.trilium_etapi_token = "test-token"
+        mock_config.summary_provider = "openai"
+        mock_config.tts_enabled = False
+
+        # Mock existing summary in database with a note ID that doesn't exist
+        mock_get_existing_summary.return_value = {
+            "week_year": "2026-W05",
+            "trilium_note_id": "missing-note-id",
+            "title": "Old summary",
+        }
+
+        # Mock 404 response when checking if note exists
+        mock_404_response = Mock()
+        mock_404_response.status_code = 404
+
+        mock_client = Mock()
+        mock_client.get.return_value = mock_404_response
+        mock_httpx_client.return_value = mock_client
+
+        # Mock the regeneration workflow
+        mock_get_books.return_value = [{"video_id": "vid1", "title": "Book 1"}]
+        mock_fetch_summaries.return_value = [
+            {"video_id": "vid1", "title": "Book 1", "summary": "Summary 1", "note_url": "url1"}
+        ]
+        mock_generate_summary.return_value = "## New Summary"
+        mock_create_note.return_value = {"noteId": "new-note-123", "url": "http://localhost:8080/#root/new-note-123"}
+
+        result = generate_and_save_weekly_summary()
+
+        # Should regenerate the summary instead of using the missing one
+        assert result is not None
+        assert result["noteId"] == "new-note-123"
+        mock_create_note.assert_called_once()  # Should create a new note

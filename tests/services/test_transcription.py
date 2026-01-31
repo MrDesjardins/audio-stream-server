@@ -157,14 +157,21 @@ class TestTranscribeAudio:
         with pytest.raises(ValueError, match="OpenAI API key not configured"):
             transcribe_audio("/path/to/audio.mp3")
 
+    @patch("services.transcription.get_openai_client")
     @patch("services.transcription.compress_audio_for_whisper")
     @patch("services.transcription.os.path.getsize")
     @patch("services.transcription.get_config")
-    def test_transcribe_audio_compression_fails(self, mock_config, mock_getsize, mock_compress):
+    def test_transcribe_audio_compression_fails(
+        self, mock_config, mock_getsize, mock_compress, mock_get_client
+    ):
         """Test transcription when compression fails."""
         config = Mock()
         config.openai_api_key = "test-key"
         mock_config.return_value = config
+
+        # Mock OpenAI client (created before compression)
+        mock_client = Mock()
+        mock_get_client.return_value = mock_client
 
         mock_getsize.return_value = 5 * 1024 * 1024
         mock_compress.side_effect = Exception("Compression failed")
