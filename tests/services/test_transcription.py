@@ -124,6 +124,7 @@ class TestTranscribeAudio:
         """Test successful transcription."""
         # Mock config
         config = Mock()
+        config.transcription_provider = "openai"
         config.openai_api_key = "test-key"
         mock_config.return_value = config
 
@@ -155,6 +156,7 @@ class TestTranscribeAudio:
     def test_transcribe_audio_no_api_key(self, mock_config):
         """Test transcription fails without API key."""
         config = Mock()
+        config.transcription_provider = "openai"
         config.openai_api_key = None
         mock_config.return_value = config
 
@@ -170,6 +172,7 @@ class TestTranscribeAudio:
     ):
         """Test transcription when compression fails."""
         config = Mock()
+        config.transcription_provider = "openai"
         config.openai_api_key = "test-key"
         mock_config.return_value = config
 
@@ -200,6 +203,7 @@ class TestTranscribeAudio:
     ):
         """Test transcription retries on failure."""
         config = Mock()
+        config.transcription_provider = "openai"
         config.openai_api_key = "test-key"
         mock_config.return_value = config
 
@@ -241,6 +245,7 @@ class TestTranscribeAudio:
     ):
         """Test transcription fails after all retries."""
         config = Mock()
+        config.transcription_provider = "openai"
         config.openai_api_key = "test-key"
         mock_config.return_value = config
 
@@ -269,6 +274,7 @@ class TestTranscribeAudio:
     ):
         """Test transcription handles string response from API."""
         config = Mock()
+        config.transcription_provider = "openai"
         config.openai_api_key = "test-key"
         mock_config.return_value = config
 
@@ -299,6 +305,7 @@ class TestTranscribeAudio:
     ):
         """Test that compressed file is always cleaned up."""
         config = Mock()
+        config.transcription_provider = "openai"
         config.openai_api_key = "test-key"
         mock_config.return_value = config
 

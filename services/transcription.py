@@ -1,10 +1,11 @@
-"""Audio transcription using OpenAI Whisper API."""
+"""Audio transcription using OpenAI Whisper API or Google Gemini."""
 
 import logging
 import os
 import subprocess
 import tempfile
 import time
+from google import genai
 
 from config import get_config
 from services.api_clients import get_openai_client
@@ -101,7 +102,7 @@ def compress_audio_for_whisper(audio_path: str) -> str:
         raise
 
 
-def transcribe_audio(audio_path: str, retries: int = 3) -> str:
+def transcribe_audio_openai(audio_path: str, retries: int = 3) -> str:
     """
     Transcribe audio file using OpenAI Whisper API.
 
@@ -189,3 +190,112 @@ def transcribe_audio(audio_path: str, retries: int = 3) -> str:
                 logger.warning(
                     f"Failed to clean up compressed file {compressed_path}: {e}"
                 )
+
+
+def transcribe_audio_gemini(audio_path: str, retries: int = 3) -> str:
+    """
+    Transcribe audio file using Google Gemini API.
+
+    Gemini can process audio directly without compression/speed-up tricks.
+    Uses Gemini 1.5 Flash which supports audio input.
+
+    Args:
+        audio_path: Path to the audio file to transcribe
+        retries: Number of retry attempts on failure
+
+    Returns:
+        The transcribed text
+
+    Raises:
+        Exception: If transcription fails after all retries
+    """
+    config = get_config()
+
+    if not config.gemini_api_key:
+        raise ValueError("Gemini API key not configured")
+
+    last_error = None
+
+    for attempt in range(retries):
+        try:
+            logger.info(
+                f"Transcribing audio file with Gemini: {audio_path} (attempt {attempt + 1}/{retries})"
+            )
+
+            # Create Gemini client
+            client = genai.Client(api_key=config.gemini_api_key)
+
+            # Upload the audio file
+            with open(audio_path, "rb") as audio_file:
+                audio_data = audio_file.read()
+
+            # Use Gemini to transcribe
+            # Gemini 1.5 Flash supports audio input
+            response = client.models.generate_content(
+                model="gemini-1.5-flash",
+                contents=[
+                    {
+                        "parts": [
+                            {
+                                "inline_data": {
+                                    "mime_type": "audio/mpeg",
+                                    "data": audio_data,
+                                }
+                            },
+                            {
+                                "text": "Please transcribe this audio file. Provide only the transcription text, no additional commentary."
+                            },
+                        ]
+                    }
+                ],
+            )
+
+            transcript = response.text
+            logger.info(
+                f"Successfully transcribed audio with Gemini ({len(transcript)} characters)"
+            )
+            return transcript
+
+        except Exception as e:
+            last_error = e
+            logger.warning(f"Gemini transcription attempt {attempt + 1} failed: {e}")
+
+            if attempt < retries - 1:
+                # Exponential backoff
+                wait_time = 2**attempt
+                logger.info(f"Retrying in {wait_time} seconds...")
+                time.sleep(wait_time)
+            else:
+                logger.error(f"All transcription attempts failed for {audio_path}")
+
+    raise Exception(
+        f"Gemini transcription failed after {retries} attempts: {last_error}"
+    )
+
+
+def transcribe_audio(audio_path: str, retries: int = 3) -> str:
+    """
+    Transcribe audio file using the configured provider.
+
+    Routes to either OpenAI Whisper or Google Gemini based on configuration.
+
+    Args:
+        audio_path: Path to the audio file to transcribe
+        retries: Number of retry attempts on failure
+
+    Returns:
+        The transcribed text
+
+    Raises:
+        Exception: If transcription fails or provider is invalid
+    """
+    config = get_config()
+
+    if config.transcription_provider == "openai":
+        return transcribe_audio_openai(audio_path, retries)
+    elif config.transcription_provider == "gemini":
+        return transcribe_audio_gemini(audio_path, retries)
+    else:
+        raise ValueError(
+            f"Invalid transcription provider: {config.transcription_provider}"
+        )

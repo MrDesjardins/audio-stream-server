@@ -742,12 +742,14 @@ def generate_and_save_weekly_summary() -> Optional[Dict[str, str]]:
         logger.info(f"Fetched {len(summaries)} summaries from Trilium")
 
         # Step 3: Generate weekly summary using AI
-        if config.summary_provider == "openai":
+        if config.weekly_summary_provider == "openai":
             summary_content = generate_weekly_summary_openai(summaries)
-        elif config.summary_provider == "gemini":
+        elif config.weekly_summary_provider == "gemini":
             summary_content = generate_weekly_summary_gemini(summaries)
         else:
-            logger.error(f"Invalid summary provider: {config.summary_provider}")
+            logger.error(
+                f"Invalid weekly summary provider: {config.weekly_summary_provider}"
+            )
             return None
 
         if not summary_content:

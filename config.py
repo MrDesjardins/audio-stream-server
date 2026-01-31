@@ -71,6 +71,7 @@ class Config:
 
     # Transcription settings
     transcription_enabled: bool
+    transcription_provider: str  # "openai" or "gemini"
     openai_api_key: Optional[str]
     temp_audio_dir: str
     max_audio_length_minutes: int
@@ -78,6 +79,9 @@ class Config:
     # Summarization settings
     summary_provider: str  # "openai" or "gemini"
     gemini_api_key: Optional[str]
+
+    # Weekly summary settings (separate from video summarization)
+    weekly_summary_provider: str  # "openai" or "gemini"
 
     # Trilium settings
     trilium_url: Optional[str]
@@ -119,6 +123,9 @@ class Config:
             ),
             # Transcription settings
             transcription_enabled=transcription_enabled,
+            transcription_provider=os.getenv(
+                "TRANSCRIPTION_PROVIDER", "openai"
+            ).lower(),
             openai_api_key=os.getenv("OPENAI_API_KEY"),
             temp_audio_dir=os.getenv("TEMP_AUDIO_DIR", "/tmp/audio-transcriptions"),
             max_audio_length_minutes=_parse_int(
@@ -127,6 +134,10 @@ class Config:
             # Summarization settings
             summary_provider=os.getenv("SUMMARY_PROVIDER", "openai").lower(),
             gemini_api_key=os.getenv("GEMINI_API_KEY"),
+            # Weekly summary settings
+            weekly_summary_provider=os.getenv(
+                "WEEKLY_SUMMARY_PROVIDER", "gemini"
+            ).lower(),
             # Trilium settings
             trilium_url=os.getenv("TRILIUM_URL", "").rstrip("/") or None,
             trilium_etapi_token=os.getenv("TRILIUM_ETAPI_TOKEN"),
@@ -175,9 +186,21 @@ class Config:
         """Validate that required configuration is present."""
         errors = []
 
-        # Check OpenAI API key
-        if not self.openai_api_key:
-            errors.append("OPENAI_API_KEY is required when TRANSCRIPTION_ENABLED=true")
+        # Check transcription provider configuration
+        if self.transcription_provider == "openai":
+            if not self.openai_api_key:
+                errors.append(
+                    "OPENAI_API_KEY is required when TRANSCRIPTION_PROVIDER=openai"
+                )
+        elif self.transcription_provider == "gemini":
+            if not self.gemini_api_key:
+                errors.append(
+                    "GEMINI_API_KEY is required when TRANSCRIPTION_PROVIDER=gemini"
+                )
+        else:
+            errors.append(
+                f"Invalid TRANSCRIPTION_PROVIDER: {self.transcription_provider}. Must be 'openai' or 'gemini'"
+            )
 
         # Check summarization provider configuration
         if self.summary_provider == "openai":
@@ -189,6 +212,22 @@ class Config:
         else:
             errors.append(
                 f"Invalid SUMMARY_PROVIDER: {self.summary_provider}. Must be 'openai' or 'gemini'"
+            )
+
+        # Check weekly summary provider configuration
+        if self.weekly_summary_provider == "openai":
+            if not self.openai_api_key:
+                errors.append(
+                    "OPENAI_API_KEY is required when WEEKLY_SUMMARY_PROVIDER=openai"
+                )
+        elif self.weekly_summary_provider == "gemini":
+            if not self.gemini_api_key:
+                errors.append(
+                    "GEMINI_API_KEY is required when WEEKLY_SUMMARY_PROVIDER=gemini"
+                )
+        else:
+            errors.append(
+                f"Invalid WEEKLY_SUMMARY_PROVIDER: {self.weekly_summary_provider}. Must be 'openai' or 'gemini'"
             )
 
         # Check Trilium configuration
