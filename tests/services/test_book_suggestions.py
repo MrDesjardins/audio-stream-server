@@ -1,8 +1,12 @@
 """Tests for book suggestions service."""
 
 import pytest
+import subprocess
 from unittest.mock import Mock, patch
 from services.book_suggestions import (
+    _extract_text_from_html,
+    _fetch_summary_for_video,
+    _parse_video_json_line,
     filter_already_played,
     generate_theme_gemini,
     generate_theme_openai,
@@ -27,6 +31,164 @@ def mock_config():
     config.openai_api_key = "sk-test"
     config.gemini_api_key = None
     return config
+
+
+class TestExtractTextFromHtml:
+    """Tests for HTML text extraction."""
+
+    def test_extract_text_basic(self):
+        """Test basic HTML extraction."""
+        html = "<h3>Summary</h3><p>This is some text.</p>"
+        text = _extract_text_from_html(html)
+        assert "Summary" in text
+        assert "This is some text" in text
+
+    def test_extract_text_removes_youtube_link(self):
+        """Test that YouTube link section is removed."""
+        html = """<p>Summary content</p>
+        <p style="margin-top: 2em;">
+            <strong>YouTube:</strong> <a href="https://youtube.com">Link</a>
+        </p>"""
+        text = _extract_text_from_html(html)
+        assert "Summary content" in text
+        assert "YouTube" not in text
+        assert "Link" not in text
+
+    def test_extract_text_whitespace_cleanup(self):
+        """Test whitespace is properly cleaned."""
+        html = "<p>Text   with    lots     of      spaces</p>"
+        text = _extract_text_from_html(html)
+        assert "Text with lots of spaces" in text
+
+
+class TestParseVideoJsonLine:
+    """Tests for JSON line parsing."""
+
+    def test_parse_valid_video(self):
+        """Test parsing valid video JSON."""
+        line = '{"id": "abc123", "title": "Test Video", "uploader": "Channel", "duration": 3600}'
+        result = _parse_video_json_line(line)
+
+        assert result is not None
+        assert result["video_id"] == "abc123"
+        assert result["title"] == "Test Video"
+        assert result["channel"] == "Channel"
+        assert result["duration"] == 3600
+
+    def test_parse_empty_line(self):
+        """Test parsing empty line."""
+        result = _parse_video_json_line("")
+        assert result is None
+
+    def test_parse_invalid_json(self):
+        """Test parsing invalid JSON."""
+        line = "not a valid json"
+        result = _parse_video_json_line(line)
+        assert result is None
+
+    def test_parse_short_video_filtered(self):
+        """Test that videos shorter than 10 minutes are filtered."""
+        line = '{"id": "short", "title": "Short Video", "duration": 300, "uploader": "Channel"}'
+        result = _parse_video_json_line(line)
+        assert result is None  # Should be filtered out
+
+    def test_parse_long_video_accepted(self):
+        """Test that videos longer than 10 minutes are accepted."""
+        line = '{"id": "long", "title": "Long Video", "duration": 3600, "uploader": "Channel"}'
+        result = _parse_video_json_line(line)
+        assert result is not None
+        assert result["video_id"] == "long"
+
+
+class TestFetchSummaryForVideo:
+    """Tests for fetching summary from Trilium."""
+
+    @patch("services.trilium.get_note_content")
+    @patch("services.trilium.check_video_exists")
+    def test_fetch_summary_success(self, mock_check, mock_get_content):
+        """Test successful summary fetch."""
+        item = PlayHistoryItem(
+            id=1,
+            youtube_id="vid1",
+            title="Test Video",
+            channel=None,
+            thumbnail_url=None,
+            play_count=1,
+            created_at="2024-01-01T00:00:00",
+            last_played_at="2024-01-01T00:00:00",
+        )
+
+        mock_check.return_value = {"noteId": "note123", "url": "http://trilium/note123"}
+        mock_get_content.return_value = "<h3>Summary</h3><p>Test summary content</p>"
+
+        result = _fetch_summary_for_video(item)
+
+        assert result is not None
+        assert result.video_id == "vid1"
+        assert result.title == "Test Video"
+        assert "Test summary content" in result.summary
+        assert result.note_url == "http://trilium/note123"
+
+    @patch("services.trilium.check_video_exists")
+    def test_fetch_summary_no_note(self, mock_check):
+        """Test when no Trilium note exists."""
+        item = PlayHistoryItem(
+            id=1,
+            youtube_id="vid1",
+            title="Test Video",
+            channel=None,
+            thumbnail_url=None,
+            play_count=1,
+            created_at="2024-01-01T00:00:00",
+            last_played_at="2024-01-01T00:00:00",
+        )
+
+        mock_check.return_value = None
+
+        result = _fetch_summary_for_video(item)
+        assert result is None
+
+    @patch("services.trilium.get_note_content")
+    @patch("services.trilium.check_video_exists")
+    def test_fetch_summary_no_content(self, mock_check, mock_get_content):
+        """Test when note content fetch fails."""
+        item = PlayHistoryItem(
+            id=1,
+            youtube_id="vid1",
+            title="Test Video",
+            channel=None,
+            thumbnail_url=None,
+            play_count=1,
+            created_at="2024-01-01T00:00:00",
+            last_played_at="2024-01-01T00:00:00",
+        )
+
+        mock_check.return_value = {"noteId": "note123"}
+        mock_get_content.return_value = None
+
+        result = _fetch_summary_for_video(item)
+        assert result is None
+
+    @patch("services.trilium.get_note_content")
+    @patch("services.trilium.check_video_exists")
+    def test_fetch_summary_empty_text(self, mock_check, mock_get_content):
+        """Test when HTML extraction yields empty text."""
+        item = PlayHistoryItem(
+            id=1,
+            youtube_id="vid1",
+            title="Test Video",
+            channel=None,
+            thumbnail_url=None,
+            play_count=1,
+            created_at="2024-01-01T00:00:00",
+            last_played_at="2024-01-01T00:00:00",
+        )
+
+        mock_check.return_value = {"noteId": "note123"}
+        mock_get_content.return_value = "<div></div>"  # Empty content
+
+        result = _fetch_summary_for_video(item)
+        assert result is None
 
 
 @pytest.mark.asyncio
@@ -101,6 +263,40 @@ class TestGetRecentSummaries:
 
         assert len(summaries) == 0
 
+    @patch("services.trilium.get_note_content")
+    @patch("services.trilium.check_video_exists")
+    @patch("services.book_suggestions.get_history")
+    async def test_stops_when_limit_reached(
+        self, mock_get_history, mock_check_video, mock_get_content
+    ):
+        """Test that fetching stops when we have enough summaries."""
+        # Mock history with 10 videos
+        mock_get_history.return_value = [
+            PlayHistoryItem(
+                id=i,
+                youtube_id=f"vid{i}",
+                title=f"Video {i}",
+                channel=None,
+                thumbnail_url=None,
+                play_count=1,
+                created_at="2024-01-01T00:00:00",
+                last_played_at="2024-01-01T00:00:00",
+            )
+            for i in range(10)
+        ]
+
+        # All videos have notes and content
+        mock_check_video.return_value = {"noteId": "note123"}
+        mock_get_content.return_value = "<h3>Summary</h3><p>Test content</p>"
+
+        # Request only 3 summaries
+        summaries = await get_recent_summaries(3)
+
+        # Should stop after 3 summaries
+        assert len(summaries) == 3
+        # check_video_exists should only be called 3 times, not 10
+        assert mock_check_video.call_count == 3
+
 
 class TestGenerateThemeOpenAI:
     """Tests for OpenAI theme generation."""
@@ -161,53 +357,91 @@ class TestGenerateThemeOpenAI:
         assert theme is None
 
 
-class TestGenerateSuggestionsGemini:
-    """Tests for Gemini suggestion generation."""
+class TestGenerateThemeGemini:
+    """Tests for Gemini theme generation."""
 
-    @pytest.mark.skip(reason="Gemini library not always available in test environment")
-    @patch("google.generativeai.GenerativeModel")
-    @patch("google.generativeai.configure")
+    @patch("services.book_suggestions.genai.Client")
     @patch("services.book_suggestions.config")
-    def test_generate_suggestions_success(
-        self, mock_config_module, mock_configure, mock_model_class, mock_config
+    def test_generate_theme_success(
+        self, mock_config_module, mock_client_class, mock_config
     ):
-        """Test successful Gemini suggestion generation."""
-        mock_config_module.gemini_api_key = mock_config.gemini_api_key
+        """Test successful Gemini theme generation."""
+        mock_config_module.gemini_api_key = "test-key"
 
         # Mock Gemini response
         mock_response = Mock()
-        mock_response.text = """
-TITLE: Can't Hurt Me
-AUTHOR: David Goggins
-URL: https://www.youtube.com/watch?v=BvWB7B8tXD8
----
-"""
+        mock_response.text = "Personal development and productivity strategies"
 
-        mock_model = Mock()
-        mock_model.generate_content.return_value = mock_response
-        mock_model_class.return_value = mock_model
+        mock_client = Mock()
+        mock_client.models.generate_content.return_value = mock_response
+        mock_client_class.return_value = mock_client
 
-        suggestions = generate_theme_gemini(["Book One"], 1)
+        summaries = [
+            VideoSummary(
+                video_id="vid1",
+                title="Video 1",
+                summary="Summary about atomic habits",
+            ),
+            VideoSummary(
+                video_id="vid2",
+                title="Video 2",
+                summary="Summary about deep work",
+            ),
+        ]
 
-        assert len(suggestions) == 1
-        assert suggestions[0]["title"] == "Can't Hurt Me"
-        assert suggestions[0]["author"] == "David Goggins"
-        assert suggestions[0]["video_id"] == "BvWB7B8tXD8"
+        theme = generate_theme_gemini(summaries)
 
-    @pytest.mark.skip(reason="Gemini library not always available in test environment")
-    @patch("google.generativeai.configure")
+        assert theme == "Personal development and productivity strategies"
+        assert mock_client.models.generate_content.called
+
+    @patch("services.book_suggestions.genai.Client")
     @patch("services.book_suggestions.config")
-    def test_generate_suggestions_import_error(
-        self, mock_config_module, mock_configure, mock_config
+    def test_generate_theme_error(
+        self, mock_config_module, mock_client_class, mock_config
     ):
-        """Test handling when Gemini library has error."""
-        mock_config_module.gemini_api_key = mock_config.gemini_api_key
+        """Test error handling in Gemini theme generation."""
+        mock_config_module.gemini_api_key = "test-key"
 
-        mock_configure.side_effect = Exception("API error")
+        mock_client = Mock()
+        mock_client.models.generate_content.side_effect = Exception("API error")
+        mock_client_class.return_value = mock_client
 
-        suggestions = generate_theme_gemini(["Book One"], 1)
+        summaries = [
+            VideoSummary(
+                video_id="vid1",
+                title="Video 1",
+                summary="Summary text",
+            )
+        ]
 
-        assert len(suggestions) == 0
+        theme = generate_theme_gemini(summaries)
+        assert theme is None
+
+    @patch("services.book_suggestions.genai.Client")
+    @patch("services.book_suggestions.config")
+    def test_generate_theme_empty_response(
+        self, mock_config_module, mock_client_class, mock_config
+    ):
+        """Test handling of empty response from Gemini."""
+        mock_config_module.gemini_api_key = "test-key"
+
+        mock_response = Mock()
+        mock_response.text = None
+
+        mock_client = Mock()
+        mock_client.models.generate_content.return_value = mock_response
+        mock_client_class.return_value = mock_client
+
+        summaries = [
+            VideoSummary(
+                video_id="vid1",
+                title="Video 1",
+                summary="Summary text",
+            )
+        ]
+
+        theme = generate_theme_gemini(summaries)
+        assert theme is None
 
 
 class TestSearchYoutubeByTheme:
@@ -267,6 +501,44 @@ class TestSearchYoutubeByTheme:
         videos = search_youtube_by_theme("test theme", 1)
 
         assert len(videos) == 0
+
+    @patch("subprocess.run")
+    def test_search_timeout(self, mock_run):
+        """Test handling of subprocess timeout."""
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd="yt-dlp", timeout=30)
+
+        videos = search_youtube_by_theme("test theme", 1)
+
+        assert len(videos) == 0
+
+    @patch("subprocess.run")
+    def test_search_exception(self, mock_run):
+        """Test handling of general exception."""
+        mock_run.side_effect = Exception("Unexpected error")
+
+        videos = search_youtube_by_theme("test theme", 1)
+
+        assert len(videos) == 0
+
+    @patch("subprocess.run")
+    def test_search_invalid_json_line(self, mock_run):
+        """Test handling of invalid JSON in output."""
+        mock_result = Mock()
+        mock_result.returncode = 0
+        # Mix of valid and invalid JSON lines
+        mock_result.stdout = (
+            '{"id": "valid1", "title": "Valid Video", "duration": 3600, "uploader": "Channel"}\n'
+            "invalid json line\n"
+            '{"id": "valid2", "title": "Another Video", "duration": 3600, "uploader": "Channel"}\n'
+        )
+        mock_run.return_value = mock_result
+
+        videos = search_youtube_by_theme("test theme", 2)
+
+        # Should skip invalid line and return only valid ones
+        assert len(videos) == 2
+        assert videos[0]["video_id"] == "valid1"
+        assert videos[1]["video_id"] == "valid2"
 
 
 @pytest.mark.asyncio
@@ -429,6 +701,110 @@ class TestGetVideoSuggestions:
         """Test when no summaries found."""
         mock_config_module.book_suggestions_enabled = True
         mock_get_summaries.return_value = []
+
+        result = await get_video_suggestions()
+
+        assert len(result) == 0
+
+    @patch("services.book_suggestions.generate_theme_gemini")
+    @patch("services.book_suggestions.get_recent_summaries")
+    @patch("services.book_suggestions.config")
+    async def test_gemini_provider(
+        self, mock_config_module, mock_get_summaries, mock_generate_gemini, mock_config
+    ):
+        """Test with Gemini as AI provider."""
+        mock_config_module.book_suggestions_enabled = True
+        mock_config_module.books_to_analyze = 10
+        mock_config_module.suggestions_count = 4
+        mock_config_module.suggestions_ai_provider = "gemini"
+
+        mock_get_summaries.return_value = [
+            VideoSummary(
+                video_id="v1",
+                title="Video 1",
+                summary="Summary 1",
+            )
+        ]
+        mock_generate_gemini.return_value = None  # Theme generation failed
+
+        result = await get_video_suggestions()
+
+        assert len(result) == 0
+        mock_generate_gemini.assert_called_once()
+
+    @patch("services.book_suggestions.get_recent_summaries")
+    @patch("services.book_suggestions.config")
+    async def test_invalid_ai_provider(
+        self, mock_config_module, mock_get_summaries, mock_config
+    ):
+        """Test with invalid AI provider."""
+        mock_config_module.book_suggestions_enabled = True
+        mock_config_module.books_to_analyze = 10
+        mock_config_module.suggestions_ai_provider = "invalid_provider"
+
+        mock_get_summaries.return_value = [
+            VideoSummary(
+                video_id="v1",
+                title="Video 1",
+                summary="Summary 1",
+            )
+        ]
+
+        result = await get_video_suggestions()
+
+        assert len(result) == 0
+
+    @patch("services.book_suggestions.generate_theme_openai")
+    @patch("services.book_suggestions.get_recent_summaries")
+    @patch("services.book_suggestions.config")
+    async def test_theme_generation_fails(
+        self, mock_config_module, mock_get_summaries, mock_generate_theme, mock_config
+    ):
+        """Test when theme generation returns None."""
+        mock_config_module.book_suggestions_enabled = True
+        mock_config_module.books_to_analyze = 10
+        mock_config_module.suggestions_ai_provider = "openai"
+
+        mock_get_summaries.return_value = [
+            VideoSummary(
+                video_id="v1",
+                title="Video 1",
+                summary="Summary 1",
+            )
+        ]
+        mock_generate_theme.return_value = None
+
+        result = await get_video_suggestions()
+
+        assert len(result) == 0
+
+    @patch("services.book_suggestions.search_youtube_by_theme")
+    @patch("services.book_suggestions.generate_theme_openai")
+    @patch("services.book_suggestions.get_recent_summaries")
+    @patch("services.book_suggestions.config")
+    async def test_no_videos_found_from_search(
+        self,
+        mock_config_module,
+        mock_get_summaries,
+        mock_generate_theme,
+        mock_search,
+        mock_config,
+    ):
+        """Test when YouTube search returns no videos."""
+        mock_config_module.book_suggestions_enabled = True
+        mock_config_module.books_to_analyze = 10
+        mock_config_module.suggestions_count = 4
+        mock_config_module.suggestions_ai_provider = "openai"
+
+        mock_get_summaries.return_value = [
+            VideoSummary(
+                video_id="v1",
+                title="Video 1",
+                summary="Summary 1",
+            )
+        ]
+        mock_generate_theme.return_value = "test theme"
+        mock_search.return_value = []  # No videos found
 
         result = await get_video_suggestions()
 

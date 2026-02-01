@@ -514,3 +514,175 @@ class TestTranscribeAudio:
 
             # Should still clean up compressed file even on error using Path.unlink()
             mock_compressed_path_instance.unlink.assert_called_once()
+
+
+class TestTranscribeAudioGemini:
+    """Tests for Gemini transcription functionality."""
+
+    @patch("services.transcription.expand_path_str")
+    @patch("services.transcription.get_config")
+    @patch("services.transcription.genai.Client")
+    def test_transcribe_audio_gemini_success(
+        self, mock_genai_client_class, mock_config, mock_expand_path_str
+    ):
+        """Test successful Gemini transcription."""
+        # Setup config
+        config = Mock()
+        config.gemini_api_key = "test-gemini-key"
+        mock_config.return_value = config
+
+        # Setup path mock
+        mock_expand_path_str.return_value = "/expanded/path/audio.mp3"
+
+        # Setup Gemini client
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.text = "Gemini transcription result"
+        mock_client.models.generate_content.return_value = mock_response
+        mock_genai_client_class.return_value = mock_client
+
+        # Execute
+        from services.transcription import transcribe_audio_gemini
+
+        with patch("builtins.open", mock_open(read_data=b"audio data")):
+            result = transcribe_audio_gemini("/path/to/audio.mp3")
+
+        # Verify
+        assert result == "Gemini transcription result"
+        mock_genai_client_class.assert_called_once_with(api_key="test-gemini-key")
+        mock_client.models.generate_content.assert_called_once()
+
+    @patch("services.transcription.expand_path_str")
+    @patch("services.transcription.get_config")
+    def test_transcribe_audio_gemini_no_api_key(
+        self, mock_config, mock_expand_path_str
+    ):
+        """Test Gemini transcription fails without API key."""
+        # Setup config without Gemini key
+        config = Mock()
+        config.gemini_api_key = None
+        mock_config.return_value = config
+
+        # Execute and verify
+        from services.transcription import transcribe_audio_gemini
+
+        with pytest.raises(ValueError, match="Gemini API key not configured"):
+            transcribe_audio_gemini("/path/to/audio.mp3")
+
+    @patch("services.transcription.expand_path_str")
+    @patch("services.transcription.get_config")
+    @patch("services.transcription.genai.Client")
+    @patch("services.transcription.time.sleep")
+    def test_transcribe_audio_gemini_retries_on_failure(
+        self, mock_sleep, mock_genai_client_class, mock_config, mock_expand_path_str
+    ):
+        """Test Gemini transcription retries on failure."""
+        # Setup config
+        config = Mock()
+        config.gemini_api_key = "test-key"
+        mock_config.return_value = config
+
+        mock_expand_path_str.return_value = "/expanded/path/audio.mp3"
+
+        # Setup Gemini client to fail twice then succeed
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.text = "Success on retry"
+
+        mock_client.models.generate_content.side_effect = [
+            Exception("API error 1"),
+            Exception("API error 2"),
+            mock_response,
+        ]
+        mock_genai_client_class.return_value = mock_client
+
+        # Execute
+        from services.transcription import transcribe_audio_gemini
+
+        with patch("builtins.open", mock_open(read_data=b"audio data")):
+            result = transcribe_audio_gemini("/path/to/audio.mp3", retries=3)
+
+        # Verify
+        assert result == "Success on retry"
+        assert mock_client.models.generate_content.call_count == 3
+        assert mock_sleep.call_count == 2  # Sleep after first two failures
+
+    @patch("services.transcription.expand_path_str")
+    @patch("services.transcription.get_config")
+    @patch("services.transcription.genai.Client")
+    def test_transcribe_audio_gemini_fails_after_retries(
+        self, mock_genai_client_class, mock_config, mock_expand_path_str
+    ):
+        """Test Gemini transcription fails after all retries."""
+        # Setup config
+        config = Mock()
+        config.gemini_api_key = "test-key"
+        mock_config.return_value = config
+
+        mock_expand_path_str.return_value = "/expanded/path/audio.mp3"
+
+        # Setup Gemini client to always fail
+        mock_client = Mock()
+        mock_client.models.generate_content.side_effect = Exception("Persistent error")
+        mock_genai_client_class.return_value = mock_client
+
+        # Execute and verify
+        from services.transcription import transcribe_audio_gemini
+
+        with patch("builtins.open", mock_open(read_data=b"audio data")):
+            with pytest.raises(
+                Exception, match="Gemini transcription failed after 3 attempts"
+            ):
+                transcribe_audio_gemini("/path/to/audio.mp3", retries=3)
+
+
+class TestTranscribeAudioRouter:
+    """Tests for transcribe_audio routing function."""
+
+    @patch("services.transcription.transcribe_audio_openai")
+    @patch("services.transcription.get_config")
+    def test_routes_to_openai_when_configured(self, mock_config, mock_openai_func):
+        """Test routing to OpenAI when provider is openai."""
+        config = Mock()
+        config.transcription_provider = "openai"
+        mock_config.return_value = config
+
+        mock_openai_func.return_value = "OpenAI result"
+
+        from services.transcription import transcribe_audio
+
+        result = transcribe_audio("/path/to/audio.mp3", retries=3)
+
+        assert result == "OpenAI result"
+        mock_openai_func.assert_called_once_with("/path/to/audio.mp3", 3)
+
+    @patch("services.transcription.transcribe_audio_gemini")
+    @patch("services.transcription.get_config")
+    def test_routes_to_gemini_when_configured(self, mock_config, mock_gemini_func):
+        """Test routing to Gemini when provider is gemini."""
+        config = Mock()
+        config.transcription_provider = "gemini"
+        mock_config.return_value = config
+
+        mock_gemini_func.return_value = "Gemini result"
+
+        from services.transcription import transcribe_audio
+
+        result = transcribe_audio("/path/to/audio.mp3", retries=3)
+
+        assert result == "Gemini result"
+        mock_gemini_func.assert_called_once_with("/path/to/audio.mp3", 3)
+
+    @patch("services.transcription.get_config")
+    def test_raises_error_for_invalid_provider(self, mock_config):
+        """Test error raised for invalid transcription provider."""
+        config = Mock()
+        config.transcription_provider = "invalid_provider"
+        mock_config.return_value = config
+
+        from services.transcription import transcribe_audio
+
+        with pytest.raises(
+            ValueError, match="Invalid transcription provider: invalid_provider"
+        ):
+            transcribe_audio("/path/to/audio.mp3")

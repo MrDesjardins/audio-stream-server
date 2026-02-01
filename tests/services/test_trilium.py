@@ -1,14 +1,17 @@
 """Tests for Trilium service."""
 
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch, mock_open
 import pytest
 import httpx
 from services.trilium import (
+    attach_audio_to_note,
     check_video_exists,
     create_trilium_note,
+    get_note_content,
     _build_url,
     _markdown_to_html,
     _escape_text,
+    _save_to_backup,
 )
 
 
@@ -140,6 +143,64 @@ Regular paragraph"""
         assert "<em>two</em>" in result
         assert "<p>Regular paragraph</p>" in result
 
+    def test_markdown_header_after_list_closes_list(self):
+        """Test that list is closed when header appears."""
+        markdown = """- Item 1
+- Item 2
+### Header"""
+        result = _markdown_to_html(markdown)
+
+        assert "</ul>" in result
+        assert result.index("</ul>") < result.index("<h3>")
+
+    def test_markdown_paragraph_after_list_closes_list(self):
+        """Test that list is closed when paragraph appears."""
+        markdown = """- Item 1
+- Item 2
+Regular paragraph"""
+        result = _markdown_to_html(markdown)
+
+        assert "</ul>" in result
+        assert result.index("</ul>") < result.index("<p>Regular paragraph</p>")
+
+    def test_markdown_empty_line_closes_list(self):
+        """Test that list is closed on empty line."""
+        markdown = """- Item 1
+- Item 2
+
+Next paragraph"""
+        result = _markdown_to_html(markdown)
+
+        # List should be closed before the <br>
+        assert "</ul>" in result
+
+    def test_markdown_h2_after_list(self):
+        """Test H2 header after list."""
+        markdown = """- Item 1
+## Header 2"""
+        result = _markdown_to_html(markdown)
+
+        assert "</ul>" in result
+        assert "<h2>Header 2</h2>" in result
+
+    def test_markdown_h1_after_list(self):
+        """Test H1 header after list."""
+        markdown = """- Item 1
+# Header 1"""
+        result = _markdown_to_html(markdown)
+
+        assert "</ul>" in result
+        assert "<h1>Header 1</h1>" in result
+
+    def test_markdown_list_at_end_closes(self):
+        """Test that list is properly closed at end of text."""
+        markdown = """- Item 1
+- Item 2"""
+        result = _markdown_to_html(markdown)
+
+        assert "<ul>" in result
+        assert "</ul>" in result
+
 
 class TestCheckVideoExists:
     """Tests for checking video existence in Trilium."""
@@ -254,6 +315,30 @@ class TestCheckVideoExists:
 
         mock_response = Mock()
         mock_response.json.return_value = [{"title": "Some Note"}]
+        mock_response.raise_for_status = Mock()
+
+        mock_client = Mock()
+        mock_client.get.return_value = mock_response
+        mock_client_factory.return_value = mock_client
+
+        result = check_video_exists("video123")
+
+        assert result is None
+
+    @patch("services.trilium.get_config")
+    @patch("services.trilium.get_httpx_client")
+    def test_check_video_exists_unexpected_response_format(
+        self, mock_client_factory, mock_config
+    ):
+        """Test handling unexpected response format (neither list nor dict with results)."""
+        config = Mock()
+        config.trilium_url = "http://localhost:8080"
+        config.trilium_etapi_token = "test_token"
+        mock_config.return_value = config
+
+        mock_response = Mock()
+        # Return something unexpected like a string
+        mock_response.json.return_value = "unexpected format"
         mock_response.raise_for_status = Mock()
 
         mock_client = Mock()
@@ -398,3 +483,225 @@ class TestCreateTriliumNote:
 
         with pytest.raises(Exception, match="Failed to get note ID"):
             create_trilium_note("video123", "transcript", "summary")
+
+
+class TestGetNoteContent:
+    """Tests for fetching note content."""
+
+    @patch("services.trilium.get_config")
+    @patch("services.trilium.get_httpx_client")
+    def test_get_note_content_success(self, mock_client_factory, mock_config):
+        """Test successful note content fetch."""
+        config = Mock()
+        config.trilium_url = "http://localhost:8080"
+        config.trilium_etapi_token = "test_token"
+        mock_config.return_value = config
+
+        mock_response = Mock()
+        mock_response.text = "<h3>Summary</h3><p>Note content here</p>"
+        mock_response.raise_for_status = Mock()
+
+        mock_client = Mock()
+        mock_client.get.return_value = mock_response
+        mock_client_factory.return_value = mock_client
+
+        result = get_note_content("note123")
+
+        assert result == "<h3>Summary</h3><p>Note content here</p>"
+        assert mock_client.get.called
+
+    @patch("services.trilium.get_config")
+    def test_get_note_content_not_configured(self, mock_config):
+        """Test when Trilium is not configured."""
+        config = Mock()
+        config.trilium_url = None
+        config.trilium_etapi_token = "test_token"
+        mock_config.return_value = config
+
+        result = get_note_content("note123")
+
+        assert result is None
+
+    @patch("services.trilium.get_config")
+    @patch("services.trilium.get_httpx_client")
+    def test_get_note_content_http_error(self, mock_client_factory, mock_config):
+        """Test handling HTTP error."""
+        config = Mock()
+        config.trilium_url = "http://localhost:8080"
+        config.trilium_etapi_token = "test_token"
+        mock_config.return_value = config
+
+        mock_client = Mock()
+        mock_client.get.side_effect = httpx.HTTPError("Connection failed")
+        mock_client_factory.return_value = mock_client
+
+        result = get_note_content("note123")
+
+        assert result is None
+
+
+class TestAttachAudioToNote:
+    """Tests for attaching audio files to Trilium notes."""
+
+    @patch("builtins.open", new_callable=mock_open, read_data=b"fake audio data")
+    @patch("services.trilium.get_config")
+    @patch("services.trilium.get_httpx_client")
+    @patch("httpx.Client")
+    def test_attach_audio_success(
+        self, mock_httpx_client_class, mock_client_factory, mock_config, mock_file
+    ):
+        """Test successful audio attachment."""
+        config = Mock()
+        config.trilium_url = "http://localhost:8080"
+        config.trilium_etapi_token = "test_token"
+        mock_config.return_value = config
+
+        # Mock note creation response
+        note_response = Mock()
+        note_response.json.return_value = {"note": {"noteId": "audio_note123"}}
+        note_response.raise_for_status = Mock()
+
+        # Mock content upload response
+        content_response = Mock()
+        content_response.status_code = 200
+        content_response.raise_for_status = Mock()
+
+        mock_client = Mock()
+        mock_client.post.return_value = note_response
+        mock_client_factory.return_value = mock_client
+
+        # Mock upload client
+        mock_upload_client = Mock()
+        mock_upload_client.put.return_value = content_response
+        mock_upload_client.__enter__ = Mock(return_value=mock_upload_client)
+        mock_upload_client.__exit__ = Mock(return_value=None)
+        mock_httpx_client_class.return_value = mock_upload_client
+
+        result = attach_audio_to_note(
+            note_id="parent123", audio_file_path="/tmp/audio.mp3", title="audio.mp3"
+        )
+
+        assert result["noteId"] == "audio_note123"
+        assert result["status"] == "success"
+        assert mock_client.post.called
+        assert mock_upload_client.put.called
+
+    @patch("services.trilium.get_config")
+    def test_attach_audio_not_configured(self, mock_config):
+        """Test when Trilium is not configured."""
+        config = Mock()
+        config.trilium_url = None
+        config.trilium_etapi_token = "test_token"
+        mock_config.return_value = config
+
+        with pytest.raises(ValueError, match="not properly configured"):
+            attach_audio_to_note("note123", "/tmp/audio.mp3", "audio.mp3")
+
+    @patch("builtins.open", new_callable=mock_open, read_data=b"fake audio data")
+    @patch("services.trilium.get_config")
+    @patch("services.trilium.get_httpx_client")
+    def test_attach_audio_note_creation_fails(
+        self, mock_client_factory, mock_config, mock_file
+    ):
+        """Test when note creation fails."""
+        config = Mock()
+        config.trilium_url = "http://localhost:8080"
+        config.trilium_etapi_token = "test_token"
+        mock_config.return_value = config
+
+        # Mock note creation response without noteId
+        note_response = Mock()
+        note_response.json.return_value = {"note": {}}
+        note_response.raise_for_status = Mock()
+
+        mock_client = Mock()
+        mock_client.post.return_value = note_response
+        mock_client_factory.return_value = mock_client
+
+        with pytest.raises(Exception, match="Failed to get note ID"):
+            attach_audio_to_note("note123", "/tmp/audio.mp3", "audio.mp3")
+
+    @patch("builtins.open", new_callable=mock_open, read_data=b"fake audio data")
+    @patch("services.trilium.get_config")
+    @patch("services.trilium.get_httpx_client")
+    @patch("httpx.Client")
+    def test_attach_audio_upload_fails(
+        self, mock_httpx_client_class, mock_client_factory, mock_config, mock_file
+    ):
+        """Test when audio upload fails."""
+        config = Mock()
+        config.trilium_url = "http://localhost:8080"
+        config.trilium_etapi_token = "test_token"
+        mock_config.return_value = config
+
+        # Mock note creation success
+        note_response = Mock()
+        note_response.json.return_value = {"note": {"noteId": "audio_note123"}}
+        note_response.raise_for_status = Mock()
+
+        mock_client = Mock()
+        mock_client.post.return_value = note_response
+        mock_client_factory.return_value = mock_client
+
+        # Mock upload client that fails
+        content_response = Mock()
+        content_response.status_code = 500
+        content_response.text = "Internal Server Error"
+        content_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "Upload failed", request=Mock(), response=content_response
+        )
+
+        mock_upload_client = Mock()
+        mock_upload_client.put.return_value = content_response
+        mock_upload_client.__enter__ = Mock(return_value=mock_upload_client)
+        mock_upload_client.__exit__ = Mock(return_value=None)
+        mock_httpx_client_class.return_value = mock_upload_client
+
+        with pytest.raises(Exception):
+            attach_audio_to_note("note123", "/tmp/audio.mp3", "audio.mp3")
+
+    @patch("builtins.open", side_effect=IOError("File read error"))
+    @patch("services.trilium.get_config")
+    @patch("services.trilium.get_httpx_client")
+    def test_attach_audio_file_read_fails_backup_also_fails(
+        self, mock_client_factory, mock_config, mock_file
+    ):
+        """Test when audio file read fails and backup save also fails."""
+        config = Mock()
+        config.trilium_url = "http://localhost:8080"
+        config.trilium_etapi_token = "test_token"
+        mock_config.return_value = config
+
+        # Mock note creation success
+        note_response = Mock()
+        note_response.json.return_value = {"note": {"noteId": "audio_note123"}}
+        note_response.raise_for_status = Mock()
+
+        mock_client = Mock()
+        mock_client.post.return_value = note_response
+        mock_client_factory.return_value = mock_client
+
+        # This should raise the file read exception
+        # The backup will also fail because open() is mocked to always fail
+        with pytest.raises(Exception):
+            attach_audio_to_note("note123", "/tmp/audio.mp3", "audio.mp3")
+
+
+class TestSaveToBackup:
+    """Tests for backup save function."""
+
+    @patch("builtins.open", new_callable=mock_open)
+    @patch("os.makedirs")
+    def test_save_to_backup_success(self, mock_makedirs, mock_file):
+        """Test successful backup save."""
+        _save_to_backup("video123", "transcript text", "summary text")
+
+        mock_makedirs.assert_called_once_with("/tmp/trilium-backup", exist_ok=True)
+        mock_file.assert_called_once_with("/tmp/trilium-backup/video123.json", "w")
+
+    @patch("builtins.open", side_effect=Exception("Write error"))
+    @patch("os.makedirs")
+    def test_save_to_backup_fails_gracefully(self, mock_makedirs, mock_file):
+        """Test that backup failure doesn't raise exception."""
+        # Should not raise exception, just log error
+        _save_to_backup("video123", "transcript", "summary")
