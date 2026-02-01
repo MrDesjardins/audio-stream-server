@@ -113,6 +113,39 @@ Audio Stream Server is a FastAPI application that streams audio from YouTube vid
       return results
   ```
 
+### Testing
+
+**CRITICAL: Always run tests before committing code.**
+
+- Run full test suite with coverage: `uv run pytest`
+- Run tests without coverage (faster): `uv run pytest --no-cov`
+- Run specific test file: `uv run pytest tests/services/test_database.py`
+- Use the test runner script: `./run_tests.sh all`
+
+**Test Coverage Requirements**:
+- Minimum coverage: 76%
+- All new code should have tests
+- Tests must pass before committing
+
+**When refactoring code that uses `expand_path()`**:
+- Tests that use fake paths (e.g., "/path/to/audio.mp3") must mock `expand_path` and `expand_path_str`
+- Add `@patch("module.expand_path")` and `@patch("module.expand_path_str")` decorators
+- Configure mocks to return appropriate Mock objects or strings
+- Example from `tests/services/test_transcription.py`:
+  ```python
+  @patch("services.transcription.expand_path")
+  @patch("services.transcription.expand_path_str")
+  def test_function(self, mock_expand_path_str, mock_expand_path_str, other_mocks):
+      # Configure the mocks
+      mock_expand_path_str.return_value = "/expanded/path/audio.mp3"
+      mock_expand_path.return_value = Mock(stat=Mock(return_value=Mock(st_size=1024)))
+      ...
+  ```
+
+**Pre-commit Hook**:
+
+A git pre-commit hook is configured to automatically run tests before each commit. If tests fail, the commit will be blocked. To bypass (not recommended): `git commit --no-verify`
+
 ## Development Commands
 
 ### Install Dependencies

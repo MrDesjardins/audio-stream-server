@@ -126,25 +126,6 @@ def mock_openai_client():
     return client
 
 
-@pytest.fixture(autouse=True, scope="session")
-def mock_path_utils():
-    """
-    Auto-mock path_utils to avoid expanding test paths.
-
-    Test paths like "/path/to/audio.mp3" don't exist, so we mock
-    expand_path and expand_path_str to just return Path objects
-    without actually expanding ~ or resolving symlinks.
-    """
-    from unittest.mock import patch
-
-    # Patch at module level before any imports
-    with (
-        patch("services.path_utils.expand_path", lambda p: Path(p)),
-        patch("services.path_utils.expand_path_str", lambda p: str(p)),
-    ):
-        yield
-
-
 @pytest.fixture
 def app_client():
     """FastAPI test client."""

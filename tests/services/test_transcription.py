@@ -11,43 +11,43 @@ from services.transcription import (
 class TestCompressAudioForWhisper:
     """Tests for compress_audio_for_whisper function."""
 
+    @patch("services.transcription.expand_path_str")
+    @patch("services.transcription.expand_path")
     @patch("services.transcription.subprocess.run")
     @patch("services.transcription.Path")
     @patch("services.transcription.os.path.getsize")
     @patch("services.transcription.os.close")
     @patch("services.transcription.tempfile.mkstemp")
     def test_compress_audio_success(
-        self, mock_mkstemp, mock_close, mock_getsize, mock_path, mock_run
+        self,
+        mock_mkstemp,
+        mock_close,
+        mock_getsize,
+        mock_path,
+        mock_run,
+        mock_expand_path,
+        mock_expand_path_str,
     ):
         """Test successful audio compression."""
         # Mock temp file creation
         mock_mkstemp.return_value = (123, "/tmp/whisper_compressed_test.mp3")
 
-        # Mock Path with .expanduser().resolve() chain
-        # First call: Path(temp_path) - no expanduser/resolve
+        # Mock expand_path_str to return expanded path for ffmpeg
+        mock_expand_path_str.return_value = "/expanded/path/audio.mp3"
+
+        # Mock Path(temp_path) for compressed file stat
         mock_temp_path_instance = Mock()
         compressed_stat = Mock()
         compressed_stat.st_size = 3 * 1024 * 1024
         mock_temp_path_instance.stat.return_value = compressed_stat
 
-        # Second call: Path(audio_path).expanduser().resolve() - for path expansion
-        mock_expanded_instance = Mock()
-        mock_expanded_instance.resolve.return_value = Mock(
-            __str__=lambda x: "/expanded/path/audio.mp3"
-        )
-
-        mock_audio_path_instance = Mock()
-        mock_audio_path_instance.expanduser.return_value = mock_expanded_instance
-
-        # Third call: Path(expanded_audio_path).stat() - for original file size
+        # Mock Path(expanded_audio_path) for original file stat
         original_stat = Mock()
         original_stat.st_size = 10 * 1024 * 1024
-
         mock_original_path_instance = Mock()
         mock_original_path_instance.stat.return_value = original_stat
 
         mock_path.side_effect = [
-            mock_audio_path_instance,
             mock_temp_path_instance,
             mock_original_path_instance,
         ]
@@ -96,6 +96,8 @@ class TestCompressAudioForWhisper:
         with pytest.raises(Exception, match="ffmpeg compression failed"):
             compress_audio_for_whisper("/path/to/audio.mp3")
 
+    @patch("services.transcription.expand_path_str")
+    @patch("services.transcription.expand_path")
     @patch("services.transcription.subprocess.run")
     @patch("services.transcription.Path")
     @patch("services.transcription.os.path.getsize")
@@ -112,39 +114,32 @@ class TestCompressAudioForWhisper:
         mock_getsize,
         mock_path,
         mock_run,
+        mock_expand_path,
+        mock_expand_path_str,
     ):
         """Test compression when result is still too large."""
         mock_mkstemp.return_value = (123, "/tmp/test.mp3")
 
-        # Mock Path calls in order:
-        # 1. Path(audio_path).expanduser().resolve() - for path expansion
-        mock_expanded_instance = Mock()
-        mock_expanded_instance.resolve.return_value = Mock(
-            __str__=lambda x: "/expanded/path/audio.mp3"
-        )
+        # Mock expand_path_str to return expanded path for ffmpeg
+        mock_expand_path_str.return_value = "/expanded/path/audio.mp3"
 
-        mock_audio_path_instance = Mock()
-        mock_audio_path_instance.expanduser.return_value = mock_expanded_instance
-
-        # 2. Path(temp_path).stat() - for compressed file size
+        # Mock Path(temp_path).stat() - for compressed file size
         mock_temp_path_instance = Mock()
         compressed_stat = Mock()
         compressed_stat.st_size = 30 * 1024 * 1024  # 30MB (over 25MB limit)
         mock_temp_path_instance.stat.return_value = compressed_stat
 
-        # 3. Path(expanded_audio_path).stat() - for original file size
+        # Mock Path(expanded_audio_path).stat() - for original file size
         original_stat = Mock()
         original_stat.st_size = 50 * 1024 * 1024  # 50MB original
-
         mock_original_path_instance = Mock()
         mock_original_path_instance.stat.return_value = original_stat
 
-        # 4. Path(temp_path) - for cleanup in except block
+        # Mock Path(temp_path) - for cleanup in except block
         mock_cleanup_path_instance = Mock()
         mock_cleanup_path_instance.exists.return_value = True
 
         mock_path.side_effect = [
-            mock_audio_path_instance,
             mock_temp_path_instance,
             mock_original_path_instance,
             mock_cleanup_path_instance,
@@ -196,6 +191,7 @@ class TestCompressAudioForWhisper:
 class TestTranscribeAudio:
     """Tests for transcribe_audio function."""
 
+    @patch("services.transcription.expand_path")
     @patch("services.transcription.compress_audio_for_whisper")
     @patch("services.transcription.Path")
     @patch("services.transcription.os.path.getsize")
@@ -210,6 +206,7 @@ class TestTranscribeAudio:
         mock_getsize,
         mock_path,
         mock_compress,
+        mock_expand_path,
     ):
         """Test successful transcription."""
         # Mock config
@@ -218,29 +215,17 @@ class TestTranscribeAudio:
         config.openai_api_key = "test-key"
         mock_config.return_value = config
 
-        # Mock Path - needs to handle two calls:
-        # 1. Path(audio_path).expanduser().resolve().stat() for file size check
-        # 2. Path(compressed_path) for cleanup (no expanduser/resolve)
+        # Mock expand_path to return a Path object with stat
+        mock_expanded_path = Mock()
         mock_stat_instance = Mock()
         mock_stat_instance.st_size = 5 * 1024 * 1024  # 5MB file
+        mock_expanded_path.stat.return_value = mock_stat_instance
+        mock_expand_path.return_value = mock_expanded_path
 
-        # Create the chain: instance.expanduser().resolve().stat() returns mock_stat_instance
-        mock_resolved_instance = Mock()
-        mock_resolved_instance.stat.return_value = mock_stat_instance
-
-        mock_expanded_instance = Mock()
-        mock_expanded_instance.resolve.return_value = mock_resolved_instance
-
-        mock_audio_path_instance = Mock()
-        mock_audio_path_instance.expanduser.return_value = mock_expanded_instance
-
+        # Mock Path(compressed_path) for cleanup
         mock_compressed_path_instance = Mock()
         mock_compressed_path_instance.exists.return_value = True
-
-        mock_path.side_effect = [
-            mock_audio_path_instance,
-            mock_compressed_path_instance,
-        ]
+        mock_path.return_value = mock_compressed_path_instance
 
         # Mock file operations
         mock_getsize.return_value = 5 * 1024 * 1024  # 5MB file
@@ -277,13 +262,20 @@ class TestTranscribeAudio:
         with pytest.raises(ValueError, match="OpenAI API key not configured"):
             transcribe_audio("/path/to/audio.mp3")
 
+    @patch("services.transcription.expand_path")
     @patch("services.transcription.get_openai_client")
     @patch("services.transcription.compress_audio_for_whisper")
     @patch("services.transcription.Path")
     @patch("services.transcription.os.path.getsize")
     @patch("services.transcription.get_config")
     def test_transcribe_audio_compression_fails(
-        self, mock_config, mock_getsize, mock_path, mock_compress, mock_get_client
+        self,
+        mock_config,
+        mock_getsize,
+        mock_path,
+        mock_compress,
+        mock_get_client,
+        mock_expand_path,
     ):
         """Test transcription when compression fails."""
         config = Mock()
@@ -291,20 +283,12 @@ class TestTranscribeAudio:
         config.openai_api_key = "test-key"
         mock_config.return_value = config
 
-        # Mock Path.expanduser().resolve().stat()
+        # Mock expand_path to return a Path object with stat
+        mock_expanded_path = Mock()
         mock_stat = Mock()
         mock_stat.st_size = 5 * 1024 * 1024
-
-        # Create the chain: instance.expanduser().resolve().stat() returns mock_stat
-        mock_resolved_instance = Mock()
-        mock_resolved_instance.stat.return_value = mock_stat
-
-        mock_expanded_instance = Mock()
-        mock_expanded_instance.resolve.return_value = mock_resolved_instance
-
-        mock_audio_path_instance = Mock()
-        mock_audio_path_instance.expanduser.return_value = mock_expanded_instance
-        mock_path.return_value = mock_audio_path_instance
+        mock_expanded_path.stat.return_value = mock_stat
+        mock_expand_path.return_value = mock_expanded_path
 
         # Mock OpenAI client (created before compression)
         mock_client = Mock()
@@ -316,6 +300,7 @@ class TestTranscribeAudio:
         with pytest.raises(Exception, match="Audio compression failed"):
             transcribe_audio("/path/to/audio.mp3")
 
+    @patch("services.transcription.expand_path")
     @patch("services.transcription.compress_audio_for_whisper")
     @patch("services.transcription.Path")
     @patch("services.transcription.os.path.getsize")
@@ -332,35 +317,25 @@ class TestTranscribeAudio:
         mock_getsize,
         mock_path,
         mock_compress,
+        mock_expand_path,
     ):
         """Test transcription retries on failure."""
         config = Mock()
         config.transcription_provider = "openai"
         config.openai_api_key = "test-key"
 
-        # Mock Path - needs to handle two calls:
-        # 1. Path(audio_path).expanduser().resolve().stat() for file size check
-        # 2. Path(compressed_path) for cleanup
+        # Mock expand_path to return a Path object with stat
+        mock_expanded_path = Mock()
         mock_stat = Mock()
         mock_stat.st_size = 5 * 1024 * 1024
+        mock_expanded_path.stat.return_value = mock_stat
+        mock_expand_path.return_value = mock_expanded_path
 
-        # Create the chain: instance.expanduser().resolve().stat() returns mock_stat
-        mock_resolved_instance = Mock()
-        mock_resolved_instance.stat.return_value = mock_stat
-
-        mock_expanded_instance = Mock()
-        mock_expanded_instance.resolve.return_value = mock_resolved_instance
-
-        mock_audio_path_instance = Mock()
-        mock_audio_path_instance.expanduser.return_value = mock_expanded_instance
-
+        # Mock Path(compressed_path) for cleanup
         mock_compressed_path_instance = Mock()
         mock_compressed_path_instance.exists.return_value = True
+        mock_path.return_value = mock_compressed_path_instance
 
-        mock_path.side_effect = [
-            mock_audio_path_instance,
-            mock_compressed_path_instance,
-        ]
         mock_config.return_value = config
 
         mock_getsize.return_value = 5 * 1024 * 1024
@@ -384,6 +359,7 @@ class TestTranscribeAudio:
             # Should have slept between retries
             assert mock_sleep.call_count == 2
 
+    @patch("services.transcription.expand_path")
     @patch("services.transcription.compress_audio_for_whisper")
     @patch("services.transcription.Path")
     @patch("services.transcription.os.path.getsize")
@@ -400,6 +376,7 @@ class TestTranscribeAudio:
         mock_getsize,
         mock_path,
         mock_compress,
+        mock_expand_path,
     ):
         """Test transcription fails after all retries."""
         config = Mock()
@@ -407,30 +384,17 @@ class TestTranscribeAudio:
         config.openai_api_key = "test-key"
         mock_config.return_value = config
 
-        # Mock Path - needs to handle two calls:
-        # 1. Path(audio_path).expanduser().resolve().stat() for file size check
-        # 2. Path(compressed_path) for cleanup
-
-        # Create proper chain: Path(x).expanduser().resolve().stat()
+        # Mock expand_path to return a Path object with stat
+        mock_expanded_path = Mock()
         mock_stat = Mock()
         mock_stat.st_size = 5 * 1024 * 1024
+        mock_expanded_path.stat.return_value = mock_stat
+        mock_expand_path.return_value = mock_expanded_path
 
-        mock_resolved_instance = Mock()
-        mock_resolved_instance.stat.return_value = mock_stat
-
-        mock_expanded_instance = Mock()
-        mock_expanded_instance.resolve.return_value = mock_resolved_instance
-
-        mock_audio_path_instance = Mock()
-        mock_audio_path_instance.expanduser.return_value = mock_expanded_instance
-
+        # Mock Path(compressed_path) for cleanup
         mock_compressed_path_instance = Mock()
         mock_compressed_path_instance.exists.return_value = True
-
-        mock_path.side_effect = [
-            mock_audio_path_instance,
-            mock_compressed_path_instance,
-        ]
+        mock_path.return_value = mock_compressed_path_instance
 
         mock_getsize.return_value = 5 * 1024 * 1024
         mock_compress.return_value = "/tmp/compressed.mp3"
@@ -447,6 +411,7 @@ class TestTranscribeAudio:
                 ):
                     transcribe_audio("/path/to/audio.mp3", retries=3)
 
+    @patch("services.transcription.expand_path")
     @patch("services.transcription.compress_audio_for_whisper")
     @patch("services.transcription.Path")
     @patch("services.transcription.os.path.getsize")
@@ -461,6 +426,7 @@ class TestTranscribeAudio:
         mock_getsize,
         mock_path,
         mock_compress,
+        mock_expand_path,
     ):
         """Test transcription handles string response from API."""
         # Mock config
@@ -469,25 +435,17 @@ class TestTranscribeAudio:
         config.openai_api_key = "test-key"
         mock_config.return_value = config
 
-        # Mock Path - needs to handle two calls:
-        # 1. Path(audio_path).expanduser().resolve().stat() for file size check
-        # 2. Path(compressed_path) for cleanup
-        mock_audio_path_instance = Mock()
+        # Mock expand_path to return a Path object with stat
+        mock_expanded_path = Mock()
         mock_stat = Mock()
         mock_stat.st_size = 5 * 1024 * 1024
-        mock_audio_path_instance.stat.return_value = mock_stat
-        # Make expanduser().resolve() return the same instance
-        mock_audio_path_instance.expanduser.return_value.resolve.return_value = (
-            mock_audio_path_instance
-        )
+        mock_expanded_path.stat.return_value = mock_stat
+        mock_expand_path.return_value = mock_expanded_path
 
+        # Mock Path(compressed_path) for cleanup
         mock_compressed_path_instance = Mock()
         mock_compressed_path_instance.exists.return_value = True
-
-        mock_path.side_effect = [
-            mock_audio_path_instance,
-            mock_compressed_path_instance,
-        ]
+        mock_path.return_value = mock_compressed_path_instance
 
         mock_getsize.return_value = 5 * 1024 * 1024
         mock_compress.return_value = "/tmp/compressed.mp3"
@@ -506,6 +464,7 @@ class TestTranscribeAudio:
 
             assert result == "Direct string response"
 
+    @patch("services.transcription.expand_path")
     @patch("services.transcription.compress_audio_for_whisper")
     @patch("services.transcription.Path")
     @patch("services.transcription.os.path.getsize")
@@ -520,6 +479,7 @@ class TestTranscribeAudio:
         mock_getsize,
         mock_path,
         mock_compress,
+        mock_expand_path,
     ):
         """Test that compressed file is always cleaned up."""
         config = Mock()
@@ -527,30 +487,17 @@ class TestTranscribeAudio:
         config.openai_api_key = "test-key"
         mock_config.return_value = config
 
-        # Mock Path - needs to handle two calls:
-        # 1. Path(audio_path).expanduser().resolve().stat() for file size check
-        # 2. Path(compressed_path) for cleanup
-
-        # Create proper chain: Path(x).expanduser().resolve().stat()
+        # Mock expand_path to return a Path object with stat
+        mock_expanded_path = Mock()
         mock_stat_instance = Mock()
         mock_stat_instance.st_size = 5 * 1024 * 1024
+        mock_expanded_path.stat.return_value = mock_stat_instance
+        mock_expand_path.return_value = mock_expanded_path
 
-        mock_resolved_instance = Mock()
-        mock_resolved_instance.stat.return_value = mock_stat_instance
-
-        mock_expanded_instance = Mock()
-        mock_expanded_instance.resolve.return_value = mock_resolved_instance
-
-        mock_audio_path_instance = Mock()
-        mock_audio_path_instance.expanduser.return_value = mock_expanded_instance
-
+        # Mock Path(compressed_path) for cleanup
         mock_compressed_path_instance = Mock()
         mock_compressed_path_instance.exists.return_value = True
-
-        mock_path.side_effect = [
-            mock_audio_path_instance,
-            mock_compressed_path_instance,
-        ]
+        mock_path.return_value = mock_compressed_path_instance
 
         mock_getsize.return_value = 5 * 1024 * 1024
         mock_compress.return_value = "/tmp/compressed.mp3"
