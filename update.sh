@@ -60,6 +60,7 @@ echo "----------------------------------------"
 # Run migrations (handles schema changes for existing databases)
 uv run python migrate_database.py
 uv run python migrate_add_metadata.py
+uv run python migrate_add_queue_columns.py
 
 # Then initialize/update schema (creates tables if they don't exist)
 uv run python -c "from services.database import init_database; init_database(); print('Database schema updated successfully')"

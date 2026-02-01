@@ -286,7 +286,9 @@ CREATE TABLE queue (
     channel TEXT,                  -- Channel/uploader name
     thumbnail_url TEXT,            -- Video thumbnail URL (best quality)
     position INTEGER NOT NULL,     -- Order in queue
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    type TEXT DEFAULT 'youtube',   -- Type of item (youtube or summary)
+    week_year TEXT                 -- Week identifier for summary items
 );
 ```
 
@@ -583,7 +585,7 @@ This script will:
 2. Pull latest changes from main branch
 3. Update Python dependencies via `uv sync`
 4. Check and install missing system dependencies
-5. Run database migrations (migrate_database.py)
+5. Run database migrations (migrate_database.py, migrate_add_metadata.py, migrate_add_queue_columns.py)
 6. Update database schema (`services.database.init_database`)
 7. Restart the systemd service if it was running
 
@@ -607,13 +609,20 @@ The project includes multiple migration scripts for schema updates:
 - Creates backup before migration
 - Required for MediaSession API integration (car displays, lock screens)
 
+**migrate_add_queue_columns.py** - Queue enhancement migration:
+- Adds `type` column to queue table (default: 'youtube')
+- Adds `week_year` column to queue table (for weekly summary items)
+- Creates backup before migration
+- Required for queuing weekly summaries alongside YouTube videos
+
 **Manual migration**:
 ```sh
 uv run python migrate_database.py
 uv run python migrate_add_metadata.py
+uv run python migrate_add_queue_columns.py
 ```
 
-Both migrations run automatically during `./update.sh`.
+All migrations run automatically during `./update.sh`.
 
 ### Trilium Notes Title Migration
 
