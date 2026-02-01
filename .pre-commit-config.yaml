@@ -4,7 +4,7 @@
 repos:
   # Ruff - Fast Python linter and formatter
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.6
+    rev: v0.14.14
     hooks:
       # Run the linter with auto-fix
       - id: ruff
@@ -17,9 +17,23 @@ repos:
         name: ruff-format
         description: Format code with Ruff
 
+  # mypy - Static type checker
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.19.1
+    hooks:
+      - id: mypy
+        name: mypy
+        description: Run mypy type checker
+        additional_dependencies:
+          - types-requests
+          - httpx
+          - fastapi
+          - google-generativeai
+        args: [--ignore-missing-imports, --no-strict-optional]
+
   # Basic file checks
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       # Prevent committing large files
       - id: check-added-large-files

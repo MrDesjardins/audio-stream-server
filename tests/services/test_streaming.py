@@ -194,9 +194,9 @@ class TestStartYoutubeDownload:
         cmd = mock_popen.call_args[0][0]
         output_idx = cmd.index("-o")
         output_path = cmd[output_idx + 1]
-        assert not output_path.endswith(
-            ".mp3"
-        ), "Output path must not include .mp3 extension"
+        assert not output_path.endswith(".mp3"), (
+            "Output path must not include .mp3 extension"
+        )
 
     @patch("services.streaming.subprocess.Popen")
     @patch("services.streaming.get_audio_cache")

@@ -110,7 +110,7 @@ def generate_theme_openai(summaries: List[Dict[str, str]]) -> Optional[str]:
         client = OpenAI(api_key=config.openai_api_key)
 
         summaries_text = "\n\n".join(
-            f"Video {i+1}:\n{s['summary']}" for i, s in enumerate(summaries)
+            f"Video {i + 1}:\n{s['summary']}" for i, s in enumerate(summaries)
         )
 
         prompt = f"""Analyze these video summaries from recently watched content:
@@ -164,7 +164,7 @@ def generate_theme_gemini(summaries: List[Dict[str, str]]) -> Optional[str]:
         client = genai.Client(api_key=config.gemini_api_key)
 
         summaries_text = "\n\n".join(
-            f"Video {i+1}:\n{s['summary']}" for i, s in enumerate(summaries)
+            f"Video {i + 1}:\n{s['summary']}" for i, s in enumerate(summaries)
         )
 
         prompt = f"""Analyze these video summaries from recently watched content:

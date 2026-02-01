@@ -86,9 +86,9 @@ class TestListSummaries:
             (s for s in data if s["week_year"] == sample_summary["week_year"]), None
         )
 
-        assert (
-            created_summary is not None
-        ), f"Could not find summary {sample_summary['week_year']} in {[s['week_year'] for s in data]}"
+        assert created_summary is not None, (
+            f"Could not find summary {sample_summary['week_year']} in {[s['week_year'] for s in data]}"
+        )
         assert created_summary["title"] == "Summary of week 2026-W50"
         assert created_summary["year"] == 2026
         assert created_summary["week"] == 50

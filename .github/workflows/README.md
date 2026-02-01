@@ -15,7 +15,7 @@ This directory contains CI/CD workflows for the Audio Stream Server project.
   - Uploads coverage reports as artifacts
   - Checks coverage threshold (warns if < 80%)
   - Generates test summary in GitHub UI
-  - Optional: Code quality checks (ruff, black)
+  - Optional: Code quality checks (ruff linting and formatting)
 
 **No secrets required!** Uses built-in GitHub features.
 

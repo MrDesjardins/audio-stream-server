@@ -61,3 +61,10 @@ warn_unused_configs = true
 [[tool.mypy.overrides]]
 module = "tests.*"
 ignore_errors = true
+
+[dependency-groups]
+dev = [
+    "black>=26.1.0",
+    "mypy>=1.19.1",
+    "types-requests>=2.32.4.20260107",
+]

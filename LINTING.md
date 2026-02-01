@@ -1,6 +1,6 @@
 # Linting & Type Checking Guide
 
-This project uses **Black** for code formatting and **MyPy** for static type checking.
+This project uses **Ruff** for code formatting and linting, and **MyPy** for static type checking.
 
 ## Quick Start
 
@@ -17,23 +17,38 @@ uv sync --extra dev
 
 ## Tools
 
-### Black - Code Formatter
+### Ruff - Fast Linter & Formatter
 
-**Configuration:** `[tool.black]` in `pyproject.toml`
+Ruff is an extremely fast Python linter and formatter written in Rust. It's a drop-in replacement for Black, Flake8, isort, and more.
+
+**Configuration:** `[tool.ruff]` in `pyproject.toml`
 - Line length: 100 characters
 - Target: Python 3.12
+- Combines linting + formatting in one tool
 
 **Manual usage:**
 ```bash
+# Check linting (don't modify files)
+uv run ruff check .
+
+# Auto-fix linting issues
+uv run ruff check --fix .
+
 # Check formatting (don't modify files)
-uv run black --check --diff .
+uv run ruff format --check --diff .
 
 # Auto-format all files
-uv run black .
+uv run ruff format .
 
 # Format specific file
-uv run black services/database.py
+uv run ruff format services/database.py
 ```
+
+**Why Ruff?**
+- ⚡ **10-100x faster** than Black
+- 🔧 **All-in-one**: Replaces Black, Flake8, isort, pyupgrade, and more
+- 🎯 **Compatible**: Same formatting as Black
+- 🚀 **Auto-fix**: Automatically fixes many linting issues
 
 ### MyPy - Static Type Checker
 
@@ -54,22 +69,11 @@ uv run mypy services/database.py
 uv run mypy services/
 ```
 
-### Ruff - Linter
-
-
-**Manual usage:**
-
-```bash
-# Check
-uv run ruff check
-
-# Fix
-uv run ruff check --fix
-```
 ## CI Integration
 
 The lint checks are automatically run in CI. All pull requests must pass:
-- ✅ Black formatting check
+- ✅ Ruff linting check
+- ✅ Ruff formatting check
 - ✅ MyPy type checking
 
 ## Lint Script
@@ -84,9 +88,10 @@ The `lint.sh` script provides two modes:
 ```
 
 Runs in CI-compatible mode:
-- Checks if files are formatted (doesn't modify)
-- Runs MyPy type checker
-- Exits with error code if any issues found
+1. Checks for linting issues (doesn't modify)
+2. Checks if files are formatted (doesn't modify)
+3. Runs MyPy type checker
+4. Exits with error code if any issues found
 
 ### Fix Mode
 ```bash
@@ -94,9 +99,10 @@ Runs in CI-compatible mode:
 ```
 
 Automatically fixes what it can:
-- Reformats all Python files with Black
-- Runs MyPy to show remaining type issues
-- Use this during development
+1. Auto-fixes linting issues with Ruff
+2. Reformats all Python files with Ruff
+3. Runs MyPy to show remaining type issues
+4. Use this during development
 
 ## Development Workflow
 
@@ -107,6 +113,24 @@ Automatically fixes what it can:
    ```
 3. **Fix any remaining MyPy errors** manually
 4. **Commit** your changes
+
+## Pre-commit Hooks
+
+The project uses pre-commit to automatically run linting before commits:
+
+```bash
+# Install pre-commit hooks (one-time setup)
+uv run pre-commit install
+
+# Run manually
+uv run pre-commit run --all-files
+```
+
+**What runs on commit:**
+1. `ruff check --fix` - Auto-fix linting issues
+2. `ruff format` - Format code
+3. `mypy` - Type checking
+4. File checks (large files, merge conflicts, etc.)
 
 ## Common MyPy Fixes
 
@@ -149,11 +173,19 @@ def process(value: Optional[str]) -> int:
 
 ## Configuration Details
 
-### Black Configuration
+### Ruff Configuration
 ```toml
-[tool.black]
+[tool.ruff]
 line-length = 100
-target-version = ['py312']
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]  # Enable specific rules
+ignore = []  # Ignore specific rules
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
 ```
 
 ### MyPy Configuration
@@ -168,8 +200,16 @@ warn_unused_ignores = true
 
 ## Ignoring Specific Errors
 
-If you need to ignore a specific MyPy error:
+### Ruff
+```python
+# Ignore specific rule on one line
+value = some_function()  # noqa: E501
 
+# Ignore all rules on one line (use sparingly)
+value = some_function()  # noqa
+```
+
+### MyPy
 ```python
 # Ignore specific error on one line
 value = some_function()  # type: ignore[attr-defined]
@@ -178,23 +218,9 @@ value = some_function()  # type: ignore[attr-defined]
 value = some_function()  # type: ignore
 ```
 
-## Pre-commit Hook (Optional)
-
-To automatically run linting before every commit:
-
-```bash
-# Create pre-commit hook
-cat > .git/hooks/pre-commit << 'EOF'
-#!/bin/bash
-./lint.sh check
-EOF
-
-chmod +x .git/hooks/pre-commit
-```
-
 ## Troubleshooting
 
-### Black says files need formatting
+### Ruff says files need formatting
 ```bash
 # Auto-format all files
 ./lint.sh fix
@@ -212,15 +238,17 @@ ignore_missing_imports = true
 ```
 
 ### Conflicts with IDE formatter
-Configure your IDE to use Black:
-- **VSCode:** Install "Black Formatter" extension
-- **PyCharm:** Settings → Tools → Black → Enable
-- **Vim/Neovim:** Use `black` formatter plugin
+Configure your IDE to use Ruff:
+- **VSCode:** Install "Ruff" extension (charliermarsh.ruff)
+- **PyCharm:** Settings → Tools → External Tools → Add Ruff
+- **Vim/Neovim:** Use `ruff` formatter plugin
 
 ## Benefits
 
+- **⚡ Fast linting and formatting** (10-100x faster than Black)
 - **Consistent code style** across the project
-- **Catch bugs** before runtime with type checking
+- **Catch bugs** before runtime with type checking and linting
 - **Better IDE support** with type hints
 - **Easier code reviews** (no style discussions)
 - **Self-documenting** code with types
+- **Auto-fix** many common issues
