@@ -36,8 +36,11 @@ def compress_audio_for_whisper(audio_path: str) -> str:
     Raises:
         Exception: If compression fails
     """
+    # Expand ~ in path for ffmpeg (ffmpeg doesn't handle ~ paths)
+    expanded_audio_path = str(Path(audio_path).expanduser().resolve())
+
     logger.info(
-        f"Compressing audio file {audio_path} for Whisper (1.5x speed, saves API costs)"
+        f"Compressing audio file {expanded_audio_path} for Whisper (1.5x speed, saves API costs)"
     )
 
     # Create temporary file for compressed audio
@@ -51,7 +54,7 @@ def compress_audio_for_whisper(audio_path: str) -> str:
         compress_cmd = [
             "ffmpeg",
             "-i",
-            audio_path,
+            expanded_audio_path,
             "-filter:a",
             "atempo=1.5",  # Speed up by 1.5x (33% file size reduction)
             "-map",
@@ -80,7 +83,7 @@ def compress_audio_for_whisper(audio_path: str) -> str:
 
         temp_path_path = Path(temp_path)
         compressed_size = temp_path_path.stat().st_size
-        original_size = Path(audio_path).expanduser().resolve().stat().st_size
+        original_size = Path(expanded_audio_path).stat().st_size
 
         logger.info(
             f"Compressed audio from {original_size / 1024 / 1024:.2f}MB "
@@ -218,19 +221,22 @@ def transcribe_audio_gemini(audio_path: str, retries: int = 3) -> str:
     if not config.gemini_api_key:
         raise ValueError("Gemini API key not configured")
 
+    # Expand ~ in path (Python's open() doesn't handle ~ paths)
+    expanded_audio_path = str(Path(audio_path).expanduser().resolve())
+
     last_error = None
 
     for attempt in range(retries):
         try:
             logger.info(
-                f"Transcribing audio file with Gemini: {audio_path} (attempt {attempt + 1}/{retries})"
+                f"Transcribing audio file with Gemini: {expanded_audio_path} (attempt {attempt + 1}/{retries})"
             )
 
             # Create Gemini client
             client = genai.Client(api_key=config.gemini_api_key)
 
             # Upload the audio file
-            with open(audio_path, "rb") as audio_file:
+            with open(expanded_audio_path, "rb") as audio_file:
                 audio_data = audio_file.read()
 
             # Use Gemini to transcribe

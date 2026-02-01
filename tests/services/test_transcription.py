@@ -30,21 +30,27 @@ class TestCompressAudioForWhisper:
         compressed_stat.st_size = 3 * 1024 * 1024
         mock_temp_path_instance.stat.return_value = compressed_stat
 
-        # Second call: Path(audio_path).expanduser().resolve()
-        original_stat = Mock()
-        original_stat.st_size = 10 * 1024 * 1024
-
-        # Create the chain: instance.expanduser().resolve().stat() returns original_stat
-        mock_resolved_instance = Mock()
-        mock_resolved_instance.stat.return_value = original_stat
-
+        # Second call: Path(audio_path).expanduser().resolve() - for path expansion
         mock_expanded_instance = Mock()
-        mock_expanded_instance.resolve.return_value = mock_resolved_instance
+        mock_expanded_instance.resolve.return_value = Mock(
+            __str__=lambda x: "/expanded/path/audio.mp3"
+        )
 
         mock_audio_path_instance = Mock()
         mock_audio_path_instance.expanduser.return_value = mock_expanded_instance
 
-        mock_path.side_effect = [mock_temp_path_instance, mock_audio_path_instance]
+        # Third call: Path(expanded_audio_path).stat() - for original file size
+        original_stat = Mock()
+        original_stat.st_size = 10 * 1024 * 1024
+
+        mock_original_path_instance = Mock()
+        mock_original_path_instance.stat.return_value = original_stat
+
+        mock_path.side_effect = [
+            mock_audio_path_instance,
+            mock_temp_path_instance,
+            mock_original_path_instance,
+        ]
 
         # Mock file sizes
         mock_getsize.side_effect = [10 * 1024 * 1024, 3 * 1024 * 1024]  # 10MB -> 3MB
@@ -110,34 +116,37 @@ class TestCompressAudioForWhisper:
         """Test compression when result is still too large."""
         mock_mkstemp.return_value = (123, "/tmp/test.mp3")
 
-        # Mock Path with .expanduser().resolve() chain
-        # First call: Path(temp_path) - no expanduser/resolve
+        # Mock Path calls in order:
+        # 1. Path(audio_path).expanduser().resolve() - for path expansion
+        mock_expanded_instance = Mock()
+        mock_expanded_instance.resolve.return_value = Mock(
+            __str__=lambda x: "/expanded/path/audio.mp3"
+        )
+
+        mock_audio_path_instance = Mock()
+        mock_audio_path_instance.expanduser.return_value = mock_expanded_instance
+
+        # 2. Path(temp_path).stat() - for compressed file size
         mock_temp_path_instance = Mock()
         compressed_stat = Mock()
         compressed_stat.st_size = 30 * 1024 * 1024  # 30MB (over 25MB limit)
         mock_temp_path_instance.stat.return_value = compressed_stat
 
-        # Second call: Path(audio_path).expanduser().resolve()
+        # 3. Path(expanded_audio_path).stat() - for original file size
         original_stat = Mock()
         original_stat.st_size = 50 * 1024 * 1024  # 50MB original
 
-        # Create the chain: instance.expanduser().resolve().stat() returns original_stat
-        mock_resolved_instance = Mock()
-        mock_resolved_instance.stat.return_value = original_stat
+        mock_original_path_instance = Mock()
+        mock_original_path_instance.stat.return_value = original_stat
 
-        mock_expanded_instance = Mock()
-        mock_expanded_instance.resolve.return_value = mock_resolved_instance
-
-        mock_audio_path_instance = Mock()
-        mock_audio_path_instance.expanduser.return_value = mock_expanded_instance
-
-        # Need a third instance for cleanup in except block
+        # 4. Path(temp_path) - for cleanup in except block
         mock_cleanup_path_instance = Mock()
         mock_cleanup_path_instance.exists.return_value = True
 
         mock_path.side_effect = [
-            mock_temp_path_instance,
             mock_audio_path_instance,
+            mock_temp_path_instance,
+            mock_original_path_instance,
             mock_cleanup_path_instance,
         ]
         mock_exists.return_value = True
