@@ -5,10 +5,11 @@ Handles audio generation from text and file management.
 """
 
 import re
-from pathlib import Path
 from typing import Optional
 from elevenlabs.client import ElevenLabs
 from bs4 import BeautifulSoup
+
+from services.path_utils import expand_path
 
 
 class TTSError(Exception):
@@ -178,7 +179,7 @@ def save_audio_file(audio_data: bytes, file_path: str) -> int:
     Raises:
         IOError: If file cannot be written
     """
-    path = Path(file_path).expanduser().resolve()
+    path = expand_path(file_path)
 
     # Create parent directory if needed
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -205,7 +206,7 @@ def get_audio_duration(file_path: str) -> Optional[int]:
     Returns:
         Duration in seconds, or None if file doesn't exist
     """
-    path = Path(file_path).expanduser().resolve()
+    path = expand_path(file_path)
     if not path.exists():
         return None
 

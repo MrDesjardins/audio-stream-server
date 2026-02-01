@@ -8,8 +8,8 @@ import logging
 import os
 import subprocess
 
-from pathlib import Path
 from services.cache import get_audio_cache
+from services.path_utils import expand_path
 from config import get_config
 
 logger = logging.getLogger(__name__)
@@ -23,7 +23,7 @@ def _get_download_marker(youtube_video_id: str) -> str:
 
 def is_download_in_progress(youtube_video_id: str) -> bool:
     """Check if a download is currently in progress for this video."""
-    return Path(_get_download_marker(youtube_video_id)).expanduser().resolve().exists()
+    return expand_path(_get_download_marker(youtube_video_id)).exists()
 
 
 def start_youtube_download(youtube_video_id: str):
@@ -41,7 +41,7 @@ def start_youtube_download(youtube_video_id: str):
         proc or None if already cached
     """
     audio_cache = get_audio_cache()
-    audio_path = Path(config.get_audio_path(youtube_video_id)).expanduser().resolve()
+    audio_path = expand_path(config.get_audio_path(youtube_video_id))
 
     if audio_cache.check_file_exists(youtube_video_id):
         logger.info(f"Audio file for video {youtube_video_id} already exists in cache")
@@ -51,7 +51,7 @@ def start_youtube_download(youtube_video_id: str):
     url = f"https://www.youtube.com/watch?v={youtube_video_id}"
 
     # Create marker file so the /audio endpoint won't serve a partial file
-    marker_path = Path(_get_download_marker(youtube_video_id)).expanduser().resolve()
+    marker_path = expand_path(_get_download_marker(youtube_video_id))
     try:
         marker_path.touch(exist_ok=True)
     except Exception as e:
@@ -115,11 +115,9 @@ def finish_youtube_download(youtube_video_id: str, returncode: int):
         youtube_video_id: YouTube video ID
         returncode: Process exit code (0 = success)
     """
-    audio_path = Path(config.get_audio_path(youtube_video_id)).expanduser().resolve()
-    marker_path = Path(_get_download_marker(youtube_video_id)).expanduser().resolve()
-    stderr_path = (
-        Path(config.get_audio_path(youtube_video_id) + ".err").expanduser().resolve()
-    )
+    audio_path = expand_path(config.get_audio_path(youtube_video_id))
+    marker_path = expand_path(_get_download_marker(youtube_video_id))
+    stderr_path = expand_path(config.get_audio_path(youtube_video_id) + ".err")
 
     # Read stderr for error reporting
     error_output = ""

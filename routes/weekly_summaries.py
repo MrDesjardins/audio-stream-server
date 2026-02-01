@@ -1,7 +1,6 @@
 """API routes for weekly summaries."""
 
 import logging
-from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from typing import List, Dict
@@ -11,6 +10,7 @@ from services.database import (
     get_summary_by_week_year,
     add_summary_to_queue,
 )
+from services.path_utils import expand_path
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ async def stream_summary_audio(week_year: str):
             )
 
         # Check if file exists
-        if not Path(audio_path).expanduser().resolve().exists():
+        if not expand_path(audio_path).exists():
             logger.error(f"Audio file not found: {audio_path}")
             raise HTTPException(
                 status_code=404, detail=f"Audio file not found: {audio_path}"

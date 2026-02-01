@@ -45,23 +45,33 @@ Audio Stream Server is a FastAPI application that streams audio from YouTube vid
 
 ### Path Handling
 
-**CRITICAL: Always use .expanduser().resolve() when creating Path objects from user-provided or config paths.**
+**CRITICAL: Always use path_utils helpers for handling file paths.**
 
-- ALWAYS call `.expanduser().resolve()` on Path objects to handle `~` (home directory) expansion and resolve symbolic links
-- This is required for paths that come from:
+- Use `expand_path()` and `expand_path_str()` from `services.path_utils` for all user/config paths
+- `expand_path(path)` - Returns Path object with ~ expansion and symbolic link resolution
+- `expand_path_str(path)` - Returns string (for external commands like ffmpeg, yt-dlp)
+- This is required for paths from:
   - Configuration files (environment variables, .env)
   - User input
   - Function parameters that represent file paths
-- Temporary file paths (from `tempfile.mkstemp()`, etc.) do NOT need `.expanduser().resolve()`
+- Temporary file paths (from `tempfile.mkstemp()`, etc.) do NOT need expansion
 - Example:
   ```python
+  from services.path_utils import expand_path, expand_path_str
+
   # CORRECT - user/config paths
-  audio_path = Path(config.temp_audio_dir).expanduser().resolve()
-  file_size = Path(audio_path_param).expanduser().resolve().stat().st_size
+  audio_path = expand_path(config.temp_audio_dir)
+  file_size = expand_path(audio_path_param).stat().st_size
+
+  # CORRECT - external commands
+  subprocess.run(["ffmpeg", "-i", expand_path_str(audio_path), ...])
 
   # CORRECT - temporary file paths (no expansion needed)
   temp_fd, temp_path = tempfile.mkstemp()
-  temp_file = Path(temp_path)  # No .expanduser().resolve() needed
+  temp_file = Path(temp_path)  # No expansion needed
+
+  # WRONG - manual expansion (use helper instead)
+  audio_path = Path(config.temp_audio_dir).expanduser().resolve()  # ❌ Use expand_path()
 
   # WRONG - missing expansion for user path
   audio_path = Path(config.temp_audio_dir)  # ❌ May fail if path contains ~

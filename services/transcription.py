@@ -10,6 +10,7 @@ from google import genai
 
 from config import get_config
 from services.api_clients import get_openai_client
+from services.path_utils import expand_path, expand_path_str
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +38,7 @@ def compress_audio_for_whisper(audio_path: str) -> str:
         Exception: If compression fails
     """
     # Expand ~ in path for ffmpeg (ffmpeg doesn't handle ~ paths)
-    expanded_audio_path = str(Path(audio_path).expanduser().resolve())
+    expanded_audio_path = expand_path_str(audio_path)
 
     logger.info(
         f"Compressing audio file {expanded_audio_path} for Whisper (1.5x speed, saves API costs)"
@@ -135,7 +136,7 @@ def transcribe_audio_openai(audio_path: str, retries: int = 3) -> str:
     client = get_openai_client()
 
     # Always compress audio to save costs and reduce upload time
-    file_size = Path(audio_path).expanduser().resolve().stat().st_size
+    file_size = expand_path(audio_path).stat().st_size
     logger.info(
         f"Audio file size: {file_size / 1024 / 1024:.2f}MB - "
         f"compressing for Whisper (saves 33% API costs)"
@@ -222,7 +223,7 @@ def transcribe_audio_gemini(audio_path: str, retries: int = 3) -> str:
         raise ValueError("Gemini API key not configured")
 
     # Expand ~ in path (Python's open() doesn't handle ~ paths)
-    expanded_audio_path = str(Path(audio_path).expanduser().resolve())
+    expanded_audio_path = expand_path_str(audio_path)
 
     last_error = None
 

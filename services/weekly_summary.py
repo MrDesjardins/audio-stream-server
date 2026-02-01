@@ -8,7 +8,6 @@ including overview, key learnings, and common themes.
 import logging
 import re
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import List, Dict, Optional
 
 from google import genai
@@ -16,6 +15,7 @@ from google import genai
 from config import get_config
 from services.api_clients import get_openai_client, get_httpx_client
 from services.database import get_history, get_summary_by_week_year, save_weekly_summary
+from services.path_utils import expand_path
 from services.trilium import (
     check_video_exists,
     get_note_content,
@@ -601,7 +601,7 @@ def _generate_and_attach_tts(
         audio_path = config.get_weekly_summary_audio_path(week_year)
 
         # Check if audio file already exists
-        if Path(audio_path).expanduser().resolve().exists():
+        if expand_path(audio_path).exists():
             logger.info(f"Audio file already exists: {audio_path}")
             duration = get_audio_duration(audio_path)
             if duration is None:

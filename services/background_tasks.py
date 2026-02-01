@@ -1,7 +1,6 @@
 """Background task processing for audio transcription."""
 
 import logging
-from pathlib import Path
 import threading
 import time
 import random
@@ -12,6 +11,7 @@ from queue import Queue, Empty
 from typing import Optional, Dict
 
 from services.cache import get_transcript_cache, get_audio_cache
+from services.path_utils import expand_path
 
 logger = logging.getLogger(__name__)
 
@@ -413,7 +413,7 @@ class TranscriptionWorker:
         start_time = time.time()
 
         while time.time() - start_time < timeout:
-            path = Path(audio_path).expanduser().resolve()
+            path = expand_path(audio_path)
             file_exists = path.exists()
             still_downloading = is_download_in_progress(video_id)
 

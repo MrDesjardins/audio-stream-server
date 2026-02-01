@@ -9,11 +9,17 @@ import sqlite3
 import sys
 from pathlib import Path
 
+# Add parent directory to path for imports
+
+sys.path.insert(0, str(Path(__file__).parent))
+
+from services.path_utils import expand_path
+
 
 def migrate_queue_table() -> None:
     """Add type and week_year columns to queue table if they don't exist."""
     db_path_str = os.getenv("DATABASE_PATH", "./audio_history.db")
-    db_path = Path(db_path_str).expanduser().resolve()
+    db_path = expand_path(db_path_str)
 
     print(f"Migrating database: {db_path}")
 

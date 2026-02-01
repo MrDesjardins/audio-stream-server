@@ -3,7 +3,6 @@ Streaming and playback routes.
 """
 
 import logging
-from pathlib import Path
 import threading
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
@@ -11,6 +10,7 @@ from pydantic import BaseModel
 from config import get_config
 from services.background_tasks import get_transcription_queue, TranscriptionJob
 from services.database import add_to_history, get_history, clear_history
+from services.path_utils import expand_path
 from services.youtube import get_video_metadata, extract_video_id
 
 logger = logging.getLogger(__name__)
@@ -162,14 +162,14 @@ def _audio_is_ready(video_id: str) -> bool:
     """Check if the audio file exists and is not still being downloaded."""
     from services.streaming import is_download_in_progress
 
-    audio_path = Path(config.get_audio_path(video_id)).expanduser().resolve()
+    audio_path = expand_path(config.get_audio_path(video_id))
     return audio_path.exists() and not is_download_in_progress(video_id)
 
 
 @router.get("/audio/{video_id}")
 def get_audio_file(video_id: str):
     """Serve the actual MP3 file for the player with mobile-optimized headers."""
-    audio_path = Path(config.get_audio_path(video_id)).expanduser().resolve()
+    audio_path = expand_path(config.get_audio_path(video_id))
 
     if _audio_is_ready(video_id):
         file_size = audio_path.stat().st_size
@@ -198,7 +198,7 @@ def get_audio_file(video_id: str):
 @router.head("/audio/{video_id}")
 def check_audio_file(video_id: str):
     """Check if audio file exists and is ready (for polling). HEAD request."""
-    audio_path = Path(config.get_audio_path(video_id)).expanduser().resolve()
+    audio_path = expand_path(config.get_audio_path(video_id))
 
     if _audio_is_ready(video_id):
         file_size = audio_path.stat().st_size
