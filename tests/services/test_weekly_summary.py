@@ -13,6 +13,7 @@ from services.weekly_summary import (
     create_weekly_summary_note,
     generate_and_save_weekly_summary,
 )
+from services.models import PlayHistoryItem, WeeklySummary
 
 
 class TestGetWeekNumber:
@@ -49,17 +50,36 @@ class TestGetBooksFromLastWeek:
         old = (now - timedelta(days=10)).isoformat()
 
         mock_get_history.return_value = [
-            {
-                "youtube_id": "recent1",
-                "title": "Recent Book 1",
-                "last_played_at": recent,
-            },
-            {"youtube_id": "old1", "title": "Old Book", "last_played_at": old},
-            {
-                "youtube_id": "recent2",
-                "title": "Recent Book 2",
-                "last_played_at": recent,
-            },
+            PlayHistoryItem(
+                id=1,
+                youtube_id="recent1",
+                title="Recent Book 1",
+                channel=None,
+                thumbnail_url=None,
+                play_count=1,
+                created_at="2024-01-01T00:00:00",
+                last_played_at=recent,
+            ),
+            PlayHistoryItem(
+                id=2,
+                youtube_id="old1",
+                title="Old Book",
+                channel=None,
+                thumbnail_url=None,
+                play_count=1,
+                created_at="2024-01-01T00:00:00",
+                last_played_at=old,
+            ),
+            PlayHistoryItem(
+                id=3,
+                youtube_id="recent2",
+                title="Recent Book 2",
+                channel=None,
+                thumbnail_url=None,
+                play_count=1,
+                created_at="2024-01-01T00:00:00",
+                last_played_at=recent,
+            ),
         ]
 
         books = get_books_from_last_week()
@@ -84,7 +104,16 @@ class TestGetBooksFromLastWeek:
         recent = (now - timedelta(days=2)).isoformat()
 
         mock_get_history.return_value = [
-            {"youtube_id": "vid1", "title": "Book 1", "last_played_at": recent},
+            PlayHistoryItem(
+                id=1,
+                youtube_id="vid1",
+                title="Book 1",
+                channel=None,
+                thumbnail_url=None,
+                play_count=1,
+                created_at="2024-01-01T00:00:00",
+                last_played_at=recent,
+            ),
         ]
 
         books = get_books_from_last_week()
@@ -98,12 +127,26 @@ class TestGetBooksFromLastWeek:
         valid = (now - timedelta(days=2)).isoformat()
 
         mock_get_history.return_value = [
-            {"youtube_id": "valid", "title": "Valid", "last_played_at": valid},
-            {
-                "youtube_id": "invalid",
-                "title": "Invalid",
-                "last_played_at": "not-a-date",
-            },
+            PlayHistoryItem(
+                id=1,
+                youtube_id="valid",
+                title="Valid",
+                channel=None,
+                thumbnail_url=None,
+                play_count=1,
+                created_at="2024-01-01T00:00:00",
+                last_played_at=valid,
+            ),
+            PlayHistoryItem(
+                id=2,
+                youtube_id="invalid",
+                title="Invalid",
+                channel=None,
+                thumbnail_url=None,
+                play_count=1,
+                created_at="2024-01-01T00:00:00",
+                last_played_at="not-a-date",
+            ),
         ]
 
         books = get_books_from_last_week()
@@ -504,11 +547,17 @@ class TestGenerateAndSaveWeeklySummary:
         mock_config.tts_enabled = False
 
         # Mock existing summary in database with a note ID that doesn't exist
-        mock_get_existing_summary.return_value = {
-            "week_year": "2026-W05",
-            "trilium_note_id": "missing-note-id",
-            "title": "Old summary",
-        }
+        mock_get_existing_summary.return_value = WeeklySummary(
+            id=1,
+            week_year="2026-W05",
+            year=2026,
+            week=5,
+            title="Old summary",
+            trilium_note_id="missing-note-id",
+            audio_file_path=None,
+            duration_seconds=None,
+            created_at="2024-01-01T00:00:00",
+        )
 
         # Mock 404 response when checking if note exists
         mock_404_response = Mock()

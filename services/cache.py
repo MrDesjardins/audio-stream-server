@@ -22,7 +22,7 @@ class TranscriptionCache:
     """Manages caching of transcripts and summaries."""
 
     def __init__(self, cache_dir: str = "/tmp/transcription-cache"):
-        self.cache_dir = Path(cache_dir)
+        self.cache_dir = Path(cache_dir).expanduser().resolve()
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
         logger.info(f"Transcription cache initialized at {self.cache_dir}")
@@ -106,7 +106,7 @@ class AudioCache:
     def __init__(self, max_files: int = 10):
         self.max_files = max_files
         config = get_config()
-        self.audio_dir = Path(config.temp_audio_dir)
+        self.audio_dir = Path(config.temp_audio_dir).expanduser().resolve()
         self.audio_dir.mkdir(parents=True, exist_ok=True)
         logger.info(
             f"Audio cache initialized: max {max_files} files in {self.audio_dir}"

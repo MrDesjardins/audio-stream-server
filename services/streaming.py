@@ -7,6 +7,8 @@ Downloads audio from YouTube using yt-dlp and saves as MP3.
 import logging
 import os
 import subprocess
+
+from pathlib import Path
 from services.cache import get_audio_cache
 from config import get_config
 
@@ -21,10 +23,10 @@ def _get_download_marker(youtube_video_id: str) -> str:
 
 def is_download_in_progress(youtube_video_id: str) -> bool:
     """Check if a download is currently in progress for this video."""
-    return os.path.exists(_get_download_marker(youtube_video_id))
+    return Path(_get_download_marker(youtube_video_id)).expanduser().resolve().exists()
 
 
-def start_youtube_download(youtube_video_id: str, skip_transcription: bool):
+def start_youtube_download(youtube_video_id: str):
     """
     Start downloading audio from YouTube. Returns the process immediately
     so the caller can store it and terminate if needed.
@@ -36,26 +38,26 @@ def start_youtube_download(youtube_video_id: str, skip_transcription: bool):
         skip_transcription: Unused, kept for API compatibility
 
     Returns:
-        (proc, youtube_video_id) tuple if started, (None, video_id) if already cached or error
+        proc or None if already cached
     """
     audio_cache = get_audio_cache()
-    audio_path = config.get_audio_path(youtube_video_id)
+    audio_path = Path(config.get_audio_path(youtube_video_id)).expanduser().resolve()
 
     if audio_cache.check_file_exists(youtube_video_id):
         logger.info(f"Audio file for video {youtube_video_id} already exists in cache")
-        return None, youtube_video_id
+        return None
 
     logger.info(f"Downloading audio for video {youtube_video_id}")
     url = f"https://www.youtube.com/watch?v={youtube_video_id}"
 
     # Create marker file so the /audio endpoint won't serve a partial file
-    marker_path = _get_download_marker(youtube_video_id)
+    marker_path = Path(_get_download_marker(youtube_video_id)).expanduser().resolve()
     try:
-        open(marker_path, "w").close()
+        marker_path.touch(exist_ok=True)
     except Exception as e:
         logger.error(f"Failed to create download marker: {e}")
 
-    stderr_path = audio_path + ".err"
+    stderr_path = str(audio_path) + ".err"
 
     # Use yt-dlp to download and convert directly to MP3.
     # -o uses the base path WITHOUT extension — yt-dlp appends .mp3 via --audio-format.
@@ -91,17 +93,17 @@ def start_youtube_download(youtube_video_id: str, skip_transcription: bool):
         logger.info(
             f"Started downloading audio for video {youtube_video_id} to {audio_path}"
         )
-        return proc, youtube_video_id
+        return proc
 
     except Exception as e:
         logger.error(f"Exception starting download for {youtube_video_id}: {e}")
         # Clean up marker on failure to start
         try:
-            if os.path.exists(marker_path):
-                os.remove(marker_path)
+            if marker_path.exists():
+                marker_path.unlink()
         except Exception:
             pass
-        return None, youtube_video_id
+        return None
 
 
 def finish_youtube_download(youtube_video_id: str, returncode: int):
@@ -113,9 +115,11 @@ def finish_youtube_download(youtube_video_id: str, returncode: int):
         youtube_video_id: YouTube video ID
         returncode: Process exit code (0 = success)
     """
-    audio_path = config.get_audio_path(youtube_video_id)
-    marker_path = _get_download_marker(youtube_video_id)
-    stderr_path = audio_path + ".err"
+    audio_path = Path(config.get_audio_path(youtube_video_id)).expanduser().resolve()
+    marker_path = Path(_get_download_marker(youtube_video_id)).expanduser().resolve()
+    stderr_path = (
+        Path(config.get_audio_path(youtube_video_id) + ".err").expanduser().resolve()
+    )
 
     # Read stderr for error reporting
     error_output = ""
@@ -127,8 +131,8 @@ def finish_youtube_download(youtube_video_id: str, returncode: int):
 
     # Clean up stderr file
     try:
-        if os.path.exists(stderr_path):
-            os.remove(stderr_path)
+        if stderr_path.exists():
+            stderr_path.unlink()
     except Exception:
         pass
 
@@ -137,16 +141,16 @@ def finish_youtube_download(youtube_video_id: str, returncode: int):
         logger.error(f"Download failed for {youtube_video_id} (exit code {returncode})")
         if error_output:
             logger.error(f"yt-dlp output: {error_output}")
-        if os.path.exists(audio_path):
+        if audio_path.exists():
             try:
-                os.remove(audio_path)
+                audio_path.unlink()
                 logger.info(f"Cleaned up partial file: {audio_path}")
             except Exception:
                 pass
     else:
         # Success — verify the file exists
-        if os.path.exists(audio_path):
-            file_size = os.path.getsize(audio_path)
+        if audio_path.exists():
+            file_size = audio_path.stat().st_size
             logger.info(
                 f"Audio file downloaded: {audio_path} ({file_size / 1024 / 1024:.2f} MB)"
             )
@@ -166,7 +170,7 @@ def finish_youtube_download(youtube_video_id: str, returncode: int):
 
     # Always remove the marker file — download is no longer in progress
     try:
-        if os.path.exists(marker_path):
-            os.remove(marker_path)
+        if marker_path.exists():
+            marker_path.unlink()
     except Exception:
         pass

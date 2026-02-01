@@ -3,7 +3,7 @@ Streaming and playback routes.
 """
 
 import logging
-import os
+from pathlib import Path
 import threading
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
@@ -47,7 +47,7 @@ class StreamState:
                 self._current_process = None
 
         # Start the download process (returns immediately)
-        proc, vid = start_youtube_download(video_id, skip_transcription)
+        proc = start_youtube_download(video_id)
 
         with self._lock:
             self._current_process = (
@@ -162,17 +162,17 @@ def _audio_is_ready(video_id: str) -> bool:
     """Check if the audio file exists and is not still being downloaded."""
     from services.streaming import is_download_in_progress
 
-    audio_path = config.get_audio_path(video_id)
-    return os.path.exists(audio_path) and not is_download_in_progress(video_id)
+    audio_path = Path(config.get_audio_path(video_id)).expanduser().resolve()
+    return audio_path.exists() and not is_download_in_progress(video_id)
 
 
 @router.get("/audio/{video_id}")
 def get_audio_file(video_id: str):
     """Serve the actual MP3 file for the player with mobile-optimized headers."""
-    audio_path = config.get_audio_path(video_id)
+    audio_path = Path(config.get_audio_path(video_id)).expanduser().resolve()
 
     if _audio_is_ready(video_id):
-        file_size = os.path.getsize(audio_path)
+        file_size = audio_path.stat().st_size
 
         # FileResponse automatically handles streaming, chunking, and seeking (Range headers)
         return FileResponse(
@@ -198,10 +198,10 @@ def get_audio_file(video_id: str):
 @router.head("/audio/{video_id}")
 def check_audio_file(video_id: str):
     """Check if audio file exists and is ready (for polling). HEAD request."""
-    audio_path = config.get_audio_path(video_id)
+    audio_path = Path(config.get_audio_path(video_id)).expanduser().resolve()
 
     if _audio_is_ready(video_id):
-        file_size = os.path.getsize(audio_path)
+        file_size = audio_path.stat().st_size
         return JSONResponse(
             status_code=200,
             content={},
@@ -238,7 +238,7 @@ def get_play_history(limit: int = 10):
     """Get play history from database."""
     try:
         history = get_history(limit=limit)
-        return JSONResponse({"history": history})
+        return JSONResponse({"history": [item.to_dict() for item in history]})
     except Exception as e:
         logger.error(f"Error fetching history: {e}")
         raise HTTPException(status_code=500, detail=str(e))

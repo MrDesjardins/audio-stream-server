@@ -88,9 +88,9 @@ class TestPlayHistory:
         # Verify in database
         history = get_history(limit=10)
         assert len(history) == 1
-        assert history[0]["youtube_id"] == video_id
-        assert history[0]["title"] == title
-        assert history[0]["play_count"] == 1
+        assert history[0].youtube_id == video_id
+        assert history[0].title == title
+        assert history[0].play_count == 1
 
     def test_add_to_history_duplicate_increments_count(self, db_path):
         """Test that playing the same video increments play_count."""
@@ -108,7 +108,7 @@ class TestPlayHistory:
         # Verify play count increased
         history = get_history(limit=10)
         assert len(history) == 1
-        assert history[0]["play_count"] == 2
+        assert history[0].play_count == 2
 
     def test_add_to_history_updates_last_played(self, db_path):
         """Test that last_played_at is updated on replay."""
@@ -120,12 +120,12 @@ class TestPlayHistory:
         # Add first time
         add_to_history(video_id, title)
         history1 = get_history(limit=1)
-        first_played = history1[0]["last_played_at"]
+        first_played = history1[0].last_played_at
 
         # Add second time
         add_to_history(video_id, title)
         history2 = get_history(limit=1)
-        second_played = history2[0]["last_played_at"]
+        second_played = history2[0].last_played_at
 
         # Last played should be updated
         assert second_played >= first_played
@@ -153,9 +153,9 @@ class TestPlayHistory:
         history = get_history(limit=10)
 
         # Most recent should be first
-        assert history[0]["youtube_id"] == "video3"
-        assert history[1]["youtube_id"] == "video2"
-        assert history[2]["youtube_id"] == "video1"
+        assert history[0].youtube_id == "video3"
+        assert history[1].youtube_id == "video2"
+        assert history[2].youtube_id == "video1"
 
     def test_clear_history(self, db_path):
         """Test clearing all history."""
@@ -210,9 +210,9 @@ class TestQueue:
         # Verify in database
         queue = get_queue()
         assert len(queue) == 1
-        assert queue[0]["youtube_id"] == video_id
-        assert queue[0]["title"] == title
-        assert queue[0]["position"] == 0  # Positions start at 0
+        assert queue[0].youtube_id == video_id
+        assert queue[0].title == title
+        assert queue[0].position == 0  # Positions start at 0
 
     def test_add_to_queue_positions(self, db_path):
         """Test that queue items get sequential positions."""
@@ -226,9 +226,9 @@ class TestQueue:
         queue = get_queue()
 
         assert len(queue) == 3
-        assert queue[0]["position"] == 0  # Positions start at 0
-        assert queue[1]["position"] == 1
-        assert queue[2]["position"] == 2
+        assert queue[0].position == 0  # Positions start at 0
+        assert queue[1].position == 1
+        assert queue[2].position == 2
 
     def test_get_next_in_queue(self, db_path):
         """Test getting the next item in queue."""
@@ -240,8 +240,8 @@ class TestQueue:
         next_item = get_next_in_queue()
 
         assert next_item is not None
-        assert next_item["youtube_id"] == "video1"
-        assert next_item["position"] == 0  # Positions start at 0
+        assert next_item.youtube_id == "video1"
+        assert next_item.position == 0  # Positions start at 0
 
     def test_get_next_in_queue_empty(self, db_path):
         """Test getting next item when queue is empty."""
@@ -266,7 +266,7 @@ class TestQueue:
         # Verify removed
         queue = get_queue()
         assert len(queue) == 1
-        assert queue[0]["youtube_id"] == "video2"
+        assert queue[0].youtube_id == "video2"
 
     def test_remove_from_queue_reorders_positions(self, db_path):
         """Test that removing item reorders positions."""
@@ -282,8 +282,8 @@ class TestQueue:
         queue = get_queue()
 
         # Positions should be 0, 1 (reordered after removal)
-        assert queue[0]["position"] == 0
-        assert queue[1]["position"] == 1
+        assert queue[0].position == 0
+        assert queue[1].position == 1
 
     def test_remove_from_queue_nonexistent(self, db_path):
         """Test removing non-existent item returns False."""

@@ -50,6 +50,41 @@ def get_week_number(date: datetime) -> tuple[int, int]:
     return (iso_calendar[0], iso_calendar[1])
 
 
+def _fetch_youtube_id_from_note(note: Dict) -> Optional[Dict[str, str]]:
+    """
+    Fetch YouTube ID from a Trilium note's attributes.
+
+    Args:
+        note: Trilium note dict with noteId and title
+
+    Returns:
+        Dict with video_id and title if found, None otherwise
+    """
+    try:
+        client = get_httpx_client()
+        note_id = note.get("noteId")
+        title = note.get("title", "Unknown Title")
+
+        # Fetch attributes to get youtube_id
+        attr_url = _build_url(config.trilium_url, f"/etapi/notes/{note_id}/attributes")
+        attr_response = client.get(attr_url, headers=_get_trilium_headers(), timeout=10)
+
+        if attr_response.status_code == 200:
+            attributes = attr_response.json()
+            for attr in attributes:
+                if attr.get("name") == "youtube_id":
+                    video_id = attr.get("value")
+                    if video_id:
+                        return {"video_id": video_id, "title": title}
+                    break
+
+        return None
+
+    except Exception as e:
+        logger.error(f"Error fetching YouTube ID from note {note.get('noteId')}: {e}")
+        return None
+
+
 def get_books_from_trilium_last_week() -> List[Dict[str, str]]:
     """
     Get all books from Trilium that were created in the last 7 days.
@@ -84,28 +119,9 @@ def get_books_from_trilium_last_week() -> List[Dict[str, str]]:
 
             weekly_books = []
             for note in results:
-                # Get the youtube_id from attributes
-                note_id = note.get("noteId")
-                title = note.get("title", "Unknown Title")
-
-                # Fetch attributes to get youtube_id
-                attr_url = _build_url(
-                    config.trilium_url, f"/etapi/notes/{note_id}/attributes"
-                )
-                attr_response = client.get(
-                    attr_url, headers=_get_trilium_headers(), timeout=10
-                )
-
-                if attr_response.status_code == 200:
-                    attributes = attr_response.json()
-                    for attr in attributes:
-                        if attr.get("name") == "youtube_id":
-                            video_id = attr.get("value")
-                            if video_id:
-                                weekly_books.append(
-                                    {"video_id": video_id, "title": title}
-                                )
-                            break
+                book = _fetch_youtube_id_from_note(note)
+                if book:
+                    weekly_books.append(book)
 
             logger.info(f"Found {len(weekly_books)} books from Trilium (last 7 days)")
             return weekly_books
@@ -118,6 +134,40 @@ def get_books_from_trilium_last_week() -> List[Dict[str, str]]:
     except Exception as e:
         logger.error(f"Error getting books from Trilium: {e}", exc_info=True)
         return []
+
+
+def _is_played_within_last_week(
+    item, cutoff_date: datetime
+) -> Optional[Dict[str, str]]:
+    """
+    Check if a history item was played within the last week.
+
+    Args:
+        item: PlayHistoryItem to check
+        cutoff_date: Cutoff datetime for filtering
+
+    Returns:
+        Dict with video_id, title, last_played_at if played recently, None otherwise
+    """
+    try:
+        played_at_str = item.last_played_at.replace("Z", "+00:00")
+        played_at = datetime.fromisoformat(played_at_str)
+
+        # Convert to naive datetime for comparison if it's timezone-aware
+        if played_at.tzinfo is not None:
+            played_at = played_at.replace(tzinfo=None)
+
+        if played_at >= cutoff_date:
+            return {
+                "video_id": item.youtube_id,
+                "title": item.title,
+                "last_played_at": item.last_played_at,
+            }
+        return None
+
+    except Exception as e:
+        logger.error(f"Error parsing date for {item.youtube_id}: {e}")
+        return None
 
 
 def get_books_from_last_week() -> List[Dict[str, str]]:
@@ -140,26 +190,9 @@ def get_books_from_last_week() -> List[Dict[str, str]]:
         weekly_books = []
 
         for item in history:
-            # Parse last_played_at timestamp
-            try:
-                played_at_str = item["last_played_at"].replace("Z", "+00:00")
-                played_at = datetime.fromisoformat(played_at_str)
-
-                # Convert to naive datetime for comparison if it's timezone-aware
-                if played_at.tzinfo is not None:
-                    played_at = played_at.replace(tzinfo=None)
-
-                if played_at >= cutoff_date:
-                    weekly_books.append(
-                        {
-                            "video_id": item["youtube_id"],
-                            "title": item["title"],
-                            "last_played_at": item["last_played_at"],
-                        }
-                    )
-            except Exception as e:
-                logger.error(f"Error parsing date for {item['youtube_id']}: {e}")
-                continue
+            book = _is_played_within_last_week(item, cutoff_date)
+            if book:
+                weekly_books.append(book)
 
         logger.info(f"Found {len(weekly_books)} books played in the last week")
         return weekly_books
@@ -167,6 +200,63 @@ def get_books_from_last_week() -> List[Dict[str, str]]:
     except Exception as e:
         logger.error(f"Error getting books from last week: {e}", exc_info=True)
         return []
+
+
+def _fetch_summary_for_book(book: Dict[str, str]) -> Optional[Dict[str, str]]:
+    """
+    Fetch summary for a single book from Trilium.
+
+    Args:
+        book: Book dict with video_id and title
+
+    Returns:
+        Dict with video_id, title, summary, note_url, or None if not found
+    """
+    video_id = book["video_id"]
+    title = book["title"]
+
+    try:
+        # Check if note exists in Trilium
+        note_info = check_video_exists(video_id)
+
+        if not note_info:
+            logger.warning(f"No Trilium note found for {title}")
+            return None
+
+        note_id = note_info["noteId"]
+        note_url = note_info.get("url", f"{config.trilium_url}/#root/{note_id}")
+
+        # Fetch note content
+        content = get_note_content(note_id)
+
+        if not content:
+            logger.warning(f"Could not fetch note content for {title}")
+            return None
+
+        # Extract summary from HTML content
+        # Remove the YouTube link section at the bottom
+        content = re.sub(r'<p style="margin-top.*?</p>', "", content, flags=re.DOTALL)
+
+        # Strip HTML tags to get plain text
+        text_summary = re.sub(r"<[^>]+>", " ", content)
+        # Clean up whitespace
+        text_summary = re.sub(r"\s+", " ", text_summary).strip()
+
+        if not text_summary:
+            logger.warning(f"Empty summary for {title}")
+            return None
+
+        logger.debug(f"Fetched summary for {title}")
+        return {
+            "video_id": video_id,
+            "title": title,
+            "summary": text_summary,
+            "note_url": note_url,
+        }
+
+    except Exception as e:
+        logger.error(f"Error fetching summary for {video_id}: {e}")
+        return None
 
 
 def fetch_book_summaries(books: List[Dict[str, str]]) -> List[Dict[str, str]]:
@@ -182,52 +272,9 @@ def fetch_book_summaries(books: List[Dict[str, str]]) -> List[Dict[str, str]]:
     summaries = []
 
     for book in books:
-        video_id = book["video_id"]
-        title = book["title"]
-
-        try:
-            # Check if note exists in Trilium
-            note_info = check_video_exists(video_id)
-
-            if note_info:
-                note_id = note_info["noteId"]
-                note_url = note_info.get("url", f"{config.trilium_url}/#root/{note_id}")
-
-                # Fetch note content
-                content = get_note_content(note_id)
-
-                if content:
-                    # Extract summary from HTML content
-                    # Remove the YouTube link section at the bottom
-                    content = re.sub(
-                        r'<p style="margin-top.*?</p>', "", content, flags=re.DOTALL
-                    )
-
-                    # Strip HTML tags to get plain text
-                    text_summary = re.sub(r"<[^>]+>", " ", content)
-                    # Clean up whitespace
-                    text_summary = re.sub(r"\s+", " ", text_summary).strip()
-
-                    if text_summary:
-                        summaries.append(
-                            {
-                                "video_id": video_id,
-                                "title": title,
-                                "summary": text_summary,
-                                "note_url": note_url,
-                            }
-                        )
-                        logger.debug(f"Fetched summary for {title}")
-                    else:
-                        logger.warning(f"Empty summary for {title}")
-                else:
-                    logger.warning(f"Could not fetch note content for {title}")
-            else:
-                logger.warning(f"No Trilium note found for {title}")
-
-        except Exception as e:
-            logger.error(f"Error fetching summary for {video_id}: {e}")
-            continue
+        summary = _fetch_summary_for_book(book)
+        if summary:
+            summaries.append(summary)
 
     logger.info(f"Fetched {len(summaries)} summaries out of {len(books)} books")
     return summaries
@@ -554,7 +601,7 @@ def _generate_and_attach_tts(
         audio_path = config.get_weekly_summary_audio_path(week_year)
 
         # Check if audio file already exists
-        if Path(audio_path).exists():
+        if Path(audio_path).expanduser().resolve().exists():
             logger.info(f"Audio file already exists: {audio_path}")
             duration = get_audio_duration(audio_path)
             if duration is None:
@@ -647,8 +694,8 @@ def generate_and_save_weekly_summary() -> Optional[Dict[str, str]]:
         if existing_summary:
             logger.info(f"Summary for {week_year} already exists in database")
 
-            note_id = existing_summary["trilium_note_id"]
-            note_title = existing_summary["title"]
+            note_id = existing_summary.trilium_note_id
+            note_title = existing_summary.title
 
             # Verify the Trilium note still exists
             if note_id and not _verify_trilium_note_exists(note_id):

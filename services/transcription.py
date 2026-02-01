@@ -2,6 +2,7 @@
 
 import logging
 import os
+from pathlib import Path
 import subprocess
 import tempfile
 import time
@@ -77,8 +78,9 @@ def compress_audio_for_whisper(audio_path: str) -> str:
         if result.returncode != 0:
             raise Exception(f"ffmpeg compression failed: {result.stderr}")
 
-        compressed_size = os.path.getsize(temp_path)
-        original_size = os.path.getsize(audio_path)
+        temp_path_path = Path(temp_path)
+        compressed_size = temp_path_path.stat().st_size
+        original_size = Path(audio_path).expanduser().resolve().stat().st_size
 
         logger.info(
             f"Compressed audio from {original_size / 1024 / 1024:.2f}MB "
@@ -97,8 +99,9 @@ def compress_audio_for_whisper(audio_path: str) -> str:
 
     except Exception:
         # Clean up temp file on error
-        if os.path.exists(temp_path):
-            os.unlink(temp_path)
+        temp_file = Path(temp_path)
+        if temp_file.exists():
+            temp_file.unlink()
         raise
 
 
@@ -129,7 +132,7 @@ def transcribe_audio_openai(audio_path: str, retries: int = 3) -> str:
     client = get_openai_client()
 
     # Always compress audio to save costs and reduce upload time
-    file_size = os.path.getsize(audio_path)
+    file_size = Path(audio_path).expanduser().resolve().stat().st_size
     logger.info(
         f"Audio file size: {file_size / 1024 / 1024:.2f}MB - "
         f"compressing for Whisper (saves 33% API costs)"
@@ -182,9 +185,10 @@ def transcribe_audio_openai(audio_path: str, retries: int = 3) -> str:
 
     finally:
         # Clean up compressed file if it was created
-        if compressed_path and os.path.exists(compressed_path):
+        compressed_path_path = Path(compressed_path) if compressed_path else None
+        if compressed_path and compressed_path_path.exists():
             try:
-                os.unlink(compressed_path)
+                compressed_path_path.unlink()
                 logger.info(f"Cleaned up compressed file: {compressed_path}")
             except Exception as e:
                 logger.warning(

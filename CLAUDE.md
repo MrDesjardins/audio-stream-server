@@ -20,6 +20,89 @@ Audio Stream Server is a FastAPI application that streams audio from YouTube vid
   3. Local application imports
 - Do not use inline imports inside functions unless absolutely necessary for circular import resolution
 
+### Function Return Type Annotations
+
+**CRITICAL: ALL functions must have explicit return type annotations.**
+
+- Every function definition must include a `-> ReturnType` annotation
+- Use `-> None` for functions that don't return a value
+- Use `Optional[Type]` for functions that may return None
+- Use proper type hints from `typing` module (List, Dict, Optional, etc.)
+- Example:
+  ```python
+  def get_video_title(video_id: str) -> Optional[str]:
+      """Fetch video title from YouTube."""
+      ...
+
+  def process_data(items: List[str]) -> Dict[str, int]:
+      """Process items and return counts."""
+      ...
+
+  def log_message(message: str) -> None:
+      """Log a message."""
+      ...
+  ```
+
+### Path Handling
+
+**CRITICAL: Always use .expanduser().resolve() when creating Path objects from user-provided or config paths.**
+
+- ALWAYS call `.expanduser().resolve()` on Path objects to handle `~` (home directory) expansion and resolve symbolic links
+- This is required for paths that come from:
+  - Configuration files (environment variables, .env)
+  - User input
+  - Function parameters that represent file paths
+- Temporary file paths (from `tempfile.mkstemp()`, etc.) do NOT need `.expanduser().resolve()`
+- Example:
+  ```python
+  # CORRECT - user/config paths
+  audio_path = Path(config.temp_audio_dir).expanduser().resolve()
+  file_size = Path(audio_path_param).expanduser().resolve().stat().st_size
+
+  # CORRECT - temporary file paths (no expansion needed)
+  temp_fd, temp_path = tempfile.mkstemp()
+  temp_file = Path(temp_path)  # No .expanduser().resolve() needed
+
+  # WRONG - missing expansion for user path
+  audio_path = Path(config.temp_audio_dir)  # ❌ May fail if path contains ~
+  ```
+
+### Type-Safe Data Models
+
+**Prefer dataclasses over dictionaries for structured data.**
+
+- Use dataclasses from `services/models.py` for database entities and API responses
+- Return typed objects (`List[PlayHistoryItem]`) instead of dictionaries (`List[Dict]`)
+- Provide `from_db_row()` classmethod for database mapping
+- Provide `to_dict()` method for JSON serialization
+- This improves type safety, IDE autocomplete, and makes code more maintainable
+
+### Function Decomposition
+
+**Break down large functions with loops into smaller, focused helper functions.**
+
+- Extract loop body logic into separate helper functions
+- Helper functions should process a single item as a parameter
+- Use underscore prefix for private helper functions (e.g., `_process_item()`)
+- This improves testability and code readability
+- Example:
+  ```python
+  # BETTER - small focused functions
+  def _process_single_item(item: DataItem) -> Optional[Result]:
+      """Process a single item."""
+      # ... processing logic ...
+      return result
+
+  def process_items(items: List[DataItem]) -> List[Result]:
+      """Process all items."""
+      results = []
+      for item in items:
+          result = _process_single_item(item)
+          if result:
+              results.append(result)
+      return results
+  ```
+
 ## Development Commands
 
 ### Install Dependencies

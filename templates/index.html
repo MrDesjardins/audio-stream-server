@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>YouTube Radio</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link rel="stylesheet" href="/static/style.css?v=1737847302">
+    <link rel="stylesheet" href="/static/style.css?v=1737842302">
 </head>
 
 <body>
@@ -575,7 +575,7 @@
 
             // Update progress bar on currently playing queue item
             if (isPlaying && player.duration && !isNaN(player.duration) && isFinite(player.duration)) {
-                const progress = (player.currentTime / player.duration) * 100;
+                const progress = Math.ceil(player.currentTime / player.duration * 100);
                 const progressBar = document.querySelector('.queue-progress-bar');
                 if (progressBar) {
                     progressBar.style.width = `${progress}%`;

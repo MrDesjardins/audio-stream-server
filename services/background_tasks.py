@@ -1,7 +1,7 @@
 """Background task processing for audio transcription."""
 
 import logging
-import os
+from pathlib import Path
 import threading
 import time
 import random
@@ -413,11 +413,12 @@ class TranscriptionWorker:
         start_time = time.time()
 
         while time.time() - start_time < timeout:
-            file_exists = os.path.exists(audio_path)
+            path = Path(audio_path).expanduser().resolve()
+            file_exists = path.exists()
             still_downloading = is_download_in_progress(video_id)
 
             if file_exists and not still_downloading:
-                file_size = os.path.getsize(audio_path)
+                file_size = path.stat().st_size
                 if file_size > 0:
                     logger.info(
                         f"Audio file is ready: {audio_path} ({file_size / 1024 / 1024:.2f} MB)"
@@ -439,7 +440,7 @@ class TranscriptionWorker:
             time.sleep(2)
 
         # Timeout — check if file exists at all for a better error message
-        if os.path.exists(audio_path):
+        if path.exists():
             logger.error(f"Timeout waiting for download to finish: {audio_path}")
         else:
             logger.error(f"Timeout — audio file never appeared: {audio_path}")

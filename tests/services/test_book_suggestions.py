@@ -10,6 +10,7 @@ from services.book_suggestions import (
     get_video_suggestions,
     search_youtube_by_theme,
 )
+from services.models import PlayHistoryItem, VideoSummary
 
 
 @pytest.fixture
@@ -41,8 +42,26 @@ class TestGetRecentSummaries:
         """Test successful summary fetching from history and Trilium."""
         # Mock history from database
         mock_get_history.return_value = [
-            {"youtube_id": "vid1", "title": "Video 1"},
-            {"youtube_id": "vid2", "title": "Video 2"},
+            PlayHistoryItem(
+                id=1,
+                youtube_id="vid1",
+                title="Video 1",
+                channel=None,
+                thumbnail_url=None,
+                play_count=1,
+                created_at="2024-01-01T00:00:00",
+                last_played_at="2024-01-01T00:00:00",
+            ),
+            PlayHistoryItem(
+                id=2,
+                youtube_id="vid2",
+                title="Video 2",
+                channel=None,
+                thumbnail_url=None,
+                play_count=1,
+                created_at="2024-01-01T00:00:00",
+                last_played_at="2024-01-01T00:00:00",
+            ),
         ]
 
         # Mock Trilium note existence and content
@@ -60,9 +79,9 @@ class TestGetRecentSummaries:
 
         # Verify
         assert len(summaries) == 2
-        assert summaries[0]["video_id"] == "vid1"
-        assert summaries[0]["title"] == "Video 1"
-        assert "summary for video 1" in summaries[0]["summary"]
+        assert summaries[0].video_id == "vid1"
+        assert summaries[0].title == "Video 1"
+        assert "summary for video 1" in summaries[0].summary
 
     @patch("services.book_suggestions.get_history")
     async def test_get_recent_summaries_empty(self, mock_get_history):
@@ -108,8 +127,16 @@ class TestGenerateThemeOpenAI:
         mock_openai_class.return_value = mock_client
 
         summaries = [
-            {"summary": "Summary about atomic habits"},
-            {"summary": "Summary about deep work"},
+            VideoSummary(
+                video_id="vid1",
+                title="Video 1",
+                summary="Summary about atomic habits",
+            ),
+            VideoSummary(
+                video_id="vid2",
+                title="Video 2",
+                summary="Summary about deep work",
+            ),
         ]
         theme = generate_theme_openai(summaries)
 
@@ -250,8 +277,26 @@ class TestFilterAlreadyPlayed:
     async def test_filter_played(self, mock_get_history):
         """Test filtering out already played videos."""
         mock_get_history.return_value = [
-            {"youtube_id": "abc123", "title": "Played Video 1"},
-            {"youtube_id": "def456", "title": "Played Video 2"},
+            PlayHistoryItem(
+                id=1,
+                youtube_id="abc123",
+                title="Played Video 1",
+                channel=None,
+                thumbnail_url=None,
+                play_count=1,
+                created_at="2024-01-01T00:00:00",
+                last_played_at="2024-01-01T00:00:00",
+            ),
+            PlayHistoryItem(
+                id=2,
+                youtube_id="def456",
+                title="Played Video 2",
+                channel=None,
+                thumbnail_url=None,
+                play_count=1,
+                created_at="2024-01-01T00:00:00",
+                last_played_at="2024-01-01T00:00:00",
+            ),
         ]
 
         suggestions = [
@@ -270,8 +315,26 @@ class TestFilterAlreadyPlayed:
     async def test_filter_all_played(self, mock_get_history):
         """Test when all suggestions already played."""
         mock_get_history.return_value = [
-            {"youtube_id": "abc123", "title": "Video 1"},
-            {"youtube_id": "def456", "title": "Video 2"},
+            PlayHistoryItem(
+                id=1,
+                youtube_id="abc123",
+                title="Video 1",
+                channel=None,
+                thumbnail_url=None,
+                play_count=1,
+                created_at="2024-01-01T00:00:00",
+                last_played_at="2024-01-01T00:00:00",
+            ),
+            PlayHistoryItem(
+                id=2,
+                youtube_id="def456",
+                title="Video 2",
+                channel=None,
+                thumbnail_url=None,
+                play_count=1,
+                created_at="2024-01-01T00:00:00",
+                last_played_at="2024-01-01T00:00:00",
+            ),
         ]
 
         suggestions = [

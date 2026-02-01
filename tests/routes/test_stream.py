@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from routes.stream import router, StreamState, init_stream_globals
+from services.models import PlayHistoryItem
 
 
 @pytest.fixture
@@ -67,7 +68,7 @@ class TestStreamState:
 
         with patch(
             "services.streaming.start_youtube_download",
-            return_value=(mock_proc, "vid1"),
+            return_value=mock_proc,
         ):
             with patch("services.streaming.finish_youtube_download"):
                 state.start_stream("vid1", skip_transcription=False)
@@ -87,7 +88,7 @@ class TestStreamState:
 
         with patch(
             "services.streaming.start_youtube_download",
-            return_value=(mock_proc, "vid1"),
+            return_value=mock_proc,
         ):
             with patch("services.streaming.finish_youtube_download"):
                 state.start_stream("vid1", skip_transcription=False)
@@ -118,7 +119,7 @@ class TestStreamState:
 
         with patch(
             "services.streaming.start_youtube_download",
-            side_effect=[(old_proc, "vid1"), (new_proc, "vid2")],
+            side_effect=[old_proc, new_proc],
         ):
             with patch("services.streaming.finish_youtube_download"):
                 state.start_stream("vid1", skip_transcription=False)
@@ -130,7 +131,7 @@ class TestStreamState:
     @patch("services.streaming.start_youtube_download")
     def test_start_stream_when_cached(self, mock_start):
         """Handles gracefully when download returns None (already cached)."""
-        mock_start.return_value = (None, "cached_vid")
+        mock_start.return_value = None
 
         lock = threading.Lock()
         state = StreamState(lock)
@@ -161,7 +162,7 @@ class TestStreamState:
 
         with patch(
             "services.streaming.start_youtube_download",
-            return_value=(mock_proc, "vid1"),
+            return_value=mock_proc,
         ):
             with patch("services.streaming.finish_youtube_download"):
                 state.start_stream("vid1", skip_transcription=False)
@@ -503,8 +504,26 @@ class TestHistoryEndpoints:
     def test_get_history_success(self, mock_history, client):
         """Returns history list."""
         mock_history.return_value = [
-            {"id": 1, "youtube_id": "vid1", "title": "Book 1", "play_count": 3},
-            {"id": 2, "youtube_id": "vid2", "title": "Book 2", "play_count": 1},
+            PlayHistoryItem(
+                id=1,
+                youtube_id="vid1",
+                title="Book 1",
+                channel=None,
+                thumbnail_url=None,
+                play_count=3,
+                created_at="2024-01-01T00:00:00",
+                last_played_at="2024-01-01T00:00:00",
+            ),
+            PlayHistoryItem(
+                id=2,
+                youtube_id="vid2",
+                title="Book 2",
+                channel=None,
+                thumbnail_url=None,
+                play_count=1,
+                created_at="2024-01-01T00:00:00",
+                last_played_at="2024-01-01T00:00:00",
+            ),
         ]
 
         response = client.get("/history")

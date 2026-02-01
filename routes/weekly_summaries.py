@@ -30,7 +30,7 @@ async def list_summaries(limit: int = 10) -> List[Dict]:
     """
     try:
         summaries = get_recent_summaries(limit=limit)
-        return summaries
+        return [summary.to_dict() for summary in summaries]
     except Exception as e:
         logger.error(f"Error listing summaries: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -56,14 +56,14 @@ async def stream_summary_audio(week_year: str):
                 status_code=404, detail=f"Summary not found: {week_year}"
             )
 
-        audio_path = summary.get("audio_file_path")
+        audio_path = summary.audio_file_path
         if not audio_path:
             raise HTTPException(
                 status_code=404, detail=f"No audio file for summary: {week_year}"
             )
 
         # Check if file exists
-        if not Path(audio_path).exists():
+        if not Path(audio_path).expanduser().resolve().exists():
             logger.error(f"Audio file not found: {audio_path}")
             raise HTTPException(
                 status_code=404, detail=f"Audio file not found: {audio_path}"

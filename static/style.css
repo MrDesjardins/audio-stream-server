@@ -539,8 +539,8 @@ main {
     height: 100%;
     width: 0%;
     background: linear-gradient(to right,
-        rgba(124, 58, 237, 0.5) 0%,
-        rgba(124, 58, 237, 0.5) 90%,
+        rgba(124, 58, 237, 0.35) 0%,
+        rgba(124, 58, 237, 0.35) 90%,
         transparent 100%
     );
     transition: width 0.5s linear;
@@ -801,8 +801,8 @@ audio {
 
     :root:not([data-theme="dark"]) .queue-progress-bar {
         background: linear-gradient(to right,
-            #8b5cf6 0%,
-            #8b5cf6 90%,
+            rgb(139, 92, 246) 0%,
+            rgb(139, 92, 246) 90%,
             transparent 100%
         );
     }
@@ -814,8 +814,8 @@ audio {
 
 :root[data-theme="light"] .queue-progress-bar {
     background: linear-gradient(to right,
-        #8b5cf6 0%,
-        #8b5cf6 90%,
+        rgba(139, 92, 246, 0.35) 0%,
+        rgba(139, 92, 246, 0.35) 90%,
         transparent 100%
     );
 }

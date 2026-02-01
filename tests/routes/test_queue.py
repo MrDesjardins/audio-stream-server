@@ -4,6 +4,7 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 from routes.queue import router
+from services.models import QueueItem
 
 
 @pytest.fixture
@@ -104,20 +105,28 @@ class TestGetQueueEndpoint:
     def test_get_queue_success(self, mock_get_queue, client):
         """Test getting the queue."""
         mock_get_queue.return_value = [
-            {
-                "id": 1,
-                "youtube_id": "video1",
-                "title": "Video 1",
-                "position": 1,
-                "created_at": "2024-01-01T00:00:00",
-            },
-            {
-                "id": 2,
-                "youtube_id": "video2",
-                "title": "Video 2",
-                "position": 2,
-                "created_at": "2024-01-01T00:01:00",
-            },
+            QueueItem(
+                id=1,
+                youtube_id="video1",
+                title="Video 1",
+                channel=None,
+                thumbnail_url=None,
+                position=1,
+                created_at="2024-01-01T00:00:00",
+                type="youtube",
+                week_year=None,
+            ),
+            QueueItem(
+                id=2,
+                youtube_id="video2",
+                title="Video 2",
+                channel=None,
+                thumbnail_url=None,
+                position=2,
+                created_at="2024-01-01T00:01:00",
+                type="youtube",
+                week_year=None,
+            ),
         ]
 
         response = client.get("/queue")
@@ -197,8 +206,28 @@ class TestPlayNextEndpoint:
         """Test successfully playing next item."""
         # First call returns current item, second returns next
         mock_get_next.side_effect = [
-            {"id": 1, "youtube_id": "video1", "title": "Video 1", "position": 1},
-            {"id": 2, "youtube_id": "video2", "title": "Video 2", "position": 2},
+            QueueItem(
+                id=1,
+                youtube_id="video1",
+                title="Video 1",
+                channel=None,
+                thumbnail_url=None,
+                position=1,
+                created_at="2024-01-01T00:00:00",
+                type="youtube",
+                week_year=None,
+            ),
+            QueueItem(
+                id=2,
+                youtube_id="video2",
+                title="Video 2",
+                channel=None,
+                thumbnail_url=None,
+                position=2,
+                created_at="2024-01-01T00:01:00",
+                type="youtube",
+                week_year=None,
+            ),
         ]
         mock_remove.return_value = True
 
@@ -231,7 +260,17 @@ class TestPlayNextEndpoint:
         """Test playing next when on last item."""
         # First call returns current item, second returns None (no next)
         mock_get_next.side_effect = [
-            {"id": 1, "youtube_id": "video1", "title": "Video 1", "position": 1},
+            QueueItem(
+                id=1,
+                youtube_id="video1",
+                title="Video 1",
+                channel=None,
+                thumbnail_url=None,
+                position=1,
+                created_at="2024-01-01T00:00:00",
+                type="youtube",
+                week_year=None,
+            ),
             None,  # No next item
         ]
         mock_remove.return_value = True

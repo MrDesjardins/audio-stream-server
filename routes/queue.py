@@ -64,7 +64,7 @@ def get_current_queue():
     """Get the current queue."""
     try:
         queue = get_queue()
-        return JSONResponse({"queue": queue})
+        return JSONResponse({"queue": [item.to_dict() for item in queue]})
     except Exception as e:
         logger.error(f"Error fetching queue: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -98,7 +98,7 @@ def play_next_in_queue():
             )
 
         # Remove the current first item
-        remove_from_queue(next_item["id"])
+        remove_from_queue(next_item.id)
 
         # Get the new first item (which was second)
         next_item = get_next_in_queue()
@@ -111,16 +111,16 @@ def play_next_in_queue():
         # Build response based on type
         response = {
             "status": "next",
-            "title": next_item["title"],
-            "queue_id": next_item["id"],
-            "type": next_item.get("type", "youtube"),
+            "title": next_item.title,
+            "queue_id": next_item.id,
+            "type": next_item.type,
         }
 
         # Add type-specific fields
-        if next_item.get("type") == "summary":
-            response["week_year"] = next_item.get("week_year")
+        if next_item.type == "summary":
+            response["week_year"] = next_item.week_year
         else:
-            response["youtube_id"] = next_item["youtube_id"]
+            response["youtube_id"] = next_item.youtube_id
 
         return JSONResponse(response)
     except Exception as e:
@@ -166,7 +166,7 @@ def prefetch_audio(video_id: str):
         return JSONResponse({"status": "downloading", "video_id": video_id})
 
     # Start background download (fire and forget)
-    proc, _ = start_youtube_download(video_id, skip_transcription=True)
+    proc = start_youtube_download(video_id)
 
     if proc is None:
         return JSONResponse({"status": "cached", "video_id": video_id})

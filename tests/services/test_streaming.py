@@ -98,10 +98,9 @@ class TestStartYoutubeDownload:
 
         from services.streaming import start_youtube_download
 
-        proc, vid = start_youtube_download("cached_vid", skip_transcription=False)
+        proc = start_youtube_download("cached_vid")
 
         assert proc is None
-        assert vid == "cached_vid"
         mock_popen.assert_not_called()
 
     @patch("services.streaming.subprocess.Popen")
@@ -121,7 +120,7 @@ class TestStartYoutubeDownload:
 
         from services.streaming import start_youtube_download
 
-        start_youtube_download("new_vid", skip_transcription=False)
+        start_youtube_download("new_vid")
 
         marker = os.path.join(temp_audio_dir, "new_vid.downloading")
         assert os.path.exists(marker)
@@ -144,10 +143,9 @@ class TestStartYoutubeDownload:
 
         from services.streaming import start_youtube_download
 
-        proc, vid = start_youtube_download("test_vid", skip_transcription=True)
+        proc = start_youtube_download("test_vid")
 
         assert proc is fake_proc
-        assert vid == "test_vid"
 
     @patch("services.streaming.subprocess.Popen")
     @patch("services.streaming.get_audio_cache")
@@ -166,7 +164,7 @@ class TestStartYoutubeDownload:
 
         from services.streaming import start_youtube_download
 
-        start_youtube_download("q_vid", skip_transcription=False)
+        start_youtube_download("q_vid")
 
         cmd = mock_popen.call_args[0][0]
         quality_idx = cmd.index("--audio-quality")
@@ -189,7 +187,7 @@ class TestStartYoutubeDownload:
 
         from services.streaming import start_youtube_download
 
-        start_youtube_download("ext_vid", skip_transcription=False)
+        start_youtube_download("ext_vid")
 
         cmd = mock_popen.call_args[0][0]
         output_idx = cmd.index("-o")
@@ -215,10 +213,9 @@ class TestStartYoutubeDownload:
 
         from services.streaming import start_youtube_download
 
-        proc, vid = start_youtube_download("fail_vid", skip_transcription=False)
+        proc = start_youtube_download("fail_vid")
 
         assert proc is None
-        assert vid == "fail_vid"
         marker = os.path.join(temp_audio_dir, "fail_vid.downloading")
         assert not os.path.exists(marker)
 
@@ -239,7 +236,7 @@ class TestStartYoutubeDownload:
 
         from services.streaming import start_youtube_download
 
-        start_youtube_download("stderr_vid", skip_transcription=False)
+        start_youtube_download("stderr_vid")
 
         kwargs = mock_popen.call_args[1]
         # stderr should be a file object, not subprocess.PIPE

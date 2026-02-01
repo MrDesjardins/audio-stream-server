@@ -2,10 +2,12 @@ import sqlite3
 import logging
 import threading
 from datetime import datetime, timezone
-from typing import List, Optional, Dict
+from typing import List, Optional
 from contextlib import contextmanager
 from queue import Queue, Empty
 import os
+
+from services.models import PlayHistoryItem, QueueItem, WeeklySummary
 
 logger = logging.getLogger(__name__)
 
@@ -212,7 +214,7 @@ def add_to_history(
         return record_id
 
 
-def get_history(limit: int = 10) -> List[Dict]:
+def get_history(limit: int = 10) -> List[PlayHistoryItem]:
     """
     Get play history, most recently played first.
 
@@ -220,7 +222,7 @@ def get_history(limit: int = 10) -> List[Dict]:
         limit: Maximum number of records to return
 
     Returns:
-        List of history records as dictionaries
+        List of PlayHistoryItem objects
     """
     with get_db_connection() as conn:
         cursor = conn.cursor()
@@ -235,7 +237,7 @@ def get_history(limit: int = 10) -> List[Dict]:
         )
 
         rows = cursor.fetchall()
-        return [dict(row) for row in rows]
+        return [PlayHistoryItem.from_db_row(row) for row in rows]
 
 
 def get_video_title_from_history(youtube_id: str) -> Optional[str]:
@@ -318,43 +320,43 @@ def add_to_queue(
         return record_id
 
 
-def get_queue() -> List[Dict]:
+def get_queue() -> List[QueueItem]:
     """
     Get the current queue, ordered by position.
 
     Returns:
-        List of queue items as dictionaries
+        List of QueueItem objects
     """
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT id, youtube_id, title, channel, thumbnail_url, position, created_at
+            SELECT id, youtube_id, title, channel, thumbnail_url, position, created_at, type, week_year
             FROM queue
             ORDER BY position ASC
         """)
 
         rows = cursor.fetchall()
-        return [dict(row) for row in rows]
+        return [QueueItem.from_db_row(row) for row in rows]
 
 
-def get_next_in_queue() -> Optional[Dict]:
+def get_next_in_queue() -> Optional[QueueItem]:
     """
     Get the first item in the queue (lowest position).
 
     Returns:
-        Queue item dictionary or None if queue is empty
+        QueueItem object or None if queue is empty
     """
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT id, youtube_id, title, channel, thumbnail_url, position, created_at
+            SELECT id, youtube_id, title, channel, thumbnail_url, position, created_at, type, week_year
             FROM queue
             ORDER BY position ASC
             LIMIT 1
         """)
 
         row = cursor.fetchone()
-        return dict(row) if row else None
+        return QueueItem.from_db_row(row) if row else None
 
 
 def remove_from_queue(queue_id: int) -> bool:
@@ -476,7 +478,7 @@ def save_weekly_summary(
         return record_id
 
 
-def get_recent_summaries(limit: int = 10) -> List[Dict]:
+def get_recent_summaries(limit: int = 10) -> List[WeeklySummary]:
     """
     Get recent weekly summaries, most recent first.
 
@@ -484,7 +486,7 @@ def get_recent_summaries(limit: int = 10) -> List[Dict]:
         limit: Maximum number of records to return
 
     Returns:
-        List of summary records as dictionaries
+        List of WeeklySummary objects
     """
     with get_db_connection() as conn:
         cursor = conn.cursor()
@@ -500,10 +502,10 @@ def get_recent_summaries(limit: int = 10) -> List[Dict]:
         )
 
         rows = cursor.fetchall()
-        return [dict(row) for row in rows]
+        return [WeeklySummary.from_db_row(row) for row in rows]
 
 
-def get_summary_by_week_year(week_year: str) -> Optional[Dict]:
+def get_summary_by_week_year(week_year: str) -> Optional[WeeklySummary]:
     """
     Get a specific weekly summary by week_year.
 
@@ -511,7 +513,7 @@ def get_summary_by_week_year(week_year: str) -> Optional[Dict]:
         week_year: Week identifier (e.g., "2026-W05")
 
     Returns:
-        Summary record dictionary or None if not found
+        WeeklySummary object or None if not found
     """
     with get_db_connection() as conn:
         cursor = conn.cursor()
@@ -527,7 +529,7 @@ def get_summary_by_week_year(week_year: str) -> Optional[Dict]:
         )
 
         row = cursor.fetchone()
-        return dict(row) if row else None
+        return WeeklySummary.from_db_row(row) if row else None
 
 
 def add_summary_to_queue(week_year: str) -> int:
@@ -548,7 +550,7 @@ def add_summary_to_queue(week_year: str) -> int:
     if not summary:
         raise ValueError(f"Summary not found: {week_year}")
 
-    if not summary.get("audio_file_path"):
+    if not summary.audio_file_path:
         raise ValueError(f"Summary has no audio file: {week_year}")
 
     timestamp = datetime.now(timezone.utc).isoformat()
@@ -566,11 +568,11 @@ def add_summary_to_queue(week_year: str) -> int:
             INSERT INTO queue (youtube_id, title, position, created_at, type, week_year)
             VALUES (?, ?, ?, ?, ?, ?)
         """,
-            ("", summary["title"], next_position, timestamp, "summary", week_year),
+            ("", summary.title, next_position, timestamp, "summary", week_year),
         )
 
         record_id = cursor.lastrowid
         logger.info(
-            f"Added summary to queue (position {next_position}): {summary['title']}"
+            f"Added summary to queue (position {next_position}): {summary.title}"
         )
         return record_id

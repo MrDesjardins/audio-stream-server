@@ -289,10 +289,10 @@ class TestDatabaseFunctions:
         summary = get_summary_by_week_year(week_year)
 
         assert summary is not None
-        assert summary["week_year"] == week_year
-        assert summary["title"] == "Test Summary"
-        assert summary["trilium_note_id"] == "test-note-id"
-        assert summary["duration_seconds"] == 180
+        assert summary.week_year == week_year
+        assert summary.title == "Test Summary"
+        assert summary.trilium_note_id == "test-note-id"
+        assert summary.duration_seconds == 180
 
     def test_get_recent_summaries_returns_correct_count(self):
         """Should return correct number of recent summaries."""
@@ -341,6 +341,6 @@ class TestDatabaseFunctions:
         # Retrieve and verify
         summary = get_summary_by_week_year(week_year)
 
-        assert summary["title"] == "Updated Title"
-        assert summary["audio_file_path"] == str(audio_path)
-        assert summary["duration_seconds"] == 240
+        assert summary.title == "Updated Title"
+        assert summary.audio_file_path == str(audio_path)
+        assert summary.duration_seconds == 240

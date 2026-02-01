@@ -178,7 +178,7 @@ def save_audio_file(audio_data: bytes, file_path: str) -> int:
     Raises:
         IOError: If file cannot be written
     """
-    path = Path(file_path)
+    path = Path(file_path).expanduser().resolve()
 
     # Create parent directory if needed
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -205,7 +205,7 @@ def get_audio_duration(file_path: str) -> Optional[int]:
     Returns:
         Duration in seconds, or None if file doesn't exist
     """
-    path = Path(file_path)
+    path = Path(file_path).expanduser().resolve()
     if not path.exists():
         return None
 
