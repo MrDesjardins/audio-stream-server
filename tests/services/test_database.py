@@ -1,8 +1,5 @@
 """Tests for database service."""
 
-import os
-import tempfile
-import pytest
 from services.database import (
     init_database,
     add_to_history,
@@ -17,30 +14,8 @@ from services.database import (
     get_db_connection,
 )
 
-
-@pytest.fixture(autouse=True)
-def db_path(monkeypatch):
-    """Create temporary database for testing."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
-        path = f.name
-
-    # Set environment variable BEFORE importing services
-    monkeypatch.setenv("DATABASE_PATH", path)
-
-    # Reload the database module to pick up new path
-    import services.database
-    import importlib
-
-    importlib.reload(services.database)
-
-    yield path
-
-    # Cleanup
-    if os.path.exists(path):
-        try:
-            os.unlink(path)
-        except Exception:
-            pass
+# Note: The temp_db fixture from conftest.py is used automatically
+# for all tests (autouse=True), so no need to define it here
 
 
 class TestDatabaseInit:

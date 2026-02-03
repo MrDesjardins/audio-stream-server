@@ -29,26 +29,42 @@ def mock_config():
     return config
 
 
-@pytest.fixture
-def temp_db():
-    """Temporary SQLite database for testing."""
+@pytest.fixture(autouse=True)
+def db_path(monkeypatch):
+    """Temporary SQLite database for testing.
+
+    This fixture runs automatically for ALL tests to ensure they never
+    touch the development database.
+
+    Renamed from temp_db to db_path to match existing test expectations.
+    """
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
-        db_path = f.name
+        temp_path = f.name
 
-    # Set environment variable for database
-    original_db = os.environ.get("DATABASE_PATH")
-    os.environ["DATABASE_PATH"] = db_path
+    # Set environment variable for database using monkeypatch
+    # This ensures proper cleanup even if tests fail
+    monkeypatch.setenv("DATABASE_PATH", temp_path)
 
-    yield db_path
+    # Force reload of database module to pick up new DATABASE_PATH
+    import services.database
+    import importlib
+
+    importlib.reload(services.database)
+
+    # Initialize the database with all required tables
+    from services.database import init_database
+
+    init_database()
+
+    yield temp_path
 
     # Cleanup
-    if original_db:
-        os.environ["DATABASE_PATH"] = original_db
-    else:
-        os.environ.pop("DATABASE_PATH", None)
-
-    if os.path.exists(db_path):
-        os.unlink(db_path)
+    if os.path.exists(temp_path):
+        try:
+            os.unlink(temp_path)
+        except Exception:
+            # Ignore cleanup errors
+            pass
 
 
 @pytest.fixture

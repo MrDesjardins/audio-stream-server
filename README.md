@@ -295,14 +295,49 @@ curl "http://localhost:8000/admin/weekly-summary/next-run"
 
 ## Costs
 
-Approximate API costs per operation:
-- **Whisper transcription**: $0.006 per minute of audio
-- **GPT-4o-mini summarization**: ~$0.001-0.01 per summary (avg 1,500 tokens)
-- **GPT-4o weekly summary**: ~$0.05-0.15 per summary (avg 10,000 tokens)
-- **Gemini**: Free tier available (15 requests/minute, 1 million tokens/day)
+### Current Model Pricing (Per 1M Tokens)
+
+| Model | Input | Output | Notes |
+|-------|-------|--------|-------|
+| **OpenAI** ||||
+| gpt-5-nano | $0.05 | $0.40 | Ultra-lightweight for high-volume tasks |
+| gpt-4o-mini | $0.15 | $0.60 | Reliable workhorse (recommended) |
+| gpt-4o | $2.50 | $10.00 | Higher quality, stable pricing |
+| gpt-5.2 | $1.75 | $14.00 | Extended thinking capacity |
+| whisper-1 | - | - | $0.006 per minute of audio |
+| **Google Gemini** ||||
+| gemini-2.5-flash | $0.15 | $0.60 | Fast, comparable to gpt-4o-mini (recommended) |
+| gemini-3-flash-preview | $0.50 | $3.00 | Speed-optimized preview |
+| gemini-3-pro-preview | $2.00 | $12.00 | High quality (≤200k context) |
+
+### Estimated Costs Per Operation
+
+**Using default configuration (Whisper + Gemini 2.5 Flash):**
+- **Video transcription** (Whisper): $0.006 per minute of audio
+- **Video summarization** (Gemini 2.5 Flash): ~$0.0003-0.001 per summary
+  - Typical: 2,000 input tokens (transcript) + 500 output tokens
+  - Cost: (2,000 × $0.15 + 500 × $0.60) / 1,000,000 = **$0.0006**
+- **Weekly summary** (Gemini 2.5 Flash): ~$0.003-0.01 per summary
+  - Typical: 10,000 input tokens + 2,000 output tokens
+  - Cost: (10,000 × $0.15 + 2,000 × $0.60) / 1,000,000 = **$0.0027**
+- **Book suggestions** (Gemini 2.5 Flash): ~$0.0002-0.0005 per request
+  - Typical: 1,000 input tokens + 100 output tokens
+  - Cost: (1,000 × $0.15 + 100 × $0.60) / 1,000,000 = **$0.0002**
+
+**Example monthly cost** (watching 30 hours/month):
+- Transcription: 30 hours × 60 min × $0.006 = **$10.80**
+- Summarization: 30 videos × $0.0006 = **$0.02**
+- Weekly summaries: 4 weeks × $0.0027 = **$0.01**
+- **Total: ~$10.83/month**
+
+**Gemini Free Tier:**
+- 15 requests per minute
+- 1 million tokens per day
+- Summarization and weekly summaries are essentially free under these limits
+- Only transcription (Whisper) has costs
 
 **Cost tracking:**
-Use the LLM usage statistics endpoints above to monitor your actual usage and calculate precise costs based on current provider pricing.
+Use the `/admin/llm-usage/stats` and `/admin/llm-usage/summary` endpoints to monitor your actual usage and calculate precise costs based on current provider pricing.
 
 # Server configuration
 

@@ -432,6 +432,50 @@
         let providerChart = null;
         let featureChart = null;
 
+        // Model pricing (per 1M tokens)
+        const MODEL_PRICING = {
+            // OpenAI models
+            'whisper-1': { input: 0, output: 0 }, // Whisper is priced per minute, not tokens
+            'gpt-5-nano': { input: 0.05, output: 0.40 },
+            'gpt-4o-mini': { input: 0.15, output: 0.60 },
+            'gpt-4o': { input: 2.50, output: 10.00 },
+            'gpt-5.2': { input: 1.75, output: 14.00 },
+            // Gemini models
+            'gemini-2.5-flash': { input: 0.15, output: 0.60 },
+            'gemini-2.5-flash-preview-tts': { input: 0.15, output: 0.60 },
+            'gemini-3-flash-preview': { input: 0.50, output: 3.00 },
+            'gemini-3-pro-preview': { input: 2.00, output: 12.00 },
+            'gemini-1.5-flash': { input: 0.15, output: 0.60 },
+            'gemini-1.5-pro': { input: 2.00, output: 12.00 },
+        };
+
+        function calculateCost(summary) {
+            let totalCost = 0;
+
+            summary.by_provider_model_feature.forEach(item => {
+                const model = item.model;
+                const pricing = MODEL_PRICING[model];
+
+                if (pricing) {
+                    const inputTokens = item.total_prompt_tokens || 0;
+                    const outputTokens = item.total_response_tokens || 0;
+
+                    // Calculate cost: (tokens / 1,000,000) * price_per_million
+                    const inputCost = (inputTokens / 1000000) * pricing.input;
+                    const outputCost = (outputTokens / 1000000) * pricing.output;
+
+                    totalCost += inputCost + outputCost;
+                } else {
+                    // Unknown model - use average rate as fallback
+                    console.warn(`Unknown model pricing: ${model}, using average rate`);
+                    const totalTokens = item.total_tokens || 0;
+                    totalCost += (totalTokens / 1000000) * 1.0; // $1 per 1M tokens fallback
+                }
+            });
+
+            return totalCost;
+        }
+
         async function loadStatistics() {
             try {
                 document.getElementById('loading').style.display = 'block';
@@ -478,9 +522,18 @@
             document.getElementById('token-breakdown').textContent =
                 `${totals.total_prompt_tokens.toLocaleString()} input / ${totals.total_response_tokens.toLocaleString()} output`;
 
-            // Estimate cost (rough average: $0.000001 per token)
-            const estimatedCost = (totals.total_tokens * 0.000001).toFixed(2);
-            document.getElementById('estimated-cost').textContent = `$${estimatedCost}`;
+            // Calculate accurate cost based on actual model pricing
+            const estimatedCost = calculateCost(summary);
+            document.getElementById('estimated-cost').textContent = `$${estimatedCost.toFixed(4)}`;
+
+            // Update sub-label to show it's actual pricing
+            const costCard = document.getElementById('estimated-cost').parentElement;
+            const subLabel = costCard.querySelector('.stat-sub');
+            if (estimatedCost < 0.01) {
+                subLabel.textContent = `≈ $${(estimatedCost * 100).toFixed(2)}¢`;
+            } else {
+                subLabel.textContent = 'Based on actual model pricing';
+            }
 
             // Find most used
             if (summary.by_provider_model_feature.length > 0) {
