@@ -212,7 +212,7 @@ The sentence should be:
 Respond with ONLY the theme sentence, nothing else."""
 
         response = client.models.generate_content(
-            model="gemini-1.5-flash", contents=prompt
+            model="gemini-3-flash-preview", contents=prompt
         )
         theme = response.text
         theme = theme.strip() if theme else None

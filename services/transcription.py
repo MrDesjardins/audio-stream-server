@@ -243,7 +243,7 @@ def transcribe_audio_gemini(audio_path: str, retries: int = 3) -> str:
             # Use Gemini to transcribe
             # Gemini 1.5 Flash supports audio input
             response = client.models.generate_content(
-                model="gemini-1.5-flash",
+                model="gemini-2.5-flash-preview-tts",
                 contents=[
                     {
                         "parts": [
