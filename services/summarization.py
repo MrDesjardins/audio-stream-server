@@ -16,7 +16,7 @@ SUMMARY_PROMPT_TEMPLATE = """You are summarizing a YouTube video transcript. Ple
 3. If the audiobook covers 40 points, summarize the 40 points. If it covers 10 points, summarize the 10 points. If it is unclear use that heuristic: take the Key points discussed and focus on 5 to 10 bullet points depending of the number of topics/laws/concepts/ideas/points covered.
 4. Any important conclusions or takeaways. A paragraph of about 3 to 5 sentences.
 
-Keep the summary clear, well-structured, and informative.
+Keep the summary clear, well-structured, and informative. Remove all sponsorship mentions, ads, and unrelated tangents.
 
 Transcript:
 {transcript}
@@ -104,7 +104,7 @@ def _summarize_with_gemini(transcript: str, video_id: str) -> str:
 
         # Generate content using the new API
         response = client.models.generate_content(
-            model="gemini-1.5-flash",
+            model="gemini-3-flash-preview",
             contents=prompt,  # Using cost-effective model
         )
 

@@ -160,7 +160,7 @@ class TestSummarizeWithGemini:
         # Verify API call
         mock_client.models.generate_content.assert_called_once()
         call_args = mock_client.models.generate_content.call_args
-        assert call_args[1]["model"] == "gemini-1.5-flash"
+        assert call_args[1]["model"] == "gemini-3-flash-preview"
         assert "Test transcript" in call_args[1]["contents"]
 
     @patch("services.summarization.genai.Client")

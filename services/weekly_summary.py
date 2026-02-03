@@ -406,7 +406,7 @@ Format each theme as a subsection with explanation.
 Write in markdown format. Be insightful, synthesis-focused, and highlight connections between books."""
 
         response = client.models.generate_content(
-            model="gemini-1.5-pro",  # Use Pro for better quality
+            model="gemini-3-pro-preview",  # Using advanced Gemini model
             contents=prompt,
         )
 
