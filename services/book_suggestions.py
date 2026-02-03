@@ -8,9 +8,9 @@ import logging
 import json
 import subprocess
 from typing import List, Dict, Optional
-from openai import OpenAI
-from google import genai
+
 from config import get_config
+from services.llm_clients import get_tracked_openai_client, get_tracked_gemini_client
 from services.database import get_history
 from services.models import VideoSummary, PlayHistoryItem
 
@@ -127,24 +127,21 @@ async def get_recent_summaries(limit: int) -> List[VideoSummary]:
         return []
 
 
-def generate_theme_openai(summaries: List[VideoSummary]) -> Optional[str]:
+def _build_theme_prompt(summaries: List[VideoSummary]) -> str:
     """
-    Generate a 1-sentence theme from summaries using OpenAI.
+    Build the prompt for theme generation.
 
     Args:
-        summaries: List of dicts with 'summary' key
+        summaries: List of VideoSummary objects
 
     Returns:
-        A 1-sentence theme string, or None on error
+        Formatted prompt string
     """
-    try:
-        client = OpenAI(api_key=config.openai_api_key)
+    summaries_text = "\n\n".join(
+        f"Video {i + 1}:\n{s.summary}" for i, s in enumerate(summaries)
+    )
 
-        summaries_text = "\n\n".join(
-            f"Video {i + 1}:\n{s.summary}" for i, s in enumerate(summaries)
-        )
-
-        prompt = f"""Analyze these video summaries from recently watched content:
+    return f"""Analyze these video summaries from recently watched content:
 
 {summaries_text}
 
@@ -158,22 +155,46 @@ The sentence should be:
 
 Respond with ONLY the theme sentence, nothing else."""
 
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are an expert at identifying themes and patterns in content consumption.",
-                },
-                {"role": "user", "content": prompt},
-            ],
+
+def generate_theme_openai(summaries: List[VideoSummary]) -> Optional[str]:
+    """
+    Generate a 1-sentence theme from summaries using OpenAI.
+
+    Args:
+        summaries: List of dicts with 'summary' key
+
+    Returns:
+        A 1-sentence theme string, or None on error
+    """
+    try:
+        config = get_config()
+        client = get_tracked_openai_client()
+
+        prompt = _build_theme_prompt(summaries)
+
+        messages = [
+            {
+                "role": "system",
+                "content": "You are an expert at identifying themes and patterns in content consumption.",
+            },
+            {"role": "user", "content": prompt},
+        ]
+
+        metadata = {"summaries_count": len(summaries)}
+
+        response = client.create_chat_completion(
+            messages=messages,
+            feature="book_suggestions",
+            metadata=metadata,
             temperature=0.9,
-            max_tokens=100,
+            max_tokens=500,
+            model_override=config.suggestions_model,
         )
 
         theme = response.choices[0].message.content
         theme = theme.strip() if theme else None
         logger.info(f"Generated theme: {theme}")
+
         return theme
 
     except Exception as e:
@@ -192,31 +213,24 @@ def generate_theme_gemini(summaries: List[VideoSummary]) -> Optional[str]:
         A 1-sentence theme string, or None on error
     """
     try:
-        client = genai.Client(api_key=config.gemini_api_key)
+        config = get_config()
+        client = get_tracked_gemini_client()
 
-        summaries_text = "\n\n".join(
-            f"Video {i + 1}:\n{s.summary}" for i, s in enumerate(summaries)
+        prompt = _build_theme_prompt(summaries)
+
+        metadata = {"summaries_count": len(summaries)}
+
+        response = client.generate_content(
+            prompt=prompt,
+            feature="book_suggestions",
+            metadata=metadata,
+            model_override=config.suggestions_model,
         )
 
-        prompt = f"""Analyze these video summaries from recently watched content:
-
-{summaries_text}
-
-Based on the themes, topics, and interests shown in these videos, write ONE sentence that captures the overarching theme or interest area. This will be used to search YouTube for similar content.
-
-The sentence should be:
-- Descriptive and specific (not generic)
-- Focus on the key topics/themes that appear across multiple videos
-- Suitable for use as a YouTube search query
-
-Respond with ONLY the theme sentence, nothing else."""
-
-        response = client.models.generate_content(
-            model="gemini-3-flash-preview", contents=prompt
-        )
         theme = response.text
         theme = theme.strip() if theme else None
         logger.info(f"Generated theme: {theme}")
+
         return theme
 
     except Exception as e:

@@ -1765,4 +1765,63 @@ audio {
         flex: 0 0 auto;
     }
 }
+
+/* Footer */
+.app-footer {
+    margin-top: 2rem;
+    padding: 2rem 0 3rem 0;
+    text-align: center;
+}
+
+.btn-stats {
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    padding: 1rem 2rem;
+    border-radius: 12px;
+    font-size: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+    box-shadow:
+        0 4px 6px rgba(0, 0, 0, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.btn-stats:hover {
+    background: var(--bg-primary);
+    border-color: var(--accent-primary);
+    transform: translateY(-2px);
+    box-shadow:
+        0 6px 12px rgba(124, 58, 237, 0.2),
+        inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.btn-stats:active {
+    transform: translateY(0);
+    box-shadow:
+        0 2px 4px rgba(0, 0, 0, 0.3),
+        inset 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.btn-stats i {
+    font-size: 1.2rem;
+    color: var(--accent-primary);
+}
+
+@media (max-width: 768px) {
+    .app-footer {
+        padding: 1.5rem 0 2rem 0;
+    }
+
+    .btn-stats {
+        padding: 0.875rem 1.5rem;
+        font-size: 0.95rem;
+        width: 100%;
+        max-width: 300px;
+    }
+}
 }

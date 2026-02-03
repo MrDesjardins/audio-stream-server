@@ -72,16 +72,19 @@ class Config:
     # Transcription settings
     transcription_enabled: bool
     transcription_provider: str  # "openai" or "gemini"
+    transcription_model: str  # Model name for transcription
     openai_api_key: Optional[str]
     temp_audio_dir: str
     max_audio_length_minutes: int
 
     # Summarization settings
     summary_provider: str  # "openai" or "gemini"
+    summary_model: str  # Model name for video summarization
     gemini_api_key: Optional[str]
 
     # Weekly summary settings (separate from video summarization)
     weekly_summary_provider: str  # "openai" or "gemini"
+    weekly_summary_model: str  # Model name for weekly summaries
 
     # Trilium settings
     trilium_url: Optional[str]
@@ -93,6 +96,7 @@ class Config:
     books_to_analyze: int
     suggestions_count: int
     suggestions_ai_provider: str  # "openai" or "gemini"
+    suggestions_model: str  # Model name for suggestions
 
     # Weekly summary settings
     weekly_summary_enabled: bool
@@ -110,6 +114,29 @@ class Config:
             os.getenv("TRANSCRIPTION_ENABLED", "false").lower() == "true"
         )
 
+        # Get providers first to determine defaults
+        # Gemini for everything except Whisper transcription
+        transcription_provider = os.getenv("TRANSCRIPTION_PROVIDER", "openai").lower()
+        summary_provider = os.getenv("SUMMARY_PROVIDER", "gemini").lower()
+        weekly_summary_provider = os.getenv("WEEKLY_SUMMARY_PROVIDER", "gemini").lower()
+        suggestions_ai_provider = os.getenv("SUGGESTIONS_AI_PROVIDER", "gemini").lower()
+
+        # Determine default models based on providers
+        default_transcription_model = (
+            "whisper-1"
+            if transcription_provider == "openai"
+            else "gemini-2.5-flash-preview-tts"
+        )
+        default_summary_model = (
+            "gpt-4o-mini" if summary_provider == "openai" else "gemini-2.5-flash"
+        )
+        default_weekly_summary_model = (
+            "gpt-4o-mini" if weekly_summary_provider == "openai" else "gemini-2.5-flash"
+        )
+        default_suggestions_model = (
+            "gpt-4o-mini" if suggestions_ai_provider == "openai" else "gemini-2.5-flash"
+        )
+
         config = cls(
             # Server settings
             fastapi_host=os.getenv("FASTAPI_HOST", "127.0.0.1"),
@@ -123,21 +150,24 @@ class Config:
             ),
             # Transcription settings
             transcription_enabled=transcription_enabled,
-            transcription_provider=os.getenv(
-                "TRANSCRIPTION_PROVIDER", "openai"
-            ).lower(),
+            transcription_provider=transcription_provider,
+            transcription_model=os.getenv(
+                "TRANSCRIPTION_MODEL", default_transcription_model
+            ),
             openai_api_key=os.getenv("OPENAI_API_KEY"),
             temp_audio_dir=os.getenv("TEMP_AUDIO_DIR", "/tmp/audio-transcriptions"),
             max_audio_length_minutes=_parse_int(
                 os.getenv("MAX_AUDIO_LENGTH_MINUTES", "60"), 60, 1, 600
             ),
             # Summarization settings
-            summary_provider=os.getenv("SUMMARY_PROVIDER", "openai").lower(),
+            summary_provider=summary_provider,
+            summary_model=os.getenv("SUMMARY_MODEL", default_summary_model),
             gemini_api_key=os.getenv("GEMINI_API_KEY"),
             # Weekly summary settings
-            weekly_summary_provider=os.getenv(
-                "WEEKLY_SUMMARY_PROVIDER", "gemini"
-            ).lower(),
+            weekly_summary_provider=weekly_summary_provider,
+            weekly_summary_model=os.getenv(
+                "WEEKLY_SUMMARY_MODEL", default_weekly_summary_model
+            ),
             # Trilium settings
             trilium_url=os.getenv("TRILIUM_URL", "").rstrip("/") or None,
             trilium_etapi_token=os.getenv("TRILIUM_ETAPI_TOKEN"),
@@ -151,9 +181,8 @@ class Config:
                 os.getenv("BOOKS_TO_ANALYZE", "10"), 10, 1, 100
             ),
             suggestions_count=_parse_int(os.getenv("SUGGESTIONS_COUNT", "4"), 4, 1, 20),
-            suggestions_ai_provider=os.getenv(
-                "SUGGESTIONS_AI_PROVIDER", "openai"
-            ).lower(),
+            suggestions_ai_provider=suggestions_ai_provider,
+            suggestions_model=os.getenv("SUGGESTIONS_MODEL", default_suggestions_model),
             # Weekly summary settings
             weekly_summary_enabled=os.getenv("WEEKLY_SUMMARY_ENABLED", "false").lower()
             == "true",

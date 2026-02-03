@@ -10,10 +10,9 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Optional
 
-from google import genai
-
 from config import get_config
-from services.api_clients import get_openai_client, get_httpx_client
+from services.api_clients import get_httpx_client
+from services.llm_clients import get_tracked_gemini_client, get_tracked_openai_client
 from services.database import get_history, get_summary_by_week_year, save_weekly_summary
 from services.path_utils import expand_path
 from services.trilium import (
@@ -280,25 +279,21 @@ def fetch_book_summaries(books: List[Dict[str, str]]) -> List[Dict[str, str]]:
     return summaries
 
 
-def generate_weekly_summary_openai(summaries: List[Dict[str, str]]) -> Optional[str]:
+def _build_weekly_summary_prompt(summaries: List[Dict[str, str]]) -> str:
     """
-    Generate weekly summary using OpenAI.
+    Build the prompt for weekly summary generation.
 
     Args:
         summaries: List of book summaries
 
     Returns:
-        Generated weekly summary in markdown format
+        Formatted prompt string
     """
-    try:
-        client = get_openai_client()
+    summaries_text = "\n\n---\n\n".join(
+        f"**{s['title']}**\n\n{s['summary']}" for s in summaries
+    )
 
-        # Build the prompt with all summaries
-        summaries_text = "\n\n---\n\n".join(
-            f"**{s['title']}**\n\n{s['summary']}" for s in summaries
-        )
-
-        prompt = f"""You are analyzing audiobook summaries from the past week. Below are {len(summaries)} book summaries:
+    return f"""You are analyzing audiobook summaries from the past week. Below are {len(summaries)} book summaries:
 
 {summaries_text}
 
@@ -329,17 +324,40 @@ Format each theme as a subsection with explanation.
 
 Write in markdown format. Be insightful, synthesis-focused, and highlight connections between books."""
 
-        response = client.chat.completions.create(
-            model="gpt-4o",  # Use GPT-4 for better quality
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are an expert at analyzing and synthesizing insights from books. You identify patterns, extract key learnings, and find connections across diverse topics.",
-                },
-                {"role": "user", "content": prompt},
-            ],
+
+def generate_weekly_summary_openai(summaries: List[Dict[str, str]]) -> Optional[str]:
+    """
+    Generate weekly summary using OpenAI.
+
+    Args:
+        summaries: List of book summaries
+
+    Returns:
+        Generated weekly summary in markdown format
+    """
+    try:
+        config = get_config()
+        client = get_tracked_openai_client()
+
+        prompt = _build_weekly_summary_prompt(summaries)
+
+        messages = [
+            {
+                "role": "system",
+                "content": "You are an expert at analyzing and synthesizing insights from books. You identify patterns, extract key learnings, and find connections across diverse topics.",
+            },
+            {"role": "user", "content": prompt},
+        ]
+
+        metadata = {"book_count": len(summaries)}
+
+        response = client.create_chat_completion(
+            messages=messages,
+            feature="weekly_summary",
+            metadata=metadata,
             temperature=0.7,
-            max_tokens=3000,
+            max_tokens=3500,
+            model_override=config.weekly_summary_model,
         )
 
         summary = response.choices[0].message.content
@@ -367,47 +385,18 @@ def generate_weekly_summary_gemini(summaries: List[Dict[str, str]]) -> Optional[
         Generated weekly summary in markdown format
     """
     try:
-        client = genai.Client(api_key=config.gemini_api_key)
+        config = get_config()
+        client = get_tracked_gemini_client()
 
-        # Build the prompt with all summaries
-        summaries_text = "\n\n---\n\n".join(
-            f"**{s['title']}**\n\n{s['summary']}" for s in summaries
-        )
+        prompt = _build_weekly_summary_prompt(summaries)
 
-        prompt = f"""You are analyzing audiobook summaries from the past week. Below are {len(summaries)} book summaries:
+        metadata = {"book_count": len(summaries)}
 
-{summaries_text}
-
-Please create a comprehensive weekly reading summary with the following sections:
-
-## Overview
-Write a 2-3 paragraph overview of the week's reading, highlighting the variety of topics covered and any notable patterns.
-
-## 15 Most Important Learnings
-List the 15 most important, actionable, and impactful learnings from across all the books. Each learning should be:
-- Specific and actionable
-- Stand-alone (understandable without full context)
-- Represent diverse topics from different books
-- Numbered 1-15
-
-Format as:
-1. **[Topic/Book Theme]**: [Specific learning or insight]
-2. ...
-
-## Common Themes
-Analyze the books to identify 3-5 recurring themes, patterns, or concepts that appeared across multiple books. For each theme:
-- Name the theme
-- Explain how it appeared in different books
-- Provide synthesis/connection between the books
-- Make it insightful and thought-provoking
-
-Format each theme as a subsection with explanation.
-
-Write in markdown format. Be insightful, synthesis-focused, and highlight connections between books."""
-
-        response = client.models.generate_content(
-            model="gemini-3-pro-preview",  # Using advanced Gemini model
-            contents=prompt,
+        response = client.generate_content(
+            prompt=prompt,
+            feature="weekly_summary",
+            metadata=metadata,
+            model_override=config.weekly_summary_model,
         )
 
         summary = response.text

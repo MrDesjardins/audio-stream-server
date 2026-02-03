@@ -2,7 +2,7 @@ import sqlite3
 import logging
 import threading
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import List, Optional, Any, Dict
 from contextlib import contextmanager
 from queue import Queue, Empty
 import os
@@ -156,6 +156,40 @@ def init_database():
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_queue_position
             ON queue(position ASC)
+        """)
+
+        # LLM usage statistics table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS llm_usage_stats (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                model TEXT NOT NULL,
+                feature TEXT NOT NULL,
+                prompt_tokens INTEGER,
+                response_tokens INTEGER,
+                reasoning_tokens INTEGER,
+                total_tokens INTEGER,
+                video_id TEXT,
+                metadata TEXT,
+                created_at TEXT NOT NULL
+            )
+        """)
+
+        # Create indexes for LLM stats queries
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_llm_timestamp
+            ON llm_usage_stats(timestamp DESC)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_llm_provider_model
+            ON llm_usage_stats(provider, model)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_llm_feature
+            ON llm_usage_stats(feature)
         """)
 
         logger.info(f"Database initialized at {DB_PATH}")
@@ -576,3 +610,244 @@ def add_summary_to_queue(week_year: str) -> int:
             f"Added summary to queue (position {next_position}): {summary.title}"
         )
         return record_id
+
+
+def log_llm_usage(
+    provider: str,
+    model: str,
+    feature: str,
+    prompt_tokens: Optional[int] = None,
+    response_tokens: Optional[int] = None,
+    reasoning_tokens: Optional[int] = None,
+    video_id: Optional[str] = None,
+    metadata: Optional[dict] = None,
+) -> int:
+    """
+    Log LLM API usage statistics to the database.
+
+    Args:
+        provider: LLM provider (e.g., "openai", "gemini")
+        model: Model name (e.g., "gpt-4o", "gemini-1.5-flash")
+        feature: Feature using the LLM (e.g., "transcription", "summarization", "weekly_summary", "book_suggestions")
+        prompt_tokens: Number of input tokens
+        response_tokens: Number of output tokens
+        reasoning_tokens: Number of reasoning tokens (for models like o1)
+        video_id: Associated YouTube video ID (optional)
+        metadata: Additional metadata as JSON (optional)
+
+    Returns:
+        The ID of the inserted record
+    """
+    import json
+
+    timestamp = datetime.now(timezone.utc).isoformat()
+    created_at = timestamp
+
+    # Calculate total tokens
+    total_tokens = 0
+    if prompt_tokens:
+        total_tokens += prompt_tokens
+    if response_tokens:
+        total_tokens += response_tokens
+    if reasoning_tokens:
+        total_tokens += reasoning_tokens
+
+    # Convert metadata to JSON string
+    metadata_json = json.dumps(metadata) if metadata else None
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO llm_usage_stats (
+                timestamp, provider, model, feature,
+                prompt_tokens, response_tokens, reasoning_tokens, total_tokens,
+                video_id, metadata, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+            (
+                timestamp,
+                provider,
+                model,
+                feature,
+                prompt_tokens,
+                response_tokens,
+                reasoning_tokens,
+                total_tokens,
+                video_id,
+                metadata_json,
+                created_at,
+            ),
+        )
+
+        record_id = cursor.lastrowid
+        logger.debug(
+            f"Logged LLM usage: {provider}/{model} for {feature} "
+            f"({total_tokens} tokens)"
+        )
+        return record_id
+
+
+def get_llm_usage_stats(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    feature: Optional[str] = None,
+    limit: int = 1000,
+) -> List[dict]:
+    """
+    Query LLM usage statistics with optional filters.
+
+    Args:
+        start_date: Start date (ISO format, optional)
+        end_date: End date (ISO format, optional)
+        provider: Filter by provider (optional)
+        model: Filter by model (optional)
+        feature: Filter by feature (optional)
+        limit: Maximum number of records to return
+
+    Returns:
+        List of usage stat dictionaries
+    """
+    import json
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+
+        query = """
+            SELECT id, timestamp, provider, model, feature,
+                   prompt_tokens, response_tokens, reasoning_tokens, total_tokens,
+                   video_id, metadata, created_at
+            FROM llm_usage_stats
+            WHERE 1=1
+        """
+        params: List[Any] = []
+
+        if start_date:
+            query += " AND timestamp >= ?"
+            params.append(start_date)
+
+        if end_date:
+            query += " AND timestamp <= ?"
+            params.append(end_date)
+
+        if provider:
+            query += " AND provider = ?"
+            params.append(provider)
+
+        if model:
+            query += " AND model = ?"
+            params.append(model)
+
+        if feature:
+            query += " AND feature = ?"
+            params.append(feature)
+
+        query += " ORDER BY timestamp DESC LIMIT ?"
+        params.append(limit)
+
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+
+        results = []
+        for row in rows:
+            stat = {
+                "id": row["id"],
+                "timestamp": row["timestamp"],
+                "provider": row["provider"],
+                "model": row["model"],
+                "feature": row["feature"],
+                "prompt_tokens": row["prompt_tokens"],
+                "response_tokens": row["response_tokens"],
+                "reasoning_tokens": row["reasoning_tokens"],
+                "total_tokens": row["total_tokens"],
+                "video_id": row["video_id"],
+                "metadata": json.loads(row["metadata"]) if row["metadata"] else None,
+                "created_at": row["created_at"],
+            }
+            results.append(stat)
+
+        return results
+
+
+def get_llm_usage_summary(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Get aggregated LLM usage statistics.
+
+    Args:
+        start_date: Start date (ISO format, optional)
+        end_date: End date (ISO format, optional)
+
+    Returns:
+        Dictionary with aggregated statistics by provider, model, and feature
+    """
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+
+        query = """
+            SELECT
+                provider,
+                model,
+                feature,
+                COUNT(*) as call_count,
+                SUM(prompt_tokens) as total_prompt_tokens,
+                SUM(response_tokens) as total_response_tokens,
+                SUM(reasoning_tokens) as total_reasoning_tokens,
+                SUM(total_tokens) as total_tokens
+            FROM llm_usage_stats
+            WHERE 1=1
+        """
+        params: List[Any] = []
+
+        if start_date:
+            query += " AND timestamp >= ?"
+            params.append(start_date)
+
+        if end_date:
+            query += " AND timestamp <= ?"
+            params.append(end_date)
+
+        query += " GROUP BY provider, model, feature ORDER BY total_tokens DESC"
+
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+
+        results: Dict[str, Any] = {
+            "by_provider_model_feature": [],
+            "totals": {
+                "call_count": 0,
+                "total_prompt_tokens": 0,
+                "total_response_tokens": 0,
+                "total_reasoning_tokens": 0,
+                "total_tokens": 0,
+            },
+        }
+
+        for row in rows:
+            stat = {
+                "provider": row["provider"],
+                "model": row["model"],
+                "feature": row["feature"],
+                "call_count": row["call_count"],
+                "total_prompt_tokens": row["total_prompt_tokens"] or 0,
+                "total_response_tokens": row["total_response_tokens"] or 0,
+                "total_reasoning_tokens": row["total_reasoning_tokens"] or 0,
+                "total_tokens": row["total_tokens"] or 0,
+            }
+            results["by_provider_model_feature"].append(stat)
+
+            # Add to totals
+            results["totals"]["call_count"] += stat["call_count"]
+            results["totals"]["total_prompt_tokens"] += stat["total_prompt_tokens"]
+            results["totals"]["total_response_tokens"] += stat["total_response_tokens"]
+            results["totals"]["total_reasoning_tokens"] += stat[
+                "total_reasoning_tokens"
+            ]
+            results["totals"]["total_tokens"] += stat["total_tokens"]
+
+        return results

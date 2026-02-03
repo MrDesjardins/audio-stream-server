@@ -301,14 +301,9 @@ class TestGetRecentSummaries:
 class TestGenerateThemeOpenAI:
     """Tests for OpenAI theme generation."""
 
-    @patch("services.book_suggestions.OpenAI")
-    @patch("services.book_suggestions.config")
-    def test_generate_theme_success(
-        self, mock_config_module, mock_openai_class, mock_config
-    ):
+    @patch("services.book_suggestions.get_tracked_openai_client")
+    def test_generate_theme_success(self, mock_get_client):
         """Test successful theme generation."""
-        mock_config_module.openai_api_key = mock_config.openai_api_key
-
         # Mock OpenAI response - returns a single theme sentence
         mock_response = Mock()
         mock_response.choices = [Mock()]
@@ -319,8 +314,8 @@ class TestGenerateThemeOpenAI:
         )
 
         mock_client = Mock()
-        mock_client.chat.completions.create.return_value = mock_response
-        mock_openai_class.return_value = mock_client
+        mock_client.create_chat_completion.return_value = mock_response
+        mock_get_client.return_value = mock_client
 
         summaries = [
             VideoSummary(
@@ -337,19 +332,14 @@ class TestGenerateThemeOpenAI:
         theme = generate_theme_openai(summaries)
 
         assert theme == "Personal development and productivity improvement strategies"
-        assert mock_client.chat.completions.create.called
+        assert mock_client.create_chat_completion.called
 
-    @patch("services.book_suggestions.OpenAI")
-    @patch("services.book_suggestions.config")
-    def test_generate_theme_error(
-        self, mock_config_module, mock_openai_class, mock_config
-    ):
+    @patch("services.book_suggestions.get_tracked_openai_client")
+    def test_generate_theme_error(self, mock_get_client):
         """Test error handling in OpenAI theme generation."""
-        mock_config_module.openai_api_key = mock_config.openai_api_key
-
         mock_client = Mock()
-        mock_client.chat.completions.create.side_effect = Exception("API error")
-        mock_openai_class.return_value = mock_client
+        mock_client.create_chat_completion.side_effect = Exception("API error")
+        mock_get_client.return_value = mock_client
 
         summaries = [{"summary": "Book summary"}]
         theme = generate_theme_openai(summaries)
@@ -360,21 +350,16 @@ class TestGenerateThemeOpenAI:
 class TestGenerateThemeGemini:
     """Tests for Gemini theme generation."""
 
-    @patch("services.book_suggestions.genai.Client")
-    @patch("services.book_suggestions.config")
-    def test_generate_theme_success(
-        self, mock_config_module, mock_client_class, mock_config
-    ):
+    @patch("services.book_suggestions.get_tracked_gemini_client")
+    def test_generate_theme_success(self, mock_get_client):
         """Test successful Gemini theme generation."""
-        mock_config_module.gemini_api_key = "test-key"
-
         # Mock Gemini response
         mock_response = Mock()
         mock_response.text = "Personal development and productivity strategies"
 
         mock_client = Mock()
-        mock_client.models.generate_content.return_value = mock_response
-        mock_client_class.return_value = mock_client
+        mock_client.generate_content.return_value = mock_response
+        mock_get_client.return_value = mock_client
 
         summaries = [
             VideoSummary(
@@ -392,19 +377,14 @@ class TestGenerateThemeGemini:
         theme = generate_theme_gemini(summaries)
 
         assert theme == "Personal development and productivity strategies"
-        assert mock_client.models.generate_content.called
+        assert mock_client.generate_content.called
 
-    @patch("services.book_suggestions.genai.Client")
-    @patch("services.book_suggestions.config")
-    def test_generate_theme_error(
-        self, mock_config_module, mock_client_class, mock_config
-    ):
+    @patch("services.book_suggestions.get_tracked_gemini_client")
+    def test_generate_theme_error(self, mock_get_client):
         """Test error handling in Gemini theme generation."""
-        mock_config_module.gemini_api_key = "test-key"
-
         mock_client = Mock()
-        mock_client.models.generate_content.side_effect = Exception("API error")
-        mock_client_class.return_value = mock_client
+        mock_client.generate_content.side_effect = Exception("API error")
+        mock_get_client.return_value = mock_client
 
         summaries = [
             VideoSummary(
@@ -417,20 +397,15 @@ class TestGenerateThemeGemini:
         theme = generate_theme_gemini(summaries)
         assert theme is None
 
-    @patch("services.book_suggestions.genai.Client")
-    @patch("services.book_suggestions.config")
-    def test_generate_theme_empty_response(
-        self, mock_config_module, mock_client_class, mock_config
-    ):
+    @patch("services.book_suggestions.get_tracked_gemini_client")
+    def test_generate_theme_empty_response(self, mock_get_client):
         """Test handling of empty response from Gemini."""
-        mock_config_module.gemini_api_key = "test-key"
-
         mock_response = Mock()
         mock_response.text = None
 
         mock_client = Mock()
-        mock_client.models.generate_content.return_value = mock_response
-        mock_client_class.return_value = mock_client
+        mock_client.generate_content.return_value = mock_response
+        mock_get_client.return_value = mock_client
 
         summaries = [
             VideoSummary(

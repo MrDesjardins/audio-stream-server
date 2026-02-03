@@ -588,7 +588,7 @@ class TestFetchBookSummaries:
 class TestGenerateWeeklySummaryOpenAI:
     """Tests for generate_weekly_summary_openai function."""
 
-    @patch("services.weekly_summary.get_openai_client")
+    @patch("services.weekly_summary.get_tracked_openai_client")
     def test_generates_summary_with_openai(self, mock_client_getter):
         """Should call OpenAI API and return summary."""
         summaries = [
@@ -601,28 +601,28 @@ class TestGenerateWeeklySummaryOpenAI:
         mock_response.choices[0].message.content = "## Overview\nWeekly summary content"
 
         mock_client = Mock()
-        mock_client.chat.completions.create.return_value = mock_response
+        mock_client.create_chat_completion.return_value = mock_response
         mock_client_getter.return_value = mock_client
 
         result = generate_weekly_summary_openai(summaries)
 
         assert result == "## Overview\nWeekly summary content"
-        mock_client.chat.completions.create.assert_called_once()
+        mock_client.create_chat_completion.assert_called_once()
 
-    @patch("services.weekly_summary.get_openai_client")
+    @patch("services.weekly_summary.get_tracked_openai_client")
     def test_handles_openai_error(self, mock_client_getter):
         """Should return None on OpenAI API error."""
         summaries = [{"title": "Book 1", "summary": "Summary 1"}]
 
         mock_client = Mock()
-        mock_client.chat.completions.create.side_effect = Exception("API Error")
+        mock_client.create_chat_completion.side_effect = Exception("API Error")
         mock_client_getter.return_value = mock_client
 
         result = generate_weekly_summary_openai(summaries)
 
         assert result is None
 
-    @patch("services.weekly_summary.get_openai_client")
+    @patch("services.weekly_summary.get_tracked_openai_client")
     def test_handles_empty_openai_response(self, mock_client_getter):
         """Should return None when OpenAI returns empty content."""
         summaries = [{"title": "Book 1", "summary": "Summary 1"}]
@@ -632,7 +632,7 @@ class TestGenerateWeeklySummaryOpenAI:
         mock_response.choices[0].message.content = None  # Empty content
 
         mock_client = Mock()
-        mock_client.chat.completions.create.return_value = mock_response
+        mock_client.create_chat_completion.return_value = mock_response
         mock_client_getter.return_value = mock_client
 
         result = generate_weekly_summary_openai(summaries)
@@ -643,7 +643,7 @@ class TestGenerateWeeklySummaryOpenAI:
 class TestGenerateWeeklySummaryGemini:
     """Tests for generate_weekly_summary_gemini function."""
 
-    @patch("services.weekly_summary.genai.Client")
+    @patch("services.weekly_summary.get_tracked_gemini_client")
     @patch("services.weekly_summary.config")
     def test_generates_summary_with_gemini(self, mock_config, mock_gemini_client):
         """Should call Gemini API and return summary."""
@@ -658,14 +658,14 @@ class TestGenerateWeeklySummaryGemini:
         mock_response.text = "## Overview\nWeekly summary from Gemini"
 
         mock_client_instance = Mock()
-        mock_client_instance.models.generate_content.return_value = mock_response
+        mock_client_instance.generate_content.return_value = mock_response
         mock_gemini_client.return_value = mock_client_instance
 
         result = generate_weekly_summary_gemini(summaries)
 
         assert result == "## Overview\nWeekly summary from Gemini"
 
-    @patch("services.weekly_summary.genai.Client")
+    @patch("services.weekly_summary.get_tracked_gemini_client")
     @patch("services.weekly_summary.config")
     def test_handles_gemini_error(self, mock_config, mock_gemini_client):
         """Should return None on Gemini API error."""
@@ -674,16 +674,14 @@ class TestGenerateWeeklySummaryGemini:
         summaries = [{"title": "Book 1", "summary": "Summary 1"}]
 
         mock_client_instance = Mock()
-        mock_client_instance.models.generate_content.side_effect = Exception(
-            "API Error"
-        )
+        mock_client_instance.generate_content.side_effect = Exception("API Error")
         mock_gemini_client.return_value = mock_client_instance
 
         result = generate_weekly_summary_gemini(summaries)
 
         assert result is None
 
-    @patch("services.weekly_summary.genai.Client")
+    @patch("services.weekly_summary.get_tracked_gemini_client")
     @patch("services.weekly_summary.config")
     def test_handles_empty_gemini_response(self, mock_config, mock_gemini_client):
         """Should return None when Gemini returns empty text."""
@@ -695,7 +693,7 @@ class TestGenerateWeeklySummaryGemini:
         mock_response.text = None  # Empty text
 
         mock_client_instance = Mock()
-        mock_client_instance.models.generate_content.return_value = mock_response
+        mock_client_instance.generate_content.return_value = mock_response
         mock_gemini_client.return_value = mock_client_instance
 
         result = generate_weekly_summary_gemini(summaries)

@@ -1,10 +1,9 @@
 """Transcript summarization using ChatGPT or Gemini."""
 
 import logging
-from google import genai
 
 from config import get_config
-from services.api_clients import get_openai_client
+from services.llm_clients import get_tracked_openai_client, get_tracked_gemini_client
 
 logger = logging.getLogger(__name__)
 
@@ -57,29 +56,37 @@ def _summarize_with_openai(transcript: str, video_id: str) -> str:
 
     logger.info(f"Summarizing transcript for video {video_id} using OpenAI")
 
-    client = get_openai_client()
+    client = get_tracked_openai_client()
 
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",  # Using cost-effective model
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a helpful assistant that creates clear, concise summaries of video transcripts.",
-                },
-                {
-                    "role": "user",
-                    "content": SUMMARY_PROMPT_TEMPLATE.format(transcript=transcript),
-                },
-            ],
+        messages = [
+            {
+                "role": "system",
+                "content": "You are a helpful assistant that creates clear, concise summaries of video transcripts.",
+            },
+            {
+                "role": "user",
+                "content": SUMMARY_PROMPT_TEMPLATE.format(transcript=transcript),
+            },
+        ]
+
+        metadata = {"transcript_length_chars": len(transcript)}
+
+        response = client.create_chat_completion(
+            messages=messages,
+            feature="summarization",
+            video_id=video_id,
+            metadata=metadata,
             temperature=0.7,
-            max_tokens=1000,
+            max_tokens=1200,
+            model_override=config.summary_model,
         )
 
         summary = response.choices[0].message.content
         logger.info(
             f"Successfully generated summary using OpenAI ({0 if not summary else len(summary)} characters)"
         )
+
         return summary if summary else ""
 
     except Exception as e:
@@ -96,22 +103,26 @@ def _summarize_with_gemini(transcript: str, video_id: str) -> str:
 
     logger.info(f"Summarizing transcript for video {video_id} using Gemini")
 
-    try:
-        # Create client with API key
-        client = genai.Client(api_key=config.gemini_api_key)
+    client = get_tracked_gemini_client()
 
+    try:
         prompt = SUMMARY_PROMPT_TEMPLATE.format(transcript=transcript)
 
-        # Generate content using the new API
-        response = client.models.generate_content(
-            model="gemini-3-flash-preview",
-            contents=prompt,  # Using cost-effective model
+        metadata = {"transcript_length_chars": len(transcript)}
+
+        response = client.generate_content(
+            prompt=prompt,
+            feature="summarization",
+            video_id=video_id,
+            metadata=metadata,
+            model_override=config.summary_model,
         )
 
         summary = response.text
         logger.info(
             f"Successfully generated summary using Gemini ({0 if not summary else len(summary)} characters)"
         )
+
         return summary if summary else ""
 
     except Exception as e:

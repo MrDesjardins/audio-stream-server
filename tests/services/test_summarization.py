@@ -64,7 +64,7 @@ class TestSummarizeWithOpenAI:
         with pytest.raises(ValueError, match="OpenAI API key not configured"):
             _summarize_with_openai("Test transcript", "test123")
 
-    @patch("services.summarization.get_openai_client")
+    @patch("services.summarization.get_tracked_openai_client")
     @patch("services.summarization.get_config")
     def test_summarize_with_openai_success(self, mock_config, mock_get_client):
         """Test successful OpenAI summarization."""
@@ -82,7 +82,7 @@ class TestSummarizeWithOpenAI:
         mock_choice = Mock()
         mock_choice.message = mock_message
         mock_response.choices = [mock_choice]
-        mock_client.chat.completions.create.return_value = mock_response
+        mock_client.create_chat_completion.return_value = mock_response
         mock_get_client.return_value = mock_client
 
         result = _summarize_with_openai("Test transcript", "test123")
@@ -90,11 +90,12 @@ class TestSummarizeWithOpenAI:
         assert result == "This is the summary"
 
         # Verify API call
-        mock_client.chat.completions.create.assert_called_once()
-        call_args = mock_client.chat.completions.create.call_args
-        assert call_args[1]["model"] == "gpt-4o-mini"
+        mock_client.create_chat_completion.assert_called_once()
+        call_args = mock_client.create_chat_completion.call_args
         assert call_args[1]["temperature"] == 0.7
-        assert call_args[1]["max_tokens"] == 1000
+        assert call_args[1]["max_tokens"] == 1200
+        assert call_args[1]["feature"] == "summarization"
+        assert call_args[1]["video_id"] == "test123"
 
         # Verify messages
         messages = call_args[1]["messages"]
@@ -103,7 +104,7 @@ class TestSummarizeWithOpenAI:
         assert messages[1]["role"] == "user"
         assert "Test transcript" in messages[1]["content"]
 
-    @patch("services.summarization.get_openai_client")
+    @patch("services.summarization.get_tracked_openai_client")
     @patch("services.summarization.get_config")
     def test_summarize_with_openai_api_error(self, mock_config, mock_get_client):
         """Test OpenAI summarization with API error."""
@@ -114,7 +115,7 @@ class TestSummarizeWithOpenAI:
         mock_config.return_value = config
 
         mock_client = Mock()
-        mock_client.chat.completions.create.side_effect = Exception("API error")
+        mock_client.create_chat_completion.side_effect = Exception("API error")
         mock_get_client.return_value = mock_client
 
         with pytest.raises(Exception, match="API error"):
@@ -136,9 +137,9 @@ class TestSummarizeWithGemini:
         with pytest.raises(ValueError, match="Gemini API key not configured"):
             _summarize_with_gemini("Test transcript", "test123")
 
-    @patch("services.summarization.genai.Client")
+    @patch("services.summarization.get_tracked_gemini_client")
     @patch("services.summarization.get_config")
-    def test_summarize_with_gemini_success(self, mock_config, mock_genai_class):
+    def test_summarize_with_gemini_success(self, mock_config, mock_get_client):
         """Test successful Gemini summarization."""
         from services.summarization import _summarize_with_gemini
 
@@ -150,22 +151,23 @@ class TestSummarizeWithGemini:
         mock_client = Mock()
         mock_response = Mock()
         mock_response.text = "This is the Gemini summary"
-        mock_client.models.generate_content.return_value = mock_response
-        mock_genai_class.return_value = mock_client
+        mock_client.generate_content.return_value = mock_response
+        mock_get_client.return_value = mock_client
 
         result = _summarize_with_gemini("Test transcript", "test123")
 
         assert result == "This is the Gemini summary"
 
         # Verify API call
-        mock_client.models.generate_content.assert_called_once()
-        call_args = mock_client.models.generate_content.call_args
-        assert call_args[1]["model"] == "gemini-3-flash-preview"
-        assert "Test transcript" in call_args[1]["contents"]
+        mock_client.generate_content.assert_called_once()
+        call_args = mock_client.generate_content.call_args
+        assert call_args[1]["feature"] == "summarization"
+        assert call_args[1]["video_id"] == "test123"
+        assert "Test transcript" in call_args[1]["prompt"]
 
-    @patch("services.summarization.genai.Client")
+    @patch("services.summarization.get_tracked_gemini_client")
     @patch("services.summarization.get_config")
-    def test_summarize_with_gemini_api_error(self, mock_config, mock_genai_class):
+    def test_summarize_with_gemini_api_error(self, mock_config, mock_get_client):
         """Test Gemini summarization with API error."""
         from services.summarization import _summarize_with_gemini
 
@@ -174,8 +176,8 @@ class TestSummarizeWithGemini:
         mock_config.return_value = config
 
         mock_client = Mock()
-        mock_client.models.generate_content.side_effect = Exception("API error")
-        mock_genai_class.return_value = mock_client
+        mock_client.generate_content.side_effect = Exception("API error")
+        mock_get_client.return_value = mock_client
 
         with pytest.raises(Exception, match="API error"):
             _summarize_with_gemini("Test transcript", "test123")

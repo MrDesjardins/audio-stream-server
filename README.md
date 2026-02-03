@@ -120,12 +120,189 @@ When transcription is enabled:
 - UI shows transcription progress and allows viewing summaries
 - Backup: If Trilium is unavailable, transcripts are saved to `/tmp/trilium-backup/`
 
+## API Endpoints
+
+### Admin Endpoints
+
+#### LLM Usage Statistics
+
+Track and monitor all LLM API usage including token counts, costs, and performance.
+
+**Get detailed usage records:**
+```bash
+# Get recent usage (default: last 100 records)
+curl "http://localhost:8000/admin/llm-usage/stats?limit=50"
+
+# Filter by provider
+curl "http://localhost:8000/admin/llm-usage/stats?provider=openai&limit=100"
+curl "http://localhost:8000/admin/llm-usage/stats?provider=gemini&limit=100"
+
+# Filter by model
+curl "http://localhost:8000/admin/llm-usage/stats?model=gpt-4o&limit=50"
+curl "http://localhost:8000/admin/llm-usage/stats?model=whisper-1"
+
+# Filter by feature
+curl "http://localhost:8000/admin/llm-usage/stats?feature=transcription"
+curl "http://localhost:8000/admin/llm-usage/stats?feature=summarization"
+curl "http://localhost:8000/admin/llm-usage/stats?feature=weekly_summary"
+curl "http://localhost:8000/admin/llm-usage/stats?feature=book_suggestions"
+
+# Date range filter (ISO 8601 format)
+curl "http://localhost:8000/admin/llm-usage/stats?start_date=2026-02-01T00:00:00&end_date=2026-02-03T23:59:59"
+
+# Combine filters
+curl "http://localhost:8000/admin/llm-usage/stats?provider=openai&feature=transcription&start_date=2026-02-01T00:00:00"
+```
+
+**Response format:**
+```json
+{
+  "status": "success",
+  "count": 10,
+  "limit": 50,
+  "filters": {
+    "start_date": "2026-02-01T00:00:00",
+    "end_date": null,
+    "provider": "openai",
+    "model": null,
+    "feature": null
+  },
+  "stats": [
+    {
+      "id": 123,
+      "timestamp": "2026-02-03T03:26:28.983261+00:00",
+      "provider": "openai",
+      "model": "gpt-4o-mini",
+      "feature": "summarization",
+      "prompt_tokens": 1000,
+      "response_tokens": 500,
+      "reasoning_tokens": null,
+      "total_tokens": 1500,
+      "video_id": "dQw4w9WgXcQ",
+      "metadata": {
+        "transcript_length_chars": 5000,
+        "summary_length_chars": 500
+      },
+      "created_at": "2026-02-03T03:26:28.983261+00:00"
+    }
+  ]
+}
+```
+
+**Get aggregated summary:**
+```bash
+# Overall summary (all time)
+curl "http://localhost:8000/admin/llm-usage/summary"
+
+# Summary for specific date range
+curl "http://localhost:8000/admin/llm-usage/summary?start_date=2026-02-01T00:00:00"
+curl "http://localhost:8000/admin/llm-usage/summary?start_date=2026-02-01T00:00:00&end_date=2026-02-28T23:59:59"
+```
+
+**Response format:**
+```json
+{
+  "status": "success",
+  "filters": {
+    "start_date": "2026-02-01T00:00:00",
+    "end_date": null
+  },
+  "summary": {
+    "totals": {
+      "call_count": 150,
+      "total_prompt_tokens": 125000,
+      "total_response_tokens": 45000,
+      "total_reasoning_tokens": 0,
+      "total_tokens": 170000
+    },
+    "by_provider_model_feature": [
+      {
+        "provider": "openai",
+        "model": "gpt-4o",
+        "feature": "weekly_summary",
+        "call_count": 4,
+        "total_prompt_tokens": 32000,
+        "total_response_tokens": 8000,
+        "total_reasoning_tokens": 0,
+        "total_tokens": 40000
+      },
+      {
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "feature": "summarization",
+        "call_count": 50,
+        "total_prompt_tokens": 50000,
+        "total_response_tokens": 20000,
+        "total_reasoning_tokens": 0,
+        "total_tokens": 70000
+      }
+    ]
+  }
+}
+```
+
+**Query from Python:**
+```python
+from services.database import get_llm_usage_stats, get_llm_usage_summary
+
+# Get detailed stats
+stats = get_llm_usage_stats(
+    start_date="2026-02-01T00:00:00",
+    provider="openai",
+    feature="summarization",
+    limit=100
+)
+
+for stat in stats:
+    print(f"{stat['timestamp']}: {stat['model']} - {stat['total_tokens']} tokens")
+
+# Get aggregated summary
+summary = get_llm_usage_summary(
+    start_date="2026-02-01T00:00:00",
+    end_date="2026-02-28T23:59:59"
+)
+
+print(f"Total API calls: {summary['totals']['call_count']}")
+print(f"Total tokens: {summary['totals']['total_tokens']:,}")
+print(f"Total cost estimate: ${summary['totals']['total_tokens'] * 0.000001:.2f}")
+```
+
+**What's tracked:**
+- **Transcription (Whisper)**: Audio duration, file size, transcript length
+- **Transcription (Gemini)**: Prompt/response tokens, file size, transcript length
+- **Summarization**: Prompt/response tokens, transcript/summary lengths
+- **Weekly Summary**: Prompt/response tokens, book count, summary length
+- **Book Suggestions**: Prompt/response tokens, summaries count, theme length
+
+**Use cases:**
+- Monitor API costs and usage trends
+- Identify which features consume the most tokens
+- Track usage per video or date range
+- Optimize prompts to reduce token usage
+- Budget planning and cost forecasting
+
+#### Weekly Summary Management
+
+**Trigger weekly summary manually:**
+```bash
+curl -X POST "http://localhost:8000/admin/weekly-summary/trigger"
+```
+
+**Get next scheduled run time:**
+```bash
+curl "http://localhost:8000/admin/weekly-summary/next-run"
+```
+
 ## Costs
 
-Approximate API costs:
-- Whisper transcription: $0.006 per minute of audio
-- ChatGPT summarization (gpt-4o-mini): ~$0.001-0.01 per summary
-- Gemini summarization (gemini-1.5-flash): Free tier available
+Approximate API costs per operation:
+- **Whisper transcription**: $0.006 per minute of audio
+- **GPT-4o-mini summarization**: ~$0.001-0.01 per summary (avg 1,500 tokens)
+- **GPT-4o weekly summary**: ~$0.05-0.15 per summary (avg 10,000 tokens)
+- **Gemini**: Free tier available (15 requests/minute, 1 million tokens/day)
+
+**Cost tracking:**
+Use the LLM usage statistics endpoints above to monitor your actual usage and calculate precise costs based on current provider pricing.
 
 # Server configuration
 

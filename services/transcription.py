@@ -6,10 +6,9 @@ from pathlib import Path
 import subprocess
 import tempfile
 import time
-from google import genai
 
 from config import get_config
-from services.api_clients import get_openai_client
+from services.llm_clients import get_tracked_openai_client, get_tracked_gemini_client
 from services.path_utils import expand_path, expand_path_str
 
 logger = logging.getLogger(__name__)
@@ -133,7 +132,7 @@ def transcribe_audio_openai(audio_path: str, retries: int = 3) -> str:
     if not config.openai_api_key:
         raise ValueError("OpenAI API key not configured")
 
-    client = get_openai_client()
+    client = get_tracked_openai_client()
 
     # Always compress audio to save costs and reduce upload time
     file_size = expand_path(audio_path).stat().st_size
@@ -160,15 +159,58 @@ def transcribe_audio_openai(audio_path: str, retries: int = 3) -> str:
                     f"Transcribing audio file: {file_to_transcribe} (attempt {attempt + 1}/{retries})"
                 )
 
+                # Extract video_id from audio_path for tracking
+                video_id = None
+                try:
+                    # audio_path format: /path/to/{video_id}.mp3
+                    video_id = Path(audio_path).stem
+                except Exception:
+                    pass
+
+                # Get metadata for tracking
+                audio_file_size = Path(file_to_transcribe).stat().st_size
+
+                # Try to get precise duration using ffprobe
+                audio_duration_seconds = None
+                try:
+                    ffprobe_result = subprocess.run(
+                        [
+                            "ffprobe",
+                            "-v",
+                            "error",
+                            "-show_entries",
+                            "format=duration",
+                            "-of",
+                            "default=noprint_wrappers=1:nokey=1",
+                            file_to_transcribe,
+                        ],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
+                    if ffprobe_result.returncode == 0:
+                        audio_duration_seconds = float(ffprobe_result.stdout.strip())
+                except Exception:
+                    pass
+
+                metadata = {
+                    "audio_file_size_bytes": audio_file_size,
+                    "audio_duration_seconds": audio_duration_seconds,
+                    "compressed": True,
+                }
+
                 with open(file_to_transcribe, "rb") as audio_file:
-                    response = client.audio.transcriptions.create(
-                        model="whisper-1", file=audio_file, response_format="text"
+                    transcript = client.transcribe_audio(
+                        audio_file,
+                        feature="transcription",
+                        video_id=video_id,
+                        metadata=metadata,
                     )
 
-                transcript = response if isinstance(response, str) else response.text
                 logger.info(
                     f"Successfully transcribed audio ({len(transcript)} characters)"
                 )
+
                 return transcript
 
             except Exception as e:
@@ -222,6 +264,8 @@ def transcribe_audio_gemini(audio_path: str, retries: int = 3) -> str:
     if not config.gemini_api_key:
         raise ValueError("Gemini API key not configured")
 
+    client = get_tracked_gemini_client()
+
     # Expand ~ in path (Python's open() doesn't handle ~ paths)
     expanded_audio_path = expand_path_str(audio_path)
 
@@ -233,38 +277,34 @@ def transcribe_audio_gemini(audio_path: str, retries: int = 3) -> str:
                 f"Transcribing audio file with Gemini: {expanded_audio_path} (attempt {attempt + 1}/{retries})"
             )
 
-            # Create Gemini client
-            client = genai.Client(api_key=config.gemini_api_key)
+            # Extract video_id from audio_path for tracking
+            video_id = None
+            try:
+                video_id = Path(audio_path).stem
+            except Exception:
+                pass
 
-            # Upload the audio file
+            # Read audio file
             with open(expanded_audio_path, "rb") as audio_file:
                 audio_data = audio_file.read()
 
-            # Use Gemini to transcribe
-            # Gemini 1.5 Flash supports audio input
-            response = client.models.generate_content(
-                model="gemini-2.5-flash-preview-tts",
-                contents=[
-                    {
-                        "parts": [
-                            {
-                                "inline_data": {
-                                    "mime_type": "audio/mpeg",
-                                    "data": audio_data,
-                                }
-                            },
-                            {
-                                "text": "Please transcribe this audio file. Provide only the transcription text, no additional commentary."
-                            },
-                        ]
-                    }
-                ],
+            # Get audio file size for tracking
+            audio_file_size = Path(expanded_audio_path).stat().st_size
+
+            metadata = {"audio_file_size_bytes": audio_file_size}
+
+            transcript = client.transcribe_audio(
+                audio_data,
+                mime_type="audio/mpeg",
+                feature="transcription",
+                video_id=video_id,
+                metadata=metadata,
             )
 
-            transcript = response.text
             logger.info(
                 f"Successfully transcribed audio with Gemini ({len(transcript)} characters)"
             )
+
             return transcript
 
         except Exception as e:

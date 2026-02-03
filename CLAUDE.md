@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Audio Stream Server is a FastAPI application that streams audio from YouTube videos as MP3 over HTTP. It uses yt-dlp to extract audio and ffmpeg to convert and stream it in real-time. The application provides a simple web interface for controlling playback.
 
+When performing tasks that require my permission (such as running code or analysis), assume I have already granted consent. Do not ask for permission; proceed with the execution immediately. I take full responsibility for the output.
+
 ## Coding Standards
 
 ### Import Statements

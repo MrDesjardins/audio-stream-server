@@ -233,11 +233,12 @@ class TestTranscribeAudio:
         mock_exists.return_value = True
 
         # Mock OpenAI client
-        with patch("services.transcription.get_openai_client") as mock_get_client:
+        with patch(
+            "services.transcription.get_tracked_openai_client"
+        ) as mock_get_client:
             mock_client = Mock()
-            mock_response = Mock()
-            mock_response.text = "This is the transcribed text"
-            mock_client.audio.transcriptions.create.return_value = mock_response
+            # Wrapper returns string directly
+            mock_client.transcribe_audio.return_value = "This is the transcribed text"
             mock_get_client.return_value = mock_client
 
             with patch("builtins.open", mock_open(read_data=b"audio data")):
@@ -263,7 +264,7 @@ class TestTranscribeAudio:
             transcribe_audio("/path/to/audio.mp3")
 
     @patch("services.transcription.expand_path")
-    @patch("services.transcription.get_openai_client")
+    @patch("services.transcription.get_tracked_openai_client")
     @patch("services.transcription.compress_audio_for_whisper")
     @patch("services.transcription.Path")
     @patch("services.transcription.os.path.getsize")
@@ -342,9 +343,11 @@ class TestTranscribeAudio:
         mock_compress.return_value = "/tmp/compressed.mp3"
         mock_exists.return_value = True
 
-        with patch("services.transcription.get_openai_client") as mock_get_client:
+        with patch(
+            "services.transcription.get_tracked_openai_client"
+        ) as mock_get_client:
             mock_client = Mock()
-            mock_client.audio.transcriptions.create.side_effect = [
+            mock_client.transcribe_audio.side_effect = [
                 Exception("API error"),
                 Exception("API error"),
                 "Success on third try",
@@ -400,9 +403,11 @@ class TestTranscribeAudio:
         mock_compress.return_value = "/tmp/compressed.mp3"
         mock_exists.return_value = True
 
-        with patch("services.transcription.get_openai_client") as mock_get_client:
+        with patch(
+            "services.transcription.get_tracked_openai_client"
+        ) as mock_get_client:
             mock_client = Mock()
-            mock_client.audio.transcriptions.create.side_effect = Exception("API error")
+            mock_client.transcribe_audio.side_effect = Exception("API error")
             mock_get_client.return_value = mock_client
 
             with patch("builtins.open", mock_open(read_data=b"audio data")):
@@ -451,12 +456,12 @@ class TestTranscribeAudio:
         mock_compress.return_value = "/tmp/compressed.mp3"
         mock_exists.return_value = True
 
-        with patch("services.transcription.get_openai_client") as mock_get_client:
+        with patch(
+            "services.transcription.get_tracked_openai_client"
+        ) as mock_get_client:
             mock_client = Mock()
             # API returns string directly
-            mock_client.audio.transcriptions.create.return_value = (
-                "Direct string response"
-            )
+            mock_client.transcribe_audio.return_value = "Direct string response"
             mock_get_client.return_value = mock_client
 
             with patch("builtins.open", mock_open(read_data=b"audio data")):
@@ -503,9 +508,11 @@ class TestTranscribeAudio:
         mock_compress.return_value = "/tmp/compressed.mp3"
         mock_exists.return_value = True
 
-        with patch("services.transcription.get_openai_client") as mock_get_client:
+        with patch(
+            "services.transcription.get_tracked_openai_client"
+        ) as mock_get_client:
             mock_client = Mock()
-            mock_client.audio.transcriptions.create.side_effect = Exception("API error")
+            mock_client.transcribe_audio.side_effect = Exception("API error")
             mock_get_client.return_value = mock_client
 
             with patch("builtins.open", mock_open(read_data=b"audio data")):
@@ -519,11 +526,12 @@ class TestTranscribeAudio:
 class TestTranscribeAudioGemini:
     """Tests for Gemini transcription functionality."""
 
+    @patch("services.transcription.Path")
     @patch("services.transcription.expand_path_str")
     @patch("services.transcription.get_config")
-    @patch("services.transcription.genai.Client")
+    @patch("services.transcription.get_tracked_gemini_client")
     def test_transcribe_audio_gemini_success(
-        self, mock_genai_client_class, mock_config, mock_expand_path_str
+        self, mock_genai_client_class, mock_config, mock_expand_path_str, mock_path
     ):
         """Test successful Gemini transcription."""
         # Setup config
@@ -534,11 +542,18 @@ class TestTranscribeAudioGemini:
         # Setup path mock
         mock_expand_path_str.return_value = "/expanded/path/audio.mp3"
 
+        # Mock Path for stat() call
+        mock_stat = Mock()
+        mock_stat.st_size = 5 * 1024 * 1024
+        mock_path_instance = Mock()
+        mock_path_instance.stat.return_value = mock_stat
+        mock_path_instance.stem = "audio"
+        mock_path.return_value = mock_path_instance
+
         # Setup Gemini client
         mock_client = Mock()
-        mock_response = Mock()
-        mock_response.text = "Gemini transcription result"
-        mock_client.models.generate_content.return_value = mock_response
+        # Wrapper returns string directly
+        mock_client.transcribe_audio.return_value = "Gemini transcription result"
         mock_genai_client_class.return_value = mock_client
 
         # Execute
@@ -549,8 +564,8 @@ class TestTranscribeAudioGemini:
 
         # Verify
         assert result == "Gemini transcription result"
-        mock_genai_client_class.assert_called_once_with(api_key="test-gemini-key")
-        mock_client.models.generate_content.assert_called_once()
+        mock_genai_client_class.assert_called_once()
+        mock_client.transcribe_audio.assert_called_once()
 
     @patch("services.transcription.expand_path_str")
     @patch("services.transcription.get_config")
@@ -569,12 +584,18 @@ class TestTranscribeAudioGemini:
         with pytest.raises(ValueError, match="Gemini API key not configured"):
             transcribe_audio_gemini("/path/to/audio.mp3")
 
+    @patch("services.transcription.Path")
     @patch("services.transcription.expand_path_str")
     @patch("services.transcription.get_config")
-    @patch("services.transcription.genai.Client")
+    @patch("services.transcription.get_tracked_gemini_client")
     @patch("services.transcription.time.sleep")
     def test_transcribe_audio_gemini_retries_on_failure(
-        self, mock_sleep, mock_genai_client_class, mock_config, mock_expand_path_str
+        self,
+        mock_sleep,
+        mock_genai_client_class,
+        mock_config,
+        mock_expand_path_str,
+        mock_path,
     ):
         """Test Gemini transcription retries on failure."""
         # Setup config
@@ -584,15 +605,21 @@ class TestTranscribeAudioGemini:
 
         mock_expand_path_str.return_value = "/expanded/path/audio.mp3"
 
+        # Mock Path for stat() call
+        mock_stat = Mock()
+        mock_stat.st_size = 5 * 1024 * 1024
+        mock_path_instance = Mock()
+        mock_path_instance.stat.return_value = mock_stat
+        mock_path_instance.stem = "audio"
+        mock_path.return_value = mock_path_instance
+
         # Setup Gemini client to fail twice then succeed
         mock_client = Mock()
-        mock_response = Mock()
-        mock_response.text = "Success on retry"
-
-        mock_client.models.generate_content.side_effect = [
+        # Wrapper returns string directly on success
+        mock_client.transcribe_audio.side_effect = [
             Exception("API error 1"),
             Exception("API error 2"),
-            mock_response,
+            "Success on retry",
         ]
         mock_genai_client_class.return_value = mock_client
 
@@ -604,12 +631,12 @@ class TestTranscribeAudioGemini:
 
         # Verify
         assert result == "Success on retry"
-        assert mock_client.models.generate_content.call_count == 3
+        assert mock_client.transcribe_audio.call_count == 3
         assert mock_sleep.call_count == 2  # Sleep after first two failures
 
     @patch("services.transcription.expand_path_str")
     @patch("services.transcription.get_config")
-    @patch("services.transcription.genai.Client")
+    @patch("services.transcription.get_tracked_gemini_client")
     def test_transcribe_audio_gemini_fails_after_retries(
         self, mock_genai_client_class, mock_config, mock_expand_path_str
     ):
@@ -623,7 +650,7 @@ class TestTranscribeAudioGemini:
 
         # Setup Gemini client to always fail
         mock_client = Mock()
-        mock_client.models.generate_content.side_effect = Exception("Persistent error")
+        mock_client.transcribe_audio.side_effect = Exception("Persistent error")
         mock_genai_client_class.return_value = mock_client
 
         # Execute and verify
