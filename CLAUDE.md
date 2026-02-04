@@ -205,12 +205,11 @@ FASTAPI_HOST=10.0.0.181 FASTAPI_API_PORT=8000 uv run main.py
 Required system packages:
 - `yt-dlp` - YouTube audio extraction
 - `ffmpeg` - Audio conversion and streaming
-- `icecast2` - Optional for streaming infrastructure
 
 Install with:
 ```sh
 sudo apt update
-sudo apt install -y yt-dlp ffmpeg icecast2
+sudo apt install -y yt-dlp ffmpeg
 ```
 
 Note: The application expects `yt-dlp` to be at `/usr/local/bin/yt-dlp` (see main.py:30).
@@ -611,7 +610,7 @@ Run the setup script to install dependencies and initialize the database:
 ```
 
 This script will:
-1. Install system dependencies (yt-dlp, ffmpeg, icecast2)
+1. Install system dependencies (yt-dlp, ffmpeg)
 2. Install uv (Python package manager) if not present
 3. Install Python dependencies via `uv sync`
 4. Initialize the SQLite database with proper schema

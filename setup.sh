@@ -21,7 +21,7 @@ fi
 echo "Step 1: Installing system dependencies..."
 echo "----------------------------------------"
 sudo apt update
-sudo apt install -y yt-dlp ffmpeg icecast2 python3-pip
+sudo apt install -y yt-dlp ffmpeg python3-pip
 
 echo ""
 echo "Step 2: Installing Python package manager (uv)..."
