@@ -107,6 +107,9 @@ class Config:
     elevenlabs_voice_id: str
     weekly_summary_audio_dir: str
 
+    # Client-side logging settings
+    client_log_batch_interval: int  # Milliseconds between log batches
+
     @classmethod
     def load_from_env(cls) -> "Config":
         """Load configuration from environment variables."""
@@ -195,6 +198,10 @@ class Config:
             weekly_summary_audio_dir=os.getenv(
                 "WEEKLY_SUMMARY_AUDIO_DIR", "/var/audio-summaries"
             ),
+            # Client-side logging settings
+            client_log_batch_interval=_parse_int(
+                os.getenv("CLIENT_LOG_BATCH_INTERVAL", "5000"), 5000, 1000, 60000
+            ),  # 1-60 seconds
         )
 
         # Validate configuration if transcription is enabled

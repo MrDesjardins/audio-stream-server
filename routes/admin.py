@@ -3,9 +3,13 @@ Admin endpoints for testing and manual operations.
 """
 
 import logging
+from datetime import datetime
+from pathlib import Path
+from typing import List, Dict, Any
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.responses import JSONResponse, HTMLResponse, PlainTextResponse
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
 
 from config import get_config
 
@@ -13,6 +17,20 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["admin"])
 config = get_config()
 templates = Jinja2Templates(directory="templates")
+
+# Client logs storage
+CLIENT_LOGS_DIR = Path("/tmp/audio-stream-client-logs")
+CLIENT_LOGS_FILE = CLIENT_LOGS_DIR / "client.log"
+MAX_LOG_SIZE = 5 * 1024 * 1024  # 5MB
+
+
+class ClientLogEntry(BaseModel):
+    """Client-side log entry."""
+
+    level: str  # "log", "warn", "error", "debug"
+    message: str
+    timestamp: str
+    context: Dict[str, Any] = {}
 
 
 @router.get("/stats", response_class=HTMLResponse)
@@ -182,4 +200,91 @@ def get_llm_usage_summary_endpoint(
 
     except Exception as e:
         logger.error(f"Error getting LLM usage summary: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/client-logs")
+async def receive_client_logs(logs: List[ClientLogEntry]) -> JSONResponse:
+    """
+    Receive logs from the client browser.
+
+    Stores logs in a rotating log file for debugging client-side issues,
+    especially useful for car displays and mobile devices where console
+    access is limited.
+    """
+    try:
+        # Ensure log directory exists
+        CLIENT_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+
+        # Rotate log file if too large
+        if CLIENT_LOGS_FILE.exists() and CLIENT_LOGS_FILE.stat().st_size > MAX_LOG_SIZE:
+            backup_file = (
+                CLIENT_LOGS_DIR
+                / f"client.log.{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            )
+            CLIENT_LOGS_FILE.rename(backup_file)
+            logger.info(f"Rotated client logs to {backup_file}")
+
+        # Append logs to file
+        with open(CLIENT_LOGS_FILE, "a") as f:
+            for log_entry in logs:
+                log_line = (
+                    f"{log_entry.timestamp} [{log_entry.level.upper()}] "
+                    f"{log_entry.message}"
+                )
+                if log_entry.context:
+                    log_line += f" | Context: {log_entry.context}"
+                f.write(log_line + "\n")
+
+        logger.debug(f"Received {len(logs)} client log entries")
+        return JSONResponse({"status": "ok", "received": len(logs)})
+
+    except Exception as e:
+        logger.error(f"Error storing client logs: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/client-logs", response_class=PlainTextResponse)
+async def get_client_logs(lines: int = 100) -> str:
+    """
+    Get recent client-side logs.
+
+    Query parameters:
+    - lines: Number of lines to return (default: 100, max: 1000)
+
+    Returns plain text log file content.
+    """
+    try:
+        # Validate lines parameter
+        if lines > 1000:
+            lines = 1000
+
+        if not CLIENT_LOGS_FILE.exists():
+            return "No client logs available yet."
+
+        # Read last N lines
+        with open(CLIENT_LOGS_FILE, "r") as f:
+            all_lines = f.readlines()
+            recent_lines = all_lines[-lines:] if len(all_lines) > lines else all_lines
+
+        return "".join(recent_lines)
+
+    except Exception as e:
+        logger.error(f"Error reading client logs: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/client-logs")
+async def clear_client_logs() -> JSONResponse:
+    """Clear all client-side logs."""
+    try:
+        if CLIENT_LOGS_FILE.exists():
+            CLIENT_LOGS_FILE.unlink()
+            logger.info("Client logs cleared")
+            return JSONResponse({"status": "cleared", "message": "Client logs deleted"})
+        else:
+            return JSONResponse({"status": "ok", "message": "No logs to clear"})
+
+    except Exception as e:
+        logger.error(f"Error clearing client logs: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

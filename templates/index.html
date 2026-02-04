@@ -219,6 +219,72 @@
         const prefetchThresholdSeconds = {{ prefetch_threshold_seconds }};
         let prefetchTriggered = false;
 
+        // Remote logging for debugging on phone/car displays
+        const REMOTE_LOGGING_ENABLED = true;
+        const LOG_BATCH_INTERVAL = {{ client_log_batch_interval }}; // Milliseconds between log batches (configurable via .env)
+        let logBuffer = [];
+        let logBatchTimer = null;
+
+        // Remote logging function - sends logs to server
+        function remoteLog(level, message, context = {}) {
+            const timestamp = new Date().toISOString();
+
+            // Add to buffer
+            logBuffer.push({
+                level: level,
+                message: message,
+                timestamp: timestamp,
+                context: context
+            });
+
+            // Also log to console
+            const consoleMethod = console[level] || console.log;
+            if (Object.keys(context).length > 0) {
+                consoleMethod(`[${level.toUpperCase()}]`, message, context);
+            } else {
+                consoleMethod(`[${level.toUpperCase()}]`, message);
+            }
+
+            // Start batch timer if not already running
+            if (REMOTE_LOGGING_ENABLED && !logBatchTimer) {
+                logBatchTimer = setTimeout(flushLogs, LOG_BATCH_INTERVAL);
+            }
+        }
+
+        // Send buffered logs to server
+        async function flushLogs() {
+            if (logBuffer.length === 0) {
+                logBatchTimer = null;
+                return;
+            }
+
+            const logsToSend = [...logBuffer];
+            logBuffer = [];
+            logBatchTimer = null;
+
+            try {
+                await fetch('/admin/client-logs', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(logsToSend),
+                });
+            } catch (e) {
+                // Silently fail - don't want logging to break the app
+                console.debug('Failed to send remote logs:', e);
+            }
+        }
+
+        // Flush logs on page unload
+        window.addEventListener('beforeunload', () => {
+            if (logBuffer.length > 0) {
+                // Use sendBeacon for reliability during page unload
+                const blob = new Blob([JSON.stringify(logBuffer)], { type: 'application/json' });
+                navigator.sendBeacon('/admin/client-logs', blob);
+            }
+        });
+
         // Stream resilience configuration
         let retryCount = 0;
         let maxRetries = 50; // Increased for long network transitions (5G↔WiFi)
@@ -559,6 +625,53 @@
             console.log('Stream loading suspended (browser buffered enough)');
         });
 
+        // Handle when duration becomes available
+        player.addEventListener('loadedmetadata', function () {
+            remoteLog('log', '[MediaSession] Metadata loaded', { duration: player.duration });
+
+            // Immediately set position state when duration becomes available
+            if ('mediaSession' in navigator && navigator.mediaSession.setPositionState) {
+                if (player.duration && !isNaN(player.duration) && isFinite(player.duration)) {
+                    try {
+                        navigator.mediaSession.setPositionState({
+                            duration: player.duration,
+                            playbackRate: player.playbackRate,
+                            position: player.currentTime
+                        });
+                        remoteLog('log', '[MediaSession] Initial position state set for car display', {
+                            duration: player.duration,
+                            position: player.currentTime
+                        });
+                    } catch (e) {
+                        remoteLog('warn', '[MediaSession] Failed to set initial position state', { error: e.message });
+                    }
+                }
+            }
+        });
+
+        player.addEventListener('durationchange', function () {
+            remoteLog('log', '[MediaSession] Duration changed', { duration: player.duration });
+
+            // Update position state when duration changes
+            if ('mediaSession' in navigator && navigator.mediaSession.setPositionState) {
+                if (player.duration && !isNaN(player.duration) && isFinite(player.duration)) {
+                    try {
+                        navigator.mediaSession.setPositionState({
+                            duration: player.duration,
+                            playbackRate: player.playbackRate,
+                            position: player.currentTime
+                        });
+                        remoteLog('log', '[MediaSession] Position state updated after duration change', {
+                            duration: player.duration,
+                            position: player.currentTime
+                        });
+                    } catch (e) {
+                        remoteLog('warn', '[MediaSession] Failed to update position state', { error: e.message });
+                    }
+                }
+            }
+        });
+
         // Prefetch next queue item when current track is nearing its end
         let lastPositionUpdate = 0;
         player.addEventListener('timeupdate', async function () {
@@ -576,6 +689,15 @@
                     } catch (e) {
                         // Some browsers don't support this or have restrictions
                         console.debug('[MediaSession] setPositionState not supported or failed:', e.message);
+                    }
+                } else {
+                    // Debug why position state isn't being set (only log once per 10 seconds)
+                    if (now - lastPositionUpdate > 10000) {
+                        remoteLog('warn', '[MediaSession] Cannot set position state', {
+                            duration: player.duration,
+                            isNaN: isNaN(player.duration),
+                            isFinite: isFinite(player.duration)
+                        });
                     }
                 }
             }
@@ -688,7 +810,7 @@
 
                 navigator.mediaSession.metadata = new MediaMetadata(metadataOptions);
 
-                console.log('[MediaSession] Updated metadata:', {
+                remoteLog('log', '[MediaSession] Updated metadata', {
                     title: metadataOptions.title,
                     artist: metadataOptions.artist,
                     hasArtwork: !!metadataOptions.artwork,
@@ -697,16 +819,16 @@
             } catch (e) {
                 // Fallback: set metadata without artwork
                 // This fixes compatibility with strict car systems like Tesla
-                console.warn('[MediaSession] Failed to set metadata with artwork, trying without:', e);
+                remoteLog('warn', '[MediaSession] Failed to set metadata with artwork, trying without', { error: e.message });
                 try {
                     navigator.mediaSession.metadata = new MediaMetadata({
                         title: trackInfo.title || 'YouTube Audio',
                         artist: trackInfo.channel || 'YouTube',
                         album: 'YouTube Radio'
                     });
-                    console.log('[MediaSession] Set metadata without artwork (fallback)');
+                    remoteLog('log', '[MediaSession] Set metadata without artwork (fallback)');
                 } catch (fallbackError) {
-                    console.error('[MediaSession] Failed to set metadata even without artwork:', fallbackError);
+                    remoteLog('error', '[MediaSession] Failed to set metadata even without artwork', { error: fallbackError.message });
                 }
             }
 
@@ -728,6 +850,14 @@
             });
             navigator.mediaSession.setActionHandler('seekforward', (details) => {
                 player.currentTime = Math.max(0, player.currentTime + (details.seekOffset || 15));
+            });
+
+            // Handle seek to specific position (for scrubber/progress bar in car displays)
+            navigator.mediaSession.setActionHandler('seekto', (details) => {
+                if (details.seekTime !== null && !isNaN(details.seekTime)) {
+                    player.currentTime = details.seekTime;
+                    remoteLog('log', '[MediaSession] Seeked to position', { seekTime: details.seekTime });
+                }
             });
         }
 
