@@ -302,6 +302,7 @@ class TestTranscribeAudio:
             transcribe_audio("/path/to/audio.mp3")
 
     @patch("services.transcription.expand_path")
+    @patch("services.transcription.subprocess.run")
     @patch("services.transcription.compress_audio_for_whisper")
     @patch("services.transcription.Path")
     @patch("services.transcription.os.path.getsize")
@@ -318,6 +319,7 @@ class TestTranscribeAudio:
         mock_getsize,
         mock_path,
         mock_compress,
+        mock_subprocess,
         mock_expand_path,
     ):
         """Test transcription retries on failure."""
@@ -332,10 +334,17 @@ class TestTranscribeAudio:
         mock_expanded_path.stat.return_value = mock_stat
         mock_expand_path.return_value = mock_expanded_path
 
-        # Mock Path(compressed_path) for cleanup
+        # Mock Path(compressed_path) for cleanup and stat calls
         mock_compressed_path_instance = Mock()
         mock_compressed_path_instance.exists.return_value = True
+        mock_compressed_path_instance.stat.return_value = mock_stat
         mock_path.return_value = mock_compressed_path_instance
+
+        # Mock subprocess.run for ffprobe call
+        mock_ffprobe_result = Mock()
+        mock_ffprobe_result.returncode = 0
+        mock_ffprobe_result.stdout = "120.5"
+        mock_subprocess.return_value = mock_ffprobe_result
 
         mock_config.return_value = config
 
@@ -363,6 +372,7 @@ class TestTranscribeAudio:
             assert mock_sleep.call_count == 2
 
     @patch("services.transcription.expand_path")
+    @patch("services.transcription.subprocess.run")
     @patch("services.transcription.compress_audio_for_whisper")
     @patch("services.transcription.Path")
     @patch("services.transcription.os.path.getsize")
@@ -379,6 +389,7 @@ class TestTranscribeAudio:
         mock_getsize,
         mock_path,
         mock_compress,
+        mock_subprocess,
         mock_expand_path,
     ):
         """Test transcription fails after all retries."""
@@ -394,10 +405,17 @@ class TestTranscribeAudio:
         mock_expanded_path.stat.return_value = mock_stat
         mock_expand_path.return_value = mock_expanded_path
 
-        # Mock Path(compressed_path) for cleanup
+        # Mock Path(compressed_path) for cleanup and stat calls
         mock_compressed_path_instance = Mock()
         mock_compressed_path_instance.exists.return_value = True
+        mock_compressed_path_instance.stat.return_value = mock_stat
         mock_path.return_value = mock_compressed_path_instance
+
+        # Mock subprocess.run for ffprobe call
+        mock_ffprobe_result = Mock()
+        mock_ffprobe_result.returncode = 0
+        mock_ffprobe_result.stdout = "120.5"
+        mock_subprocess.return_value = mock_ffprobe_result
 
         mock_getsize.return_value = 5 * 1024 * 1024
         mock_compress.return_value = "/tmp/compressed.mp3"
