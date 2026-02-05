@@ -4,6 +4,7 @@ Queue management routes.
 
 import logging
 import threading
+from typing import List
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -13,6 +14,7 @@ from services.database import (
     get_next_in_queue,
     remove_from_queue,
     clear_queue,
+    reorder_queue,
 )
 from services.youtube import get_video_metadata, extract_video_id
 from config import get_config
@@ -25,6 +27,10 @@ config = get_config()
 class QueueRequest(BaseModel):
     youtube_video_id: str
     skip_transcription: bool = False
+
+
+class ReorderRequest(BaseModel):
+    queue_item_ids: List[int]
 
 
 @router.post("/queue/add")
@@ -136,6 +142,26 @@ def clear_current_queue():
         return JSONResponse({"status": "cleared"})
     except Exception as e:
         logger.error(f"Error clearing queue: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/queue/reorder")
+def reorder_queue_endpoint(request: ReorderRequest):
+    """
+    Reorder queue items by updating their positions.
+
+    Request body should contain a list of queue item IDs in the desired order.
+    """
+    try:
+        success = reorder_queue(request.queue_item_ids)
+        if success:
+            return JSONResponse(
+                {"status": "reordered", "count": len(request.queue_item_ids)}
+            )
+        else:
+            raise HTTPException(status_code=500, detail="Failed to reorder queue")
+    except Exception as e:
+        logger.error(f"Error reordering queue: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

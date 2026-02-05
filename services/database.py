@@ -440,6 +440,29 @@ def clear_queue():
         logger.info("Queue cleared")
 
 
+def reorder_queue(queue_item_ids: List[int]) -> bool:
+    """
+    Reorder queue items by updating their positions.
+
+    Args:
+        queue_item_ids: List of queue item IDs in the desired order
+
+    Returns:
+        True if successful, False otherwise
+    """
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+
+        # Update positions for each item
+        for new_position, queue_id in enumerate(queue_item_ids, start=1):
+            cursor.execute(
+                "UPDATE queue SET position = ? WHERE id = ?", (new_position, queue_id)
+            )
+
+        logger.info(f"Queue reordered: {len(queue_item_ids)} items")
+        return True
+
+
 # Weekly summary functions
 
 

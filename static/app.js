@@ -983,8 +983,13 @@ async function renderQueue() {
 
         return `
             <div class="queue-item ${isCurrentlyPlaying ? 'queue-item-playing' : ''}"
+                 data-queue-id="${item.id}"
+                 draggable="true"
                  onclick="${onClick}">
                 ${isCurrentlyPlaying ? '<div class="queue-progress-bar"></div>' : ''}
+                <div class="queue-drag-handle" title="Drag to reorder" onclick="event.stopPropagation();">
+                    <i class="fas fa-grip-vertical"></i>
+                </div>
                 <div class="queue-info">
                     ${positionBadge}
                     ${icon}
@@ -1000,6 +1005,252 @@ async function renderQueue() {
             </div>
         `;
     }).join('');
+
+    // Initialize drag-and-drop after rendering
+    initializeQueueDragAndDrop();
+}
+
+// Queue drag-and-drop functionality
+let draggedElement = null;
+let draggedOverElement = null;
+let touchClone = null;
+let touchStartY = 0;
+let touchCurrentY = 0;
+let isTouchDragging = false;
+
+function initializeQueueDragAndDrop() {
+    const queueItems = document.querySelectorAll('.queue-item');
+
+    queueItems.forEach(item => {
+        // Mouse drag events
+        item.addEventListener('dragstart', handleDragStart);
+        item.addEventListener('dragend', handleDragEnd);
+        item.addEventListener('dragover', handleDragOver);
+        item.addEventListener('drop', handleDrop);
+        item.addEventListener('dragleave', handleDragLeave);
+
+        // Touch events for mobile
+        item.addEventListener('touchstart', handleTouchStart, { passive: false });
+        item.addEventListener('touchmove', handleTouchMove, { passive: false });
+        item.addEventListener('touchend', handleTouchEnd);
+        item.addEventListener('touchcancel', handleTouchEnd);
+    });
+}
+
+function handleDragStart(e) {
+    draggedElement = this;
+    this.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/html', this.innerHTML);
+}
+
+function handleDragEnd(e) {
+    this.classList.remove('dragging');
+    // Remove all drag-over classes
+    document.querySelectorAll('.queue-item').forEach(item => {
+        item.classList.remove('drag-over');
+    });
+    draggedElement = null;
+    draggedOverElement = null;
+}
+
+function handleDragOver(e) {
+    if (e.preventDefault) {
+        e.preventDefault();
+    }
+    e.dataTransfer.dropEffect = 'move';
+
+    if (this === draggedElement) {
+        return false;
+    }
+
+    this.classList.add('drag-over');
+    draggedOverElement = this;
+    return false;
+}
+
+function handleDragLeave(e) {
+    this.classList.remove('drag-over');
+}
+
+async function handleDrop(e) {
+    if (e.stopPropagation) {
+        e.stopPropagation();
+    }
+
+    if (draggedElement !== this) {
+        // Get all queue items
+        const queueItems = Array.from(document.querySelectorAll('.queue-item'));
+        const draggedIndex = queueItems.indexOf(draggedElement);
+        const targetIndex = queueItems.indexOf(this);
+
+        // Reorder in DOM
+        if (draggedIndex < targetIndex) {
+            this.parentNode.insertBefore(draggedElement, this.nextSibling);
+        } else {
+            this.parentNode.insertBefore(draggedElement, this);
+        }
+
+        // Get new order of queue IDs
+        const newOrder = Array.from(document.querySelectorAll('.queue-item'))
+            .map(item => parseInt(item.dataset.queueId));
+
+        // Send to backend
+        try {
+            const response = await fetch('/queue/reorder', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ queue_item_ids: newOrder })
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to reorder queue');
+            }
+
+            // Refresh queue to update position badges
+            await renderQueue();
+        } catch (error) {
+            console.error('Error reordering queue:', error);
+            showNotification('Failed to reorder queue', 'error');
+            // Refresh to restore original order
+            await renderQueue();
+        }
+    }
+
+    this.classList.remove('drag-over');
+    return false;
+}
+
+// Touch event handlers for mobile drag-and-drop
+function handleTouchStart(e) {
+    // Only handle touch on drag handle
+    const target = e.target;
+    if (!target.closest('.queue-drag-handle')) {
+        return;
+    }
+
+    e.preventDefault();
+
+    draggedElement = this;
+    isTouchDragging = true;
+
+    const touch = e.touches[0];
+    touchStartY = touch.clientY;
+    touchCurrentY = touch.clientY;
+
+    // Create a visual clone
+    touchClone = this.cloneNode(true);
+    touchClone.classList.add('touch-dragging-clone');
+    touchClone.style.position = 'fixed';
+    touchClone.style.width = this.offsetWidth + 'px';
+    touchClone.style.left = this.getBoundingClientRect().left + 'px';
+    touchClone.style.top = touch.clientY + 'px';
+    touchClone.style.zIndex = '9999';
+    touchClone.style.pointerEvents = 'none';
+    touchClone.style.opacity = '0.8';
+    document.body.appendChild(touchClone);
+
+    // Add dragging class to original
+    this.classList.add('dragging');
+}
+
+function handleTouchMove(e) {
+    if (!isTouchDragging || !draggedElement) {
+        return;
+    }
+
+    e.preventDefault();
+
+    const touch = e.touches[0];
+    touchCurrentY = touch.clientY;
+
+    // Move the clone
+    if (touchClone) {
+        touchClone.style.top = touch.clientY + 'px';
+    }
+
+    // Find the element at touch position
+    const elementBelow = document.elementFromPoint(touch.clientX, touch.clientY);
+    const queueItemBelow = elementBelow ? elementBelow.closest('.queue-item') : null;
+
+    // Remove drag-over from all items
+    document.querySelectorAll('.queue-item').forEach(item => {
+        item.classList.remove('drag-over');
+    });
+
+    // Add drag-over to target if valid
+    if (queueItemBelow && queueItemBelow !== draggedElement) {
+        queueItemBelow.classList.add('drag-over');
+        draggedOverElement = queueItemBelow;
+    }
+}
+
+async function handleTouchEnd(e) {
+    if (!isTouchDragging || !draggedElement) {
+        return;
+    }
+
+    e.preventDefault();
+
+    // Remove the clone
+    if (touchClone) {
+        touchClone.remove();
+        touchClone = null;
+    }
+
+    // Remove dragging class
+    draggedElement.classList.remove('dragging');
+
+    // Remove drag-over from all items
+    document.querySelectorAll('.queue-item').forEach(item => {
+        item.classList.remove('drag-over');
+    });
+
+    // Perform reorder if there's a valid drop target
+    if (draggedOverElement && draggedOverElement !== draggedElement) {
+        const queueItems = Array.from(document.querySelectorAll('.queue-item'));
+        const draggedIndex = queueItems.indexOf(draggedElement);
+        const targetIndex = queueItems.indexOf(draggedOverElement);
+
+        // Reorder in DOM
+        if (draggedIndex < targetIndex) {
+            draggedOverElement.parentNode.insertBefore(draggedElement, draggedOverElement.nextSibling);
+        } else {
+            draggedOverElement.parentNode.insertBefore(draggedElement, draggedOverElement);
+        }
+
+        // Get new order of queue IDs
+        const newOrder = Array.from(document.querySelectorAll('.queue-item'))
+            .map(item => parseInt(item.dataset.queueId));
+
+        // Send to backend
+        try {
+            const response = await fetch('/queue/reorder', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ queue_item_ids: newOrder })
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to reorder queue');
+            }
+
+            // Refresh queue to update position badges
+            await renderQueue();
+        } catch (error) {
+            console.error('Error reordering queue:', error);
+            showNotification('Failed to reorder queue', 'error');
+            // Refresh to restore original order
+            await renderQueue();
+        }
+    }
+
+    // Reset state
+    draggedElement = null;
+    draggedOverElement = null;
+    isTouchDragging = false;
+    touchStartY = 0;
+    touchCurrentY = 0;
 }
 
 // Auto-play next track when current track ends

@@ -464,3 +464,80 @@ class TestSuggestionsEndpoint:
 
         assert response.status_code == 500
         assert "Failed to generate suggestions" in response.json()["detail"]
+
+
+class TestReorderQueueEndpoint:
+    """Tests for POST /queue/reorder endpoint."""
+
+    @patch("routes.queue.reorder_queue")
+    def test_reorder_queue_success(self, mock_reorder, client):
+        """Test successfully reordering queue."""
+        mock_reorder.return_value = True
+
+        queue_ids = [3, 1, 2, 4]
+        response = client.post("/queue/reorder", json={"queue_item_ids": queue_ids})
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "reordered"
+        assert data["count"] == 4
+
+        # Verify reorder was called with correct IDs
+        mock_reorder.assert_called_once_with(queue_ids)
+
+    @patch("routes.queue.reorder_queue")
+    def test_reorder_queue_empty_list(self, mock_reorder, client):
+        """Test reordering with empty list."""
+        mock_reorder.return_value = True
+
+        response = client.post("/queue/reorder", json={"queue_item_ids": []})
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "reordered"
+        assert data["count"] == 0
+
+    @patch("routes.queue.reorder_queue")
+    def test_reorder_queue_single_item(self, mock_reorder, client):
+        """Test reordering with single item."""
+        mock_reorder.return_value = True
+
+        response = client.post("/queue/reorder", json={"queue_item_ids": [1]})
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "reordered"
+        assert data["count"] == 1
+
+    @patch("routes.queue.reorder_queue")
+    def test_reorder_queue_failure(self, mock_reorder, client):
+        """Test handling reorder failure."""
+        mock_reorder.return_value = False
+
+        response = client.post("/queue/reorder", json={"queue_item_ids": [1, 2, 3]})
+
+        assert response.status_code == 500
+        assert "Failed to reorder queue" in response.json()["detail"]
+
+    @patch("routes.queue.reorder_queue")
+    def test_reorder_queue_database_error(self, mock_reorder, client):
+        """Test handling database error during reorder."""
+        mock_reorder.side_effect = Exception("Database error")
+
+        response = client.post("/queue/reorder", json={"queue_item_ids": [1, 2, 3]})
+
+        assert response.status_code == 500
+
+    def test_reorder_queue_invalid_payload(self, client):
+        """Test reorder with invalid payload."""
+        # Missing queue_item_ids field
+        response = client.post("/queue/reorder", json={})
+
+        assert response.status_code == 422  # Validation error
+
+    def test_reorder_queue_invalid_types(self, client):
+        """Test reorder with invalid data types."""
+        # String instead of list
+        response = client.post("/queue/reorder", json={"queue_item_ids": "not a list"})
+
+        assert response.status_code == 422  # Validation error

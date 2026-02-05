@@ -10,6 +10,7 @@ from services.database import (
     get_next_in_queue,
     remove_from_queue,
     clear_queue,
+    reorder_queue,
     get_video_title_from_history,
     get_db_connection,
 )
@@ -282,3 +283,112 @@ class TestQueue:
         # Verify empty
         queue = get_queue()
         assert len(queue) == 0
+
+    def test_reorder_queue(self, db_path):
+        """Test reordering queue items."""
+        init_database()
+
+        # Add items
+        id1 = add_to_queue("video1", "Title 1")
+        id2 = add_to_queue("video2", "Title 2")
+        id3 = add_to_queue("video3", "Title 3")
+        id4 = add_to_queue("video4", "Title 4")
+
+        # Original order: [id1, id2, id3, id4] with positions [0, 1, 2, 3]
+        queue = get_queue()
+        assert queue[0].youtube_id == "video1"
+        assert queue[1].youtube_id == "video2"
+        assert queue[2].youtube_id == "video3"
+        assert queue[3].youtube_id == "video4"
+
+        # Reorder to: [id3, id1, id4, id2]
+        new_order = [id3, id1, id4, id2]
+        success = reorder_queue(new_order)
+
+        assert success is True
+
+        # Verify new order
+        queue = get_queue()
+        assert len(queue) == 4
+        assert queue[0].id == id3
+        assert queue[0].youtube_id == "video3"
+        assert queue[0].position == 1
+
+        assert queue[1].id == id1
+        assert queue[1].youtube_id == "video1"
+        assert queue[1].position == 2
+
+        assert queue[2].id == id4
+        assert queue[2].youtube_id == "video4"
+        assert queue[2].position == 3
+
+        assert queue[3].id == id2
+        assert queue[3].youtube_id == "video2"
+        assert queue[3].position == 4
+
+    def test_reorder_queue_empty(self, db_path):
+        """Test reordering empty queue."""
+        init_database()
+
+        success = reorder_queue([])
+
+        assert success is True
+
+        queue = get_queue()
+        assert len(queue) == 0
+
+    def test_reorder_queue_single_item(self, db_path):
+        """Test reordering queue with single item."""
+        init_database()
+
+        id1 = add_to_queue("video1", "Title 1")
+
+        success = reorder_queue([id1])
+
+        assert success is True
+
+        queue = get_queue()
+        assert len(queue) == 1
+        assert queue[0].id == id1
+        assert queue[0].position == 1
+
+    def test_reorder_queue_reverse_order(self, db_path):
+        """Test reversing queue order."""
+        init_database()
+
+        id1 = add_to_queue("video1", "Title 1")
+        id2 = add_to_queue("video2", "Title 2")
+        id3 = add_to_queue("video3", "Title 3")
+
+        # Reverse order
+        success = reorder_queue([id3, id2, id1])
+
+        assert success is True
+
+        queue = get_queue()
+        assert queue[0].youtube_id == "video3"
+        assert queue[1].youtube_id == "video2"
+        assert queue[2].youtube_id == "video1"
+
+    def test_reorder_queue_preserves_metadata(self, db_path):
+        """Test that reordering preserves item metadata."""
+        init_database()
+
+        id1 = add_to_queue("video1", "Title 1", "Channel 1", "http://thumb1.jpg")
+        id2 = add_to_queue("video2", "Title 2", "Channel 2", "http://thumb2.jpg")
+
+        # Reorder
+        reorder_queue([id2, id1])
+
+        queue = get_queue()
+        # After reordering, video2 is first but keeps its own metadata
+        assert queue[0].youtube_id == "video2"
+        assert queue[0].title == "Title 2"
+        assert queue[0].channel == "Channel 2"
+        assert queue[0].thumbnail_url == "http://thumb2.jpg"
+
+        # video1 is second but keeps its own metadata
+        assert queue[1].youtube_id == "video1"
+        assert queue[1].title == "Title 1"
+        assert queue[1].channel == "Channel 1"
+        assert queue[1].thumbnail_url == "http://thumb1.jpg"
