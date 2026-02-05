@@ -387,6 +387,9 @@ player.addEventListener('playing', function () {
         navigator.mediaSession.playbackState = 'playing';
     }
 
+    // Update position state when playback starts (important for Tesla scrubber)
+    updatePositionState();
+
     // Clear stalled timeout
     if (stalledTimeout) {
         clearTimeout(stalledTimeout);
@@ -428,77 +431,25 @@ player.addEventListener('suspend', function () {
 player.addEventListener('loadedmetadata', function () {
     remoteLog('log', '[MediaSession] Metadata loaded', { duration: player.duration });
 
-    // Immediately set position state when duration becomes available
-    if ('mediaSession' in navigator && navigator.mediaSession.setPositionState) {
-        if (player.duration && !isNaN(player.duration) && isFinite(player.duration)) {
-            try {
-                navigator.mediaSession.setPositionState({
-                    duration: player.duration,
-                    playbackRate: player.playbackRate,
-                    position: player.currentTime
-                });
-                remoteLog('log', '[MediaSession] Initial position state set for car display', {
-                    duration: player.duration,
-                    position: player.currentTime
-                });
-            } catch (e) {
-                remoteLog('warn', '[MediaSession] Failed to set initial position state', { error: e.message });
-            }
-        }
-    }
+    // Set position state when duration becomes available (critical for Tesla scrubber)
+    updatePositionState();
 });
 
 player.addEventListener('durationchange', function () {
     remoteLog('log', '[MediaSession] Duration changed', { duration: player.duration });
 
     // Update position state when duration changes
-    if ('mediaSession' in navigator && navigator.mediaSession.setPositionState) {
-        if (player.duration && !isNaN(player.duration) && isFinite(player.duration)) {
-            try {
-                navigator.mediaSession.setPositionState({
-                    duration: player.duration,
-                    playbackRate: player.playbackRate,
-                    position: player.currentTime
-                });
-                remoteLog('log', '[MediaSession] Position state updated after duration change', {
-                    duration: player.duration,
-                    position: player.currentTime
-                });
-            } catch (e) {
-                remoteLog('warn', '[MediaSession] Failed to update position state', { error: e.message });
-            }
-        }
-    }
+    updatePositionState();
 });
 
 // Prefetch next queue item when current track is nearing its end
 let lastPositionUpdate = 0;
 player.addEventListener('timeupdate', async function () {
-    // Update MediaSession position state (throttled to once per second)
+    // Update MediaSession position state (throttled to once per second for performance)
     const now = Date.now();
-    if ('mediaSession' in navigator && navigator.mediaSession.setPositionState && now - lastPositionUpdate > 1000) {
-        if (player.duration && !isNaN(player.duration) && isFinite(player.duration)) {
-            try {
-                navigator.mediaSession.setPositionState({
-                    duration: player.duration,
-                    playbackRate: player.playbackRate,
-                    position: player.currentTime
-                });
-                lastPositionUpdate = now;
-            } catch (e) {
-                // Some browsers don't support this or have restrictions
-                console.debug('[MediaSession] setPositionState not supported or failed:', e.message);
-            }
-        } else {
-            // Debug why position state isn't being set (only log once per 10 seconds)
-            if (now - lastPositionUpdate > 10000) {
-                remoteLog('warn', '[MediaSession] Cannot set position state', {
-                    duration: player.duration,
-                    isNaN: isNaN(player.duration),
-                    isFinite: isFinite(player.duration)
-                });
-            }
-        }
+    if (now - lastPositionUpdate > 1000) {
+        updatePositionState();
+        lastPositionUpdate = now;
     }
 
     // Update progress bar on currently playing queue item
@@ -544,6 +495,44 @@ function updateWindowTitle(title) {
     } else {
         document.title = defaultTitle;
         currentTrackTitle = null;
+    }
+}
+
+// Helper function to safely update position state with validation
+function updatePositionState() {
+    if (!('mediaSession' in navigator) || !navigator.mediaSession.setPositionState) {
+        return;
+    }
+
+    // Validate that we have a valid duration
+    if (!player.duration || isNaN(player.duration) || !isFinite(player.duration) || player.duration <= 0) {
+        return;
+    }
+
+    try {
+        // Clamp position to be within valid range [0, duration]
+        const position = Math.min(Math.max(0, player.currentTime || 0), player.duration);
+        const playbackRate = player.playbackRate || 1.0;
+
+        // All parameters must be valid: duration > 0, position >= 0 && position <= duration, playbackRate != 0
+        navigator.mediaSession.setPositionState({
+            duration: player.duration,
+            playbackRate: playbackRate,
+            position: position
+        });
+
+        remoteLog('log', '[MediaSession] Position state updated', {
+            duration: player.duration,
+            position: position,
+            playbackRate: playbackRate
+        });
+    } catch (e) {
+        remoteLog('warn', '[MediaSession] Failed to set position state', {
+            error: e.message,
+            duration: player.duration,
+            position: player.currentTime,
+            playbackRate: player.playbackRate
+        });
     }
 }
 
@@ -631,6 +620,9 @@ function setupMediaSession(trackInfo) {
         }
     }
 
+    // Try to set position state after metadata (Tesla requires this early)
+    updatePositionState();
+
     // Set up action handlers for background playback
     navigator.mediaSession.setActionHandler('play', () => {
         player.play();
@@ -645,17 +637,29 @@ function setupMediaSession(trackInfo) {
         rewind();
     });
     navigator.mediaSession.setActionHandler('seekbackward', (details) => {
-        player.currentTime = Math.max(0, player.currentTime - (details.seekOffset || 15));
+        const skipTime = details.seekOffset || 15;
+        player.currentTime = Math.max(0, player.currentTime - skipTime);
+        updatePositionState();
     });
     navigator.mediaSession.setActionHandler('seekforward', (details) => {
-        player.currentTime = Math.max(0, player.currentTime + (details.seekOffset || 15));
+        const skipTime = details.seekOffset || 15;
+        player.currentTime = Math.min(player.currentTime + skipTime, player.duration || player.currentTime + skipTime);
+        updatePositionState();
     });
 
     // Handle seek to specific position (for scrubber/progress bar in car displays)
     navigator.mediaSession.setActionHandler('seekto', (details) => {
         if (details.seekTime !== null && !isNaN(details.seekTime)) {
-            player.currentTime = details.seekTime;
+            // Use fastSeek if available for better performance
+            if (details.fastSeek && 'fastSeek' in player) {
+                player.fastSeek(details.seekTime);
+            } else {
+                player.currentTime = details.seekTime;
+            }
             remoteLog('log', '[MediaSession] Seeked to position', { seekTime: details.seekTime });
+
+            // Update position state immediately after seeking (critical for Tesla)
+            updatePositionState();
         }
     });
 }
