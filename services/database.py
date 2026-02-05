@@ -621,19 +621,21 @@ def log_llm_usage(
     reasoning_tokens: Optional[int] = None,
     video_id: Optional[str] = None,
     metadata: Optional[dict] = None,
+    audio_duration_seconds: Optional[float] = None,
 ) -> int:
     """
     Log LLM API usage statistics to the database.
 
     Args:
-        provider: LLM provider (e.g., "openai", "gemini")
-        model: Model name (e.g., "gpt-4o", "gemini-1.5-flash")
+        provider: LLM provider (e.g., "openai", "gemini", "mistral")
+        model: Model name (e.g., "gpt-4o", "gemini-1.5-flash", "whisper-1", "voxtral-mini-latest")
         feature: Feature using the LLM (e.g., "transcription", "summarization", "weekly_summary", "book_suggestions")
         prompt_tokens: Number of input tokens
         response_tokens: Number of output tokens
         reasoning_tokens: Number of reasoning tokens (for models like o1)
         video_id: Associated YouTube video ID (optional)
         metadata: Additional metadata as JSON (optional)
+        audio_duration_seconds: Audio duration in seconds (for per-minute pricing models)
 
     Returns:
         The ID of the inserted record
@@ -662,9 +664,9 @@ def log_llm_usage(
             INSERT INTO llm_usage_stats (
                 timestamp, provider, model, feature,
                 prompt_tokens, response_tokens, reasoning_tokens, total_tokens,
-                video_id, metadata, created_at
+                video_id, metadata, created_at, audio_duration_seconds
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
             (
                 timestamp,
@@ -678,6 +680,7 @@ def log_llm_usage(
                 video_id,
                 metadata_json,
                 created_at,
+                audio_duration_seconds,
             ),
         )
 

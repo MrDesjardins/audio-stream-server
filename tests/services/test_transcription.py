@@ -156,7 +156,7 @@ class TestCompressAudioForWhisper:
         mock_result.returncode = 0
         mock_run.return_value = mock_result
 
-        with pytest.raises(Exception, match="still exceeds Whisper limit"):
+        with pytest.raises(Exception, match="Audio file too large for Whisper API"):
             compress_audio_for_whisper("/path/to/audio.mp3")
 
         # Should clean up temp file (may be called more than once due to finally block)
@@ -544,12 +544,18 @@ class TestTranscribeAudio:
 class TestTranscribeAudioGemini:
     """Tests for Gemini transcription functionality."""
 
+    @patch("services.transcription.subprocess.run")
     @patch("services.transcription.Path")
     @patch("services.transcription.expand_path_str")
     @patch("services.transcription.get_config")
     @patch("services.transcription.get_tracked_gemini_client")
     def test_transcribe_audio_gemini_success(
-        self, mock_genai_client_class, mock_config, mock_expand_path_str, mock_path
+        self,
+        mock_genai_client_class,
+        mock_config,
+        mock_expand_path_str,
+        mock_path,
+        mock_subprocess_run,
     ):
         """Test successful Gemini transcription."""
         # Setup config
@@ -567,6 +573,12 @@ class TestTranscribeAudioGemini:
         mock_path_instance.stat.return_value = mock_stat
         mock_path_instance.stem = "audio"
         mock_path.return_value = mock_path_instance
+
+        # Mock ffprobe call
+        mock_ffprobe_result = Mock()
+        mock_ffprobe_result.returncode = 0
+        mock_ffprobe_result.stdout = "120.5"
+        mock_subprocess_run.return_value = mock_ffprobe_result
 
         # Setup Gemini client
         mock_client = Mock()
@@ -602,6 +614,7 @@ class TestTranscribeAudioGemini:
         with pytest.raises(ValueError, match="Gemini API key not configured"):
             transcribe_audio_gemini("/path/to/audio.mp3")
 
+    @patch("services.transcription.subprocess.run")
     @patch("services.transcription.Path")
     @patch("services.transcription.expand_path_str")
     @patch("services.transcription.get_config")
@@ -614,6 +627,7 @@ class TestTranscribeAudioGemini:
         mock_config,
         mock_expand_path_str,
         mock_path,
+        mock_subprocess_run,
     ):
         """Test Gemini transcription retries on failure."""
         # Setup config
@@ -630,6 +644,12 @@ class TestTranscribeAudioGemini:
         mock_path_instance.stat.return_value = mock_stat
         mock_path_instance.stem = "audio"
         mock_path.return_value = mock_path_instance
+
+        # Mock ffprobe call
+        mock_ffprobe_result = Mock()
+        mock_ffprobe_result.returncode = 0
+        mock_ffprobe_result.stdout = "120.5"
+        mock_subprocess_run.return_value = mock_ffprobe_result
 
         # Setup Gemini client to fail twice then succeed
         mock_client = Mock()
@@ -652,11 +672,18 @@ class TestTranscribeAudioGemini:
         assert mock_client.transcribe_audio.call_count == 3
         assert mock_sleep.call_count == 2  # Sleep after first two failures
 
+    @patch("services.transcription.subprocess.run")
+    @patch("services.transcription.Path")
     @patch("services.transcription.expand_path_str")
     @patch("services.transcription.get_config")
     @patch("services.transcription.get_tracked_gemini_client")
     def test_transcribe_audio_gemini_fails_after_retries(
-        self, mock_genai_client_class, mock_config, mock_expand_path_str
+        self,
+        mock_genai_client_class,
+        mock_config,
+        mock_expand_path_str,
+        mock_path,
+        mock_subprocess_run,
     ):
         """Test Gemini transcription fails after all retries."""
         # Setup config
@@ -665,6 +692,20 @@ class TestTranscribeAudioGemini:
         mock_config.return_value = config
 
         mock_expand_path_str.return_value = "/expanded/path/audio.mp3"
+
+        # Mock Path for stat() call
+        mock_stat = Mock()
+        mock_stat.st_size = 5 * 1024 * 1024
+        mock_path_instance = Mock()
+        mock_path_instance.stat.return_value = mock_stat
+        mock_path_instance.stem = "audio"
+        mock_path.return_value = mock_path_instance
+
+        # Mock ffprobe call
+        mock_ffprobe_result = Mock()
+        mock_ffprobe_result.returncode = 0
+        mock_ffprobe_result.stdout = "120.5"
+        mock_subprocess_run.return_value = mock_ffprobe_result
 
         # Setup Gemini client to always fail
         mock_client = Mock()

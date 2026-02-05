@@ -5,7 +5,7 @@ Admin endpoints for testing and manual operations.
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, HTMLResponse, PlainTextResponse
 from fastapi.templating import Jinja2Templates
@@ -107,11 +107,11 @@ def get_next_run_time():
 
 @router.get("/llm-usage/stats")
 def get_llm_usage_statistics(
-    start_date: str = None,
-    end_date: str = None,
-    provider: str = None,
-    model: str = None,
-    feature: str = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    feature: Optional[str] = None,
     limit: int = 100,
 ):
     """
@@ -166,8 +166,8 @@ def get_llm_usage_statistics(
 
 @router.get("/llm-usage/summary")
 def get_llm_usage_summary_endpoint(
-    start_date: str = None,
-    end_date: str = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
 ):
     """
     Get aggregated LLM usage summary.

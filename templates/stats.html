@@ -241,6 +241,107 @@
             color: var(--accent-primary);
         }
 
+        .cost-breakdown {
+            background: var(--bg-elevated);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin: 2rem 0;
+            border: 1px solid var(--border-color);
+        }
+
+        .cost-breakdown h2 {
+            margin: 0 0 1.5rem 0;
+            font-size: 1.25rem;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .cost-items {
+            display: grid;
+            gap: 0.75rem;
+        }
+
+        .cost-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem;
+            background: var(--bg-primary);
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            transition: all 0.3s ease;
+        }
+
+        .cost-item:hover {
+            background: var(--bg-elevated);
+            border-color: var(--accent-primary);
+        }
+
+        .cost-item-left {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .cost-item-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+        }
+
+        .cost-item-icon.transcription {
+            background: rgba(16, 163, 127, 0.2);
+            color: #10a37f;
+        }
+
+        .cost-item-icon.summarization {
+            background: rgba(124, 58, 237, 0.2);
+            color: var(--accent-primary);
+        }
+
+        .cost-item-icon.weekly_summary {
+            background: rgba(66, 133, 244, 0.2);
+            color: #4285f4;
+        }
+
+        .cost-item-info h3 {
+            margin: 0 0 0.25rem 0;
+            font-size: 1rem;
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+
+        .cost-item-info p {
+            margin: 0;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .cost-item-right {
+            text-align: right;
+        }
+
+        .cost-value {
+            font-size: 1.5rem;
+            font-weight: 600;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .cost-percentage {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-top: 0.25rem;
+        }
+
         .loading {
             text-align: center;
             padding: 3rem;
@@ -406,6 +507,13 @@
                 <canvas id="feature-chart"></canvas>
             </div>
 
+            <div class="cost-breakdown">
+                <h2><i class="fas fa-dollar-sign"></i> Cost by Feature</h2>
+                <div class="cost-items" id="cost-by-feature">
+                    <!-- Populated by JavaScript -->
+                </div>
+            </div>
+
             <div class="usage-table">
                 <h2><i class="fas fa-table"></i> Detailed Breakdown</h2>
                 <table id="usage-table">
@@ -436,11 +544,12 @@
         const MODEL_PRICING = {
             // OpenAI models
             'whisper-1': { input: 0, output: 0 }, // Whisper is priced per minute, not tokens
+            'voxtral-mini-latest': { input: 0, output: 0 }, // Voxtral is priced per minute, not tokens
             'gpt-5-nano': { input: 0.05, output: 0.40 },
             'gpt-4o-mini': { input: 0.15, output: 0.60 },
             'gpt-4o': { input: 2.50, output: 10.00 },
             'gpt-5.2': { input: 1.75, output: 14.00 },
-            // Gemini models
+            // Gemini models (text/summarization)
             'gemini-2.5-flash': { input: 0.15, output: 0.60 },
             'gemini-2.5-flash-preview-tts': { input: 0.15, output: 0.60 },
             'gemini-3-flash-preview': { input: 0.50, output: 3.00 },
@@ -449,12 +558,26 @@
             'gemini-1.5-pro': { input: 2.00, output: 12.00 },
         };
 
+        // Gemini audio transcription pricing (different from text)
+        const GEMINI_AUDIO_PRICING = {
+            input: 0.40,  // Average of $0.30-0.50 range
+            output: 0.40
+        };
+
         function calculateCost(summary) {
             let totalCost = 0;
 
             summary.by_provider_model_feature.forEach(item => {
                 const model = item.model;
-                const pricing = MODEL_PRICING[model];
+                const feature = item.feature;
+                const provider = item.provider;
+                let pricing = MODEL_PRICING[model];
+
+                // Special handling for Gemini audio transcription
+                if (provider === 'gemini' && feature === 'transcription') {
+                    pricing = GEMINI_AUDIO_PRICING;
+                    console.log(`Using Gemini audio pricing for ${model} transcription`);
+                }
 
                 if (pricing) {
                     const inputTokens = item.total_prompt_tokens || 0;
@@ -465,6 +588,8 @@
                     const outputCost = (outputTokens / 1000000) * pricing.output;
 
                     totalCost += inputCost + outputCost;
+
+                    console.log(`${provider}/${model}/${feature}: ${inputTokens} in, ${outputTokens} out = $${(inputCost + outputCost).toFixed(4)}`);
                 } else {
                     // Unknown model - use average rate as fallback
                     console.warn(`Unknown model pricing: ${model}, using average rate`);
@@ -495,6 +620,7 @@
                 if (data.status === 'success') {
                     updateSummaryCards(data.summary);
                     updateCharts(data.summary);
+                    updateCostByFeature(data.summary);
                     updateTable(data.summary);
 
                     document.getElementById('loading').style.display = 'none';
@@ -660,6 +786,85 @@
                     }
                 }
             });
+        }
+
+        function updateCostByFeature(summary) {
+            const container = document.getElementById('cost-by-feature');
+            container.innerHTML = '';
+
+            // Calculate cost per feature
+            const featureCosts = {};
+            const featureCalls = {};
+
+            summary.by_provider_model_feature.forEach(item => {
+                const feature = item.feature;
+                const model = item.model;
+                const provider = item.provider;
+                let pricing = MODEL_PRICING[model];
+
+                // Special handling for Gemini audio transcription
+                if (provider === 'gemini' && feature === 'transcription') {
+                    pricing = GEMINI_AUDIO_PRICING;
+                }
+
+                if (pricing) {
+                    const inputTokens = item.total_prompt_tokens || 0;
+                    const outputTokens = item.total_response_tokens || 0;
+                    const inputCost = (inputTokens / 1000000) * pricing.input;
+                    const outputCost = (outputTokens / 1000000) * pricing.output;
+                    const totalCost = inputCost + outputCost;
+
+                    featureCosts[feature] = (featureCosts[feature] || 0) + totalCost;
+                    featureCalls[feature] = (featureCalls[feature] || 0) + item.call_count;
+                }
+            });
+
+            // Calculate total cost for percentages
+            const totalCost = Object.values(featureCosts).reduce((sum, cost) => sum + cost, 0);
+
+            // Sort features by cost (highest first)
+            const sortedFeatures = Object.entries(featureCosts)
+                .sort((a, b) => b[1] - a[1]);
+
+            // Feature icons and display names
+            const featureInfo = {
+                'transcription': { icon: 'fa-microphone', name: 'Transcription', iconClass: 'transcription' },
+                'summarization': { icon: 'fa-file-alt', name: 'Summarization', iconClass: 'summarization' },
+                'weekly_summary': { icon: 'fa-calendar-week', name: 'Weekly Summary', iconClass: 'weekly_summary' },
+                'book_suggestions': { icon: 'fa-book', name: 'Book Suggestions', iconClass: 'summarization' },
+                'tts': { icon: 'fa-volume-up', name: 'Text-to-Speech', iconClass: 'weekly_summary' }
+            };
+
+            sortedFeatures.forEach(([feature, cost]) => {
+                const calls = featureCalls[feature];
+                const percentage = totalCost > 0 ? (cost / totalCost * 100) : 0;
+                const avgCostPerCall = calls > 0 ? cost / calls : 0;
+                const info = featureInfo[feature] || { icon: 'fa-cog', name: feature, iconClass: 'summarization' };
+
+                const costItem = document.createElement('div');
+                costItem.className = 'cost-item';
+                costItem.innerHTML = `
+                    <div class="cost-item-left">
+                        <div class="cost-item-icon ${info.iconClass}">
+                            <i class="fas ${info.icon}"></i>
+                        </div>
+                        <div class="cost-item-info">
+                            <h3>${info.name}</h3>
+                            <p>${calls.toLocaleString()} calls • $${avgCostPerCall.toFixed(6)} avg/call</p>
+                        </div>
+                    </div>
+                    <div class="cost-item-right">
+                        <div class="cost-value">$${cost.toFixed(4)}</div>
+                        <div class="cost-percentage">${percentage.toFixed(1)}% of total</div>
+                    </div>
+                `;
+                container.appendChild(costItem);
+            });
+
+            // Show message if no data
+            if (sortedFeatures.length === 0) {
+                container.innerHTML = '<p style="text-align: center; color: var(--text-secondary); padding: 2rem;">No cost data available</p>';
+            }
         }
 
         function updateTable(summary) {

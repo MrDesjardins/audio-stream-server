@@ -71,9 +71,10 @@ class Config:
 
     # Transcription settings
     transcription_enabled: bool
-    transcription_provider: str  # "openai" or "gemini"
+    transcription_provider: str  # "openai", "gemini", or "mistral"
     transcription_model: str  # Model name for transcription
     openai_api_key: Optional[str]
+    mistral_api_key: Optional[str]
     temp_audio_dir: str
     max_audio_length_minutes: int
 
@@ -125,11 +126,12 @@ class Config:
         suggestions_ai_provider = os.getenv("SUGGESTIONS_AI_PROVIDER", "gemini").lower()
 
         # Determine default models based on providers
-        default_transcription_model = (
-            "whisper-1"
-            if transcription_provider == "openai"
-            else "gemini-2.5-flash-preview-tts"
-        )
+        if transcription_provider == "openai":
+            default_transcription_model = "whisper-1"
+        elif transcription_provider == "mistral":
+            default_transcription_model = "voxtral-mini-latest"
+        else:  # gemini
+            default_transcription_model = "gemini-2.5-flash-lite"
         default_summary_model = (
             "gpt-4o-mini" if summary_provider == "openai" else "gemini-2.5-flash"
         )
@@ -158,6 +160,7 @@ class Config:
                 "TRANSCRIPTION_MODEL", default_transcription_model
             ),
             openai_api_key=os.getenv("OPENAI_API_KEY"),
+            mistral_api_key=os.getenv("MISTRAL_API_KEY"),
             temp_audio_dir=os.getenv("TEMP_AUDIO_DIR", "/tmp/audio-transcriptions"),
             max_audio_length_minutes=_parse_int(
                 os.getenv("MAX_AUDIO_LENGTH_MINUTES", "60"), 60, 1, 600

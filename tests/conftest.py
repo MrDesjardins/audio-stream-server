@@ -40,7 +40,33 @@ def _set_test_db_path():
     test_db = os.path.join(tempfile.gettempdir(), "test_audio_history.db")
     os.environ["DATABASE_PATH"] = test_db
 
+    # Clean up any existing test database before starting
+    if os.path.exists(test_db):
+        try:
+            os.unlink(test_db)
+        except Exception:
+            pass
+
     yield
+
+    # Clean up queue entries and weekly summaries from test database
+    import sqlite3
+
+    try:
+        if os.path.exists(test_db):
+            conn = sqlite3.connect(test_db)
+            cursor = conn.cursor()
+            # Clear queue entries created during tests
+            cursor.execute("DELETE FROM queue WHERE type = 'summary'")
+            cursor.execute(
+                "DELETE FROM queue WHERE title LIKE '%Summary%' OR title LIKE '%Week%'"
+            )
+            # Clear weekly summary entries
+            cursor.execute("DELETE FROM weekly_summaries")
+            conn.commit()
+            conn.close()
+    except Exception:
+        pass
 
     # Restore original
     if original_db:

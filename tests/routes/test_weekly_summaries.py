@@ -1,5 +1,7 @@
 """Integration tests for weekly summaries routes."""
 
+import os
+import sqlite3
 import pytest
 from fastapi.testclient import TestClient
 from pathlib import Path
@@ -12,6 +14,36 @@ from services.database import (
     get_summary_by_week_year,
     get_recent_summaries,
 )
+
+
+@pytest.fixture(autouse=True)
+def cleanup_test_data():
+    """Automatically clean up test data after each test."""
+    yield
+    # Clean up after test from ALL databases (test and production)
+    # This is needed because DB_PATH is cached at module import time
+    for db_path in [
+        os.getenv("DATABASE_PATH", "./audio_history.db"),
+        "./audio_history.db",  # Production DB
+        os.path.join(tempfile.gettempdir(), "test_audio_history.db"),  # Test DB
+    ]:
+        if not os.path.exists(db_path):
+            continue
+        try:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            # Delete test summaries and queue entries
+            cursor.execute("DELETE FROM queue WHERE type = 'summary'")
+            cursor.execute(
+                "DELETE FROM queue WHERE title LIKE '%Summary%' OR title LIKE '%Week%'"
+            )
+            cursor.execute(
+                "DELETE FROM weekly_summaries WHERE week_year LIKE '2026-W%'"
+            )
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
 
 
 @pytest.fixture

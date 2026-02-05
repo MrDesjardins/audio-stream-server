@@ -529,9 +529,15 @@ GEMINI_API_KEY=...                         # if SUMMARY_PROVIDER=gemini
 - Total: ~15-40 seconds per video
 
 **API Costs**:
-- Whisper: $0.006/minute of audio
-- GPT-4o-mini: ~$0.001-0.01 per summary
-- Gemini Flash: Free tier available
+- Whisper (OpenAI): $0.006/minute of audio
+- Voxtral (Mistral): $0.003/minute of audio
+- Gemini 2.5 Flash: ~$0.30-0.50 per 1M input tokens (audio) + $0.40 per 1M output tokens
+- GPT-4o-mini: $0.15 per 1M input tokens + $0.60 per 1M output tokens (for summarization)
+
+**API Limitations**:
+- Whisper (OpenAI): 25MB maximum file size (automatically compressed)
+- Voxtral (Mistral): 30 minutes maximum duration
+- Gemini Flash: No practical limits (automatically uses Files API for files >20MB)
 
 **Disk Usage**:
 - Audio files: Kept (last 10 files) for quick retry

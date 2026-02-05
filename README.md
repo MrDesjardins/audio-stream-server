@@ -28,7 +28,7 @@ A powerful FastAPI application that streams audio from YouTube videos as MP3 ove
 
 #### Intelligent Summarization
 - **Video Summaries**: AI-generated summaries of each video's content
-- **Multi-Provider**: OpenAI GPT or Google Gemini (Gemini recommended for free tier)
+- **Multi-Provider**: OpenAI GPT or Google Gemini (Gemini recommended for cost-effectiveness)
 - **Knowledge Management**: Automatic posting to Trilium Notes with deduplication
 - **Rich Metadata**: Includes video title, channel, thumbnail, and YouTube link
 
@@ -125,9 +125,9 @@ TRANSCRIPTION_ENABLED=true
 OPENAI_API_KEY=sk-...  # Get from https://platform.openai.com/api-keys
 GEMINI_API_KEY=...     # Get from https://makersuite.google.com/app/apikey
 
-# Provider selection (recommended: Whisper + Gemini for best cost/quality)
-TRANSCRIPTION_PROVIDER=openai  # "openai" (Whisper) or "gemini"
-SUMMARY_PROVIDER=gemini        # "gemini" (free tier) or "openai"
+# Provider selection (recommended: Voxtral + Gemini for best cost/quality)
+TRANSCRIPTION_PROVIDER=mistral  # "openai", "mistral", or "gemini"
+SUMMARY_PROVIDER=gemini         # "gemini" (cost-effective) or "openai"
 
 # Trilium Notes integration (for saving summaries)
 TRILIUM_URL=http://localhost:8080
@@ -148,12 +148,13 @@ TTS_ENABLED=false
   - Or use your specific local IP (e.g., `10.0.0.181`)
 
 - **TRANSCRIPTION_PROVIDER**:
-  - `openai` = Whisper API ($0.006/minute, very accurate, fast)
-  - `gemini` = Gemini 1.5 Flash (free tier available, good quality)
+  - `openai` = Whisper API ($0.006/min, very accurate, fast, 25MB limit)
+  - `mistral` = Voxtral Mini ($0.003/min, most cost-effective, 30 min limit)
+  - `gemini` = Gemini 2.5 Flash (~$0.0005-0.001/min, handles unlimited file sizes)
 
 - **SUMMARY_PROVIDER**:
-  - `gemini` = Gemini 2.5 Flash (recommended, free tier, fast)
-  - `openai` = GPT-4o-mini (high quality, paid)
+  - `gemini` = Gemini 2.5 Flash (recommended, very cost-effective, fast)
+  - `openai` = GPT-4o-mini (high quality)
 
 ### Step 4: Test Trilium Connection (Optional)
 
@@ -219,9 +220,11 @@ Required for Whisper transcription or GPT summarization.
 
 **Cost**: Whisper is $0.006 per minute of audio. For typical use (~30 hours/month), expect ~$10-15/month.
 
+**Limitation**: Maximum 25MB file size. Audio is automatically compressed (1.5x speed, mono, 32kbps) to save costs and meet this limit. For very long videos (>2 hours), use Gemini instead.
+
 ### Google Gemini API Key
 
-Required for Gemini transcription or summarization. Has a generous free tier.
+Required for Gemini transcription or summarization. Very cost-effective pricing.
 
 1. Visit https://makersuite.google.com/app/apikey
 2. Sign in with your Google account
@@ -229,12 +232,30 @@ Required for Gemini transcription or summarization. Has a generous free tier.
 4. Copy the key
 5. Add to `.env` file: `GEMINI_API_KEY=...`
 
-**Free Tier**:
-- 15 requests per minute
-- 1 million tokens per day
-- 1,500 requests per day
+**Pricing**:
+- Audio transcription: ~$0.30-0.50 per 1M input tokens + $0.40 per 1M output
+- Text generation: $0.15 per 1M input + $0.60 per 1M output
+- Rate limits: 15 req/min, 1,500 req/day, 1M tokens/day
 
-For typical use, summarization and weekly summaries are essentially free.
+**Benefits**:
+- Very cost-effective for audio transcription (~$0.0005-0.001/minute)
+- Handles large audio files automatically (uses Files API for >20MB)
+- No practical file size or duration limits
+- Good for long recordings where Whisper/Voxtral hit their limits
+
+### Mistral AI API Key
+
+Required for Mistral Voxtral transcription. Cost-effective option at $0.003/minute.
+
+1. Visit https://console.mistral.ai/api-keys
+2. Sign in or create an account
+3. Click "Create new key"
+4. Copy the key
+5. Add to `.env` file: `MISTRAL_API_KEY=...`
+
+**Cost**: Voxtral Mini is $0.003 per minute of audio. For typical use (~30 hours/month), expect ~$5-8/month (50% cheaper than Whisper).
+
+**Limitation**: Maximum 15 minutes per audio file. For longer videos, use Gemini (no limit) or split the audio.
 
 ### Trilium ETAPI Token
 
@@ -507,23 +528,38 @@ curl "http://localhost:8000/admin/weekly-summary/next-run"
 | **OpenAI** ||||
 | gpt-4o-mini | $0.15 | $0.60 | Reliable workhorse (recommended) |
 | gpt-4o | $2.50 | $10.00 | Higher quality |
-| whisper-1 | - | - | $0.006 per minute of audio |
+| whisper-1 | - | - | $0.006 per minute, 25MB limit |
+| **Mistral AI** ||||
+| voxtral-mini-latest | - | - | $0.003 per minute, 30 min limit |
 | **Google Gemini** ||||
-| gemini-2.5-flash | $0.15 | $0.60 | Fast, comparable to gpt-4o-mini (recommended) |
+| gemini-2.5-flash | $0.15 | $0.60 | Text: Fast, comparable to gpt-4o-mini |
+| gemini-2.5-flash (audio) | $0.30-0.50 | $0.40 | Audio transcription (token-based) |
 | gemini-1.5-flash | $0.10 | $0.40 | Slightly older, still excellent |
 | gemini-1.5-pro | $1.25 | $5.00 | Higher quality |
 
+**Note**: Gemini audio pricing is per 1M tokens. Audio duration to token conversion varies, but typically ~1 minute ≈ 1,000-1,500 tokens.
+
 ### Estimated Costs Per Operation
 
-**Using recommended configuration (Whisper + Gemini 2.5 Flash):**
+**Transcription Options:**
 
-- **Video transcription** (Whisper): $0.006 per minute of audio
-  - 10 min video = $0.06
-  - 1 hour video = $0.36
+1. **Whisper (OpenAI)** - Most accurate
+   - $0.006 per minute
+   - 10 min = $0.06 | 1 hour = $0.36
 
-- **Video summarization** (Gemini 2.5 Flash): ~$0.0003-0.001 per summary
-  - Typical: 2,000 input tokens + 500 output tokens
-  - Cost: (2,000 × $0.15 + 500 × $0.60) / 1,000,000 = **$0.0006**
+2. **Voxtral (Mistral)** - Cost-effective (50% cheaper)
+   - $0.003 per minute
+   - 10 min = $0.03 | 1 hour = $0.18
+
+3. **Gemini 2.5 Flash** - Token-based, good for long files
+   - ~$0.30-0.50 per 1M input tokens + $0.40 per 1M output
+   - Estimate: ~$0.0005-0.001 per minute (varies by audio complexity)
+   - 10 min ≈ $0.005-0.01 | 1 hour ≈ $0.03-0.06
+   - Best for: Very long recordings, handles unlimited file sizes
+
+**Summarization** (Gemini 2.5 Flash text):
+- Typical: 2,000 input + 500 output tokens
+- Cost: (2,000 × $0.15 + 500 × $0.60) / 1,000,000 = **$0.0006**
 
 - **Weekly summary** (Gemini 2.5 Flash): ~$0.003-0.01 per summary
   - Typical: 10,000 input tokens + 2,000 output tokens
@@ -553,20 +589,21 @@ curl "http://localhost:8000/admin/weekly-summary/next-run"
 - Weekly summaries: 4 weeks × $0.0027 = **$0.01**
 - **Total: ~$36.10/month**
 
-### Gemini Free Tier
+### Gemini Pricing Advantages
 
-Gemini has a generous free tier that covers most summarization needs:
-- 15 requests per minute
-- 1 million tokens per day
-- 1,500 requests per day
+Gemini offers very competitive pricing, especially for text generation:
+- Text: $0.15 input + $0.60 output per 1M tokens
+- Audio: $0.30-0.50 input + $0.40 output per 1M tokens
+- Rate limits: 15 req/min, 1M tokens/day, 1,500 req/day
 
-**What's free:**
-- Video summarization (essentially unlimited for personal use)
-- Weekly summaries (4 per month)
-- Smart suggestions (as much as you need)
+**Cost-effective for:**
+- Video summarization (~$0.0006 per summary - nearly negligible)
+- Weekly summaries (~$0.003 per summary)
+- Smart suggestions (~$0.002 per request)
+- Long audio transcriptions (~$0.0005-0.001 per minute, cheaper than Whisper for >6 min files)
 
-**What costs money:**
-- Transcription with Whisper (no free option for high quality)
+**Costs more than alternatives:**
+- Short audio transcription: Voxtral is more cost-effective ($0.003/min fixed)
 
 ### Cost Tracking
 
@@ -581,7 +618,8 @@ curl "http://localhost:8000/admin/llm-usage/stats?model=whisper-1&limit=1000"
 ```
 
 Calculate costs based on current provider pricing:
-- OpenAI Whisper: tokens × audio duration minutes × $0.006
+- OpenAI Whisper: audio duration minutes × $0.006
+- Mistral Voxtral: audio duration minutes × $0.003
 - GPT-4o-mini: (prompt_tokens × $0.15 + response_tokens × $0.60) / 1,000,000
 - Gemini: Usually free up to limits
 

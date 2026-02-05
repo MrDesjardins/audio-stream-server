@@ -607,6 +607,8 @@ def _generate_and_attach_tts(
                 raise Exception("Text too short for TTS")
 
             logger.info(f"Generating TTS audio ({len(tts_text)} chars)...")
+            if not config.elevenlabs_api_key:
+                raise ValueError("ElevenLabs API key not configured")
             audio_data = generate_audio(
                 text=tts_text,
                 voice_id=config.elevenlabs_voice_id,
@@ -693,6 +695,8 @@ def generate_and_save_weekly_summary() -> Optional[Dict[str, str]]:
 
         if existing_summary:
             # Note exists in Trilium, handle TTS if needed
+            if not note_id:
+                raise ValueError("Existing summary has no Trilium note ID")
             return _generate_and_attach_tts(
                 note_id=note_id,
                 week_year=week_year,
