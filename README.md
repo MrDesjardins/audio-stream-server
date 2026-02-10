@@ -541,7 +541,7 @@ curl -X POST "http://localhost:8000/admin/weekly-summary/trigger"
 or  for a specific week:
 
 ```bash
-curl -X POST "http://10.0.0.181:8000/admin/weekly-summary/trigger" \
+curl -X POST "http://localhost:8000/admin/weekly-summary/trigger" \
   -H "Content-Type: application/json" \
   -d '{"date": "2026-02-06"}'
 ```

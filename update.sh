@@ -55,7 +55,12 @@ else
 fi
 
 echo ""
-echo "Step 4: Migrating database schema..."
+echo "Step 4: Generating version file..."
+echo "----------------------------------------"
+uv run python generate_version.py
+
+echo ""
+echo "Step 5: Migrating database schema..."
 echo "----------------------------------------"
 # Run migrations (handles schema changes for existing databases)
 uv run python migrate_database.py
@@ -66,7 +71,7 @@ uv run python migrate_add_queue_columns.py
 uv run python -c "from services.database import init_database; init_database(); print('Database schema updated successfully')"
 
 echo ""
-echo "Step 5: Restarting service..."
+echo "Step 6: Restarting service..."
 echo "----------------------------------------"
 if [ "$SERVICE_RUNNING" = true ]; then
     echo "Restarting audio-stream service..."

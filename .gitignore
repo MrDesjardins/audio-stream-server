@@ -52,3 +52,4 @@ Thumbs.db
 dist/
 build/
 *.egg-info/
+static/version.json
