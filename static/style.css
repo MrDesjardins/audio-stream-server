@@ -1378,19 +1378,34 @@ audio {
     color: var(--accent-secondary);
     font-size: 1.5rem;
     cursor: pointer;
-    background: none;
-    border: none;
-    padding: 0;
     transition: all 0.2s ease;
+    padding: 0;
+    min-width: 52px;
+    min-height: 52px;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 14px;
+    background: var(--bg-elevated);
+    box-shadow: var(--neu-flat);
+    border: none;
+    outline: none;
 }
 
 .summary-action-btn:hover {
-    color: var(--accent-primary);
-    transform: scale(1.1);
+    box-shadow: var(--neu-raised-sm);
+    transform: translateY(-1px);
 }
 
 .summary-action-btn:active {
-    transform: scale(0.95);
+    transform: translateY(0);
+    box-shadow: var(--neu-pressed);
+}
+
+.summary-action-btn:focus-visible {
+    outline: 2px solid var(--accent-primary);
+    outline-offset: 2px;
 }
 
 .summary-action-btn.queue-btn {
@@ -1810,6 +1825,13 @@ audio {
     }
 
     .history-action-btn {
+        font-size: 1.1rem;
+        min-width: 44px;
+        min-height: 44px;
+        flex: 0 0 auto;
+    }
+
+    .summary-action-btn {
         font-size: 1.1rem;
         min-width: 44px;
         min-height: 44px;
