@@ -668,7 +668,7 @@ def generate_and_save_weekly_summary(
     """
     Main function to generate and save weekly summary.
 
-    This is called by the scheduler every Friday at 11pm Pacific.
+    This is called by the scheduler every Sunday at 11pm Pacific.
 
     Args:
         target_date: Optional datetime to generate summary for.

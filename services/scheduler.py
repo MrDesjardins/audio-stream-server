@@ -37,12 +37,12 @@ def init_scheduler() -> None:
         pacific = timezone("America/Los_Angeles")
         _scheduler = BackgroundScheduler(timezone=pacific)
 
-        # Add weekly summary job (every Friday at 11pm Pacific)
+        # Add weekly summary job (every Sunday at 11pm Pacific)
         if config.weekly_summary_enabled:
             _scheduler.add_job(
                 func=generate_and_save_weekly_summary,
                 trigger=CronTrigger(
-                    day_of_week="fri",  # Friday
+                    day_of_week="sun",  # Sunday (end of ISO week)
                     hour=23,  # 11pm
                     minute=0,  # On the hour
                     timezone=pacific,
@@ -52,7 +52,7 @@ def init_scheduler() -> None:
                 replace_existing=True,
                 misfire_grace_time=3600,  # Allow 1 hour grace for missed jobs
             )
-            logger.info("Added weekly summary job: Every Friday at 11:00 PM Pacific")
+            logger.info("Added weekly summary job: Every Sunday at 11:00 PM Pacific")
         else:
             logger.info("Weekly summary feature is disabled")
 

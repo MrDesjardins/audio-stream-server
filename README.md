@@ -21,7 +21,7 @@ A powerful FastAPI application that streams audio from YouTube videos as MP3 ove
 ### AI-Powered Features
 
 #### Automatic Transcription
-- **Multi-Provider Support**: Choose between OpenAI Whisper or Google Gemini for transcription
+- **Multi-Provider Support**: Choose between OpenAI Whisper, Mistral Voxtral, or Google Gemini for transcription
 - **Audio Optimization**: Automatic compression and speed-up to reduce API costs by ~33%
 - **Background Processing**: Transcription happens asynchronously without blocking playback
 - **Smart Caching**: Transcripts cached locally to avoid re-processing
@@ -33,7 +33,7 @@ A powerful FastAPI application that streams audio from YouTube videos as MP3 ove
 - **Rich Metadata**: Includes video title, channel, thumbnail, and YouTube link
 
 #### Weekly Summaries
-- **Automated Scheduling**: Runs every Friday at 11 PM Pacific (configurable)
+- **Automated Scheduling**: Runs every Sunday at 11 PM Pacific to summarize the week (Monday-Sunday)
 - **Comprehensive Analysis**: Synthesizes all videos watched during the week
 - **Key Learnings**: Extracts 15 most important insights across all content
 - **Theme Detection**: Identifies common themes and patterns in your viewing
@@ -126,7 +126,7 @@ OPENAI_API_KEY=sk-...  # Get from https://platform.openai.com/api-keys
 GEMINI_API_KEY=...     # Get from https://makersuite.google.com/app/apikey
 
 # Provider selection (recommended: Whisper + Gemini for best cost/quality)
-TRANSCRIPTION_PROVIDER=openai  # "openai" (Whisper) or "gemini"
+TRANSCRIPTION_PROVIDER=openai  # "openai" (Whisper), "mistral" (Voxtral), or "gemini"
 SUMMARY_PROVIDER=gemini        # "gemini" (free tier) or "openai"
 
 # Trilium Notes integration (for saving summaries)
@@ -333,7 +333,7 @@ All configuration is done via the `.env` file. See `.env.example` for a complete
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `TRANSCRIPTION_ENABLED` | `false` | Enable AI transcription features |
-| `TRANSCRIPTION_PROVIDER` | `openai` | Provider: `openai` (Whisper) or `gemini` |
+| `TRANSCRIPTION_PROVIDER` | `openai` | Provider: `openai` (Whisper), `mistral` (Voxtral), or `gemini` |
 | `TRANSCRIPTION_MODEL` | (auto) | Model override (optional) |
 | `SUMMARY_PROVIDER` | `gemini` | Provider for video summaries |
 | `SUMMARY_MODEL` | (auto) | Model override (optional) |
@@ -560,13 +560,19 @@ curl "http://localhost:8000/admin/weekly-summary/next-run"
 | **OpenAI** ||||
 | gpt-4o-mini | $0.15 | $0.60 | Reliable workhorse (recommended) |
 | gpt-4o | $2.50 | $10.00 | Higher quality |
-| whisper-1 | - | - | $0.006 per minute, 25MB limit |
+| whisper-1 | $0.006/min | - | Audio transcription, 25MB limit |
+| tts-1 | $15.00 | - | Text-to-speech (per 1M chars) |
+| tts-1-hd | $30.00 | - | TTS HD quality (per 1M chars) |
 | **Mistral AI** ||||
-| voxtral-mini-latest | - | - | $0.003 per minute, 15 min limit |
+| voxtral-mini-latest | $0.003/min | - | Audio transcription, 15 min limit |
 | **Google Gemini** ||||
 | gemini-2.5-flash | $0.15 | $0.60 | Fast, comparable to gpt-4o-mini (recommended) |
+| gemini-2.5-flash-preview-tts | $0.40 | $0.40 | Audio transcription (per 1M tokens) |
 | gemini-1.5-flash | $0.10 | $0.40 | Slightly older, still excellent |
 | gemini-1.5-pro | $1.25 | $5.00 | Higher quality |
+| **ElevenLabs** ||||
+| eleven_flash_v2_5 | $100.00 | - | TTS (per 1M chars), ~$0.10 per 1K |
+| eleven_turbo_v2_5 | $300.00 | - | TTS higher quality (per 1M chars) |
 
 ### Estimated Costs Per Operation
 
@@ -825,15 +831,19 @@ Database schema updates are handled by migration scripts:
 
 ```bash
 # Run all migrations (done automatically by update.sh)
-uv run python migrate_database.py
-uv run python migrate_add_metadata.py
-uv run python migrate_add_queue_columns.py
+uv run python migrate_database.py              # Base schema
+uv run python migrate_add_metadata.py          # Channel and thumbnail fields
+uv run python migrate_add_queue_columns.py     # Queue type and week_year
+uv run python migrate_add_llm_stats.py         # LLM usage tracking table
+uv run python migrate_add_audio_duration.py    # Audio duration for cost tracking
+uv run python migrate_add_weekly_summary.py    # Weekly summaries table
 ```
 
 Each migration:
 - Creates a backup before making changes
 - Is idempotent (safe to run multiple times)
 - Preserves all existing data
+- Runs automatically during `./update.sh`
 
 ### Contributing
 

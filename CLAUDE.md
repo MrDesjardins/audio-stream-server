@@ -635,7 +635,7 @@ This script will:
 2. Pull latest changes from main branch
 3. Update Python dependencies via `uv sync`
 4. Check and install missing system dependencies
-5. Run database migrations (migrate_database.py, migrate_add_metadata.py, migrate_add_queue_columns.py)
+5. Run database migrations (all 6 migration scripts)
 6. Update database schema (`services.database.init_database`)
 7. Restart the systemd service if it was running
 
@@ -665,11 +665,29 @@ The project includes multiple migration scripts for schema updates:
 - Creates backup before migration
 - Required for queuing weekly summaries alongside YouTube videos
 
+**migrate_add_llm_stats.py** - LLM usage tracking migration:
+- Creates `llm_usage_stats` table for tracking API calls
+- Stores provider, model, tokens, costs, and metadata
+- Required for cost monitoring and analytics
+
+**migrate_add_audio_duration.py** - Audio duration tracking migration:
+- Adds `audio_duration_seconds` column to llm_usage_stats table
+- Required for per-minute pricing (Whisper, Voxtral)
+- Enables accurate cost calculations for audio transcription
+
+**migrate_add_weekly_summary.py** - Weekly summaries migration:
+- Creates `weekly_summaries` table for tracking weekly summaries
+- Stores Trilium note ID, audio file path, and metadata
+- Required for automated weekly summary feature
+
 **Manual migration**:
 ```sh
 uv run python migrate_database.py
 uv run python migrate_add_metadata.py
 uv run python migrate_add_queue_columns.py
+uv run python migrate_add_llm_stats.py
+uv run python migrate_add_audio_duration.py
+uv run python migrate_add_weekly_summary.py
 ```
 
 All migrations run automatically during `./update.sh`.

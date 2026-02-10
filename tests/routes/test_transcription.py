@@ -139,15 +139,19 @@ class TestStartTranscription:
         assert response.status_code == 400
         assert "Transcription not enabled" in response.json()["detail"]
 
-    @patch("routes.transcription.os.path.exists")
+    @patch("routes.transcription.expand_path")
     @patch("routes.transcription.config")
     def test_start_transcription_audio_not_found(
-        self, mock_config, mock_exists, client
+        self, mock_config, mock_expand_path, client
     ):
         """Test start when audio file doesn't exist."""
         mock_config.transcription_enabled = True
         mock_config.get_audio_path.return_value = "/tmp/test123.mp3"
-        mock_exists.return_value = False
+
+        # Mock expand_path to return a Mock Path object with exists() returning False
+        mock_path = Mock()
+        mock_path.exists.return_value = False
+        mock_expand_path.return_value = mock_path
 
         response = client.post("/transcription/start/test123")
 
