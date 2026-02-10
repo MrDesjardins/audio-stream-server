@@ -70,7 +70,18 @@ def get_current_queue():
     """Get the current queue."""
     try:
         queue = get_queue()
-        return JSONResponse({"queue": [item.to_dict() for item in queue]})
+        queue_dicts = [item.to_dict() for item in queue]
+
+        # Log queue items for debugging
+        for item_dict in queue_dicts:
+            logger.info(
+                f"GET /queue returning item: id={item_dict['id']}, "
+                f"type={item_dict.get('type', 'MISSING')}, "
+                f"week_year={item_dict.get('week_year', 'MISSING')}, "
+                f"title={item_dict['title'][:50]}"
+            )
+
+        return JSONResponse({"queue": queue_dicts})
     except Exception as e:
         logger.error(f"Error fetching queue: {e}")
         raise HTTPException(status_code=500, detail=str(e))

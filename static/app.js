@@ -973,6 +973,16 @@ async function renderQueue() {
         const positionBadge = `<span class="queue-position">${index + 1}</span>`;
         const itemType = item.type || 'youtube';
 
+        // Debug logging for queue items
+        remoteLog('debug', `renderQueue: item #${item.id}`, {
+            type: item.type,
+            typeType: typeof item.type,
+            itemType: itemType,
+            week_year: item.week_year,
+            youtube_id: item.youtube_id,
+            title: item.title ? item.title.substring(0, 50) : 'undefined'
+        });
+
         // Different icons and badges for different types
         let icon, badge, onClick;
         if (itemType === 'summary') {

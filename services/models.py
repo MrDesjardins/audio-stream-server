@@ -62,9 +62,20 @@ class QueueItem:
     @classmethod
     def from_db_row(cls, row) -> "QueueItem":
         """Create instance from database row."""
+        import logging
+
+        logger = logging.getLogger(__name__)
+
         # Get type from row, defaulting to 'youtube' only if None
         # This preserves explicit 'summary' types while handling backward compatibility
-        item_type = row["type"] if row["type"] is not None else "youtube"
+        raw_type = row["type"]
+        item_type = raw_type if raw_type is not None else "youtube"
+
+        # Debug logging to diagnose type issues
+        logger.debug(
+            f"QueueItem.from_db_row: id={row['id']}, raw_type={repr(raw_type)}, "
+            f"item_type={repr(item_type)}, week_year={repr(row['week_year'])}"
+        )
 
         return cls(
             id=row["id"],
