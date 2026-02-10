@@ -105,12 +105,17 @@ def trigger_weekly_summary_now(target_date: Optional[datetime] = None) -> None:
             logger.info(f"Manually triggering weekly summary for date: {target_date}")
         else:
             logger.info("Manually triggering weekly summary for current week")
+
+        logger.info("Calling generate_and_save_weekly_summary()...")
         result = generate_and_save_weekly_summary(target_date)
+        logger.info(f"generate_and_save_weekly_summary() returned: {result}")
 
         if result:
             logger.info(f"Weekly summary created: {result['url']}")
         else:
             logger.warning("Weekly summary generation returned None")
+
+        logger.info("trigger_weekly_summary_now() completed successfully")
 
     except Exception as e:
         logger.error(f"Error triggering weekly summary: {e}", exc_info=True)
