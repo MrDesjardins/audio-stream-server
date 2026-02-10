@@ -824,7 +824,8 @@ def get_llm_usage_summary(
                 SUM(prompt_tokens) as total_prompt_tokens,
                 SUM(response_tokens) as total_response_tokens,
                 SUM(reasoning_tokens) as total_reasoning_tokens,
-                SUM(total_tokens) as total_tokens
+                SUM(total_tokens) as total_tokens,
+                SUM(audio_duration_seconds) as total_audio_duration_seconds
             FROM llm_usage_stats
             WHERE 1=1
         """
@@ -864,6 +865,8 @@ def get_llm_usage_summary(
                 "total_response_tokens": row["total_response_tokens"] or 0,
                 "total_reasoning_tokens": row["total_reasoning_tokens"] or 0,
                 "total_tokens": row["total_tokens"] or 0,
+                "total_audio_duration_seconds": row["total_audio_duration_seconds"]
+                or 0,
             }
             results["by_provider_model_feature"].append(stat)
 

@@ -5,12 +5,16 @@ Handles audio generation from text and file management.
 """
 
 import re
+import logging
 from typing import Optional, Literal
 from elevenlabs.client import ElevenLabs
 from bs4 import BeautifulSoup
 
 from services.path_utils import expand_path
 from services.llm_clients import get_tracked_openai_client
+from services.database import log_llm_usage
+
+logger = logging.getLogger(__name__)
 
 TTSProvider = Literal["openai", "elevenlabs"]
 
@@ -160,9 +164,11 @@ def _generate_audio_elevenlabs(
     api_key: str,
     model_id: str = "eleven_flash_v2_5",
     output_format: str = "mp3_44100_128",
+    feature: str = "tts",
+    video_id: Optional[str] = None,
 ) -> bytes:
     """
-    Generate audio using ElevenLabs API.
+    Generate audio using ElevenLabs API with usage tracking.
 
     Args:
         text: Text to convert to speech
@@ -170,6 +176,8 @@ def _generate_audio_elevenlabs(
         api_key: ElevenLabs API key
         model_id: Model to use for generation
         output_format: Audio format
+        feature: Feature name for tracking (default: "tts")
+        video_id: Associated video ID for tracking (optional)
 
     Returns:
         MP3 audio data as bytes
@@ -205,7 +213,32 @@ def _generate_audio_elevenlabs(
             output_format=output_format,
         )
 
-        return b"".join(audio_generator)
+        audio_data = b"".join(audio_generator)
+
+        # Track usage - ElevenLabs TTS priced per character
+        try:
+            metadata = {
+                "character_count": len(text),
+                "voice_id": voice_id,
+                "output_format": output_format,
+            }
+
+            log_llm_usage(
+                provider="elevenlabs",
+                model=model_id,
+                feature=feature,
+                prompt_tokens=len(text),  # Store character count in prompt_tokens
+                response_tokens=0,  # TTS doesn't have response tokens
+                video_id=video_id,
+                metadata=metadata,
+            )
+            logger.info(
+                f"ElevenLabs TTS {model_id} call tracked for {feature} ({len(text)} chars)"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to track ElevenLabs TTS usage: {e}")
+
+        return audio_data
 
     except Exception as e:
         error_msg = str(e)
@@ -271,7 +304,9 @@ def generate_audio(
         if not voice:
             raise ValueError("ElevenLabs requires a voice_id")
         model = model or "eleven_flash_v2_5"
-        return _generate_audio_elevenlabs(text, voice, api_key, model)
+        return _generate_audio_elevenlabs(
+            text, voice, api_key, model, feature=feature, video_id=video_id
+        )
 
     else:
         raise ValueError(f"Unsupported TTS provider: {provider}")

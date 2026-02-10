@@ -247,9 +247,14 @@ class Config:
                 errors.append(
                     "GEMINI_API_KEY is required when TRANSCRIPTION_PROVIDER=gemini"
                 )
+        elif self.transcription_provider == "mistral":
+            if not self.mistral_api_key:
+                errors.append(
+                    "MISTRAL_API_KEY is required when TRANSCRIPTION_PROVIDER=mistral"
+                )
         else:
             errors.append(
-                f"Invalid TRANSCRIPTION_PROVIDER: {self.transcription_provider}. Must be 'openai' or 'gemini'"
+                f"Invalid TRANSCRIPTION_PROVIDER: {self.transcription_provider}. Must be 'openai', 'gemini', or 'mistral'"
             )
 
         # Check summarization provider configuration

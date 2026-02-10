@@ -2,7 +2,6 @@
 Transcription routes.
 """
 
-import os
 import logging
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
@@ -12,6 +11,7 @@ from services.background_tasks import (
     TranscriptionJob,
     JobStatus,
 )
+from services.path_utils import expand_path
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -64,7 +64,7 @@ def start_transcription(video_id: str):
 
     audio_path = config.get_audio_path(video_id)
 
-    if not os.path.exists(audio_path):
+    if not expand_path(audio_path).exists():
         raise HTTPException(
             status_code=404,
             detail=f"Audio file not found for video {video_id}. Please stream the video first.",

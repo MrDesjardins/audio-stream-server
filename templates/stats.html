@@ -552,6 +552,11 @@
             'gpt-4o-mini': { input: 0.15, output: 0.60 },
             'gpt-4o': { input: 2.50, output: 10.00 },
             'gpt-5.2': { input: 1.75, output: 14.00 },
+            // ElevenLabs TTS models (priced per character, stored in prompt_tokens)
+            'eleven_flash_v2_5': { input: 100.00, output: 0 }, // $0.10 per 1K chars
+            'eleven_turbo_v2_5': { input: 300.00, output: 0 }, // $0.30 per 1K chars
+            'eleven_multilingual_v2': { input: 300.00, output: 0 }, // $0.30 per 1K chars
+            'eleven_monolingual_v1': { input: 300.00, output: 0 }, // $0.30 per 1K chars
             // Gemini models (text/summarization)
             'gemini-2.5-flash': { input: 0.15, output: 0.60 },
             'gemini-2.5-flash-preview-tts': { input: 0.15, output: 0.60 },
@@ -567,6 +572,12 @@
             output: 0.40
         };
 
+        // Audio transcription pricing (per second)
+        const AUDIO_PRICING_PER_SECOND = {
+            'whisper-1': 0.0001,  // $0.006 per minute / 60
+            'voxtral-mini-latest': 0.00005,  // $0.003 per minute / 60
+        };
+
         function calculateCost(summary) {
             let totalCost = 0;
 
@@ -574,9 +585,18 @@
                 const model = item.model;
                 const feature = item.feature;
                 const provider = item.provider;
-                let pricing = MODEL_PRICING[model];
+                const audioDuration = item.total_audio_duration_seconds || 0;
+
+                // Check if this model uses per-second audio pricing
+                if (AUDIO_PRICING_PER_SECOND[model] && audioDuration > 0) {
+                    const cost = audioDuration * AUDIO_PRICING_PER_SECOND[model];
+                    totalCost += cost;
+                    console.log(`${provider}/${model}/${feature}: ${(audioDuration / 60).toFixed(2)} minutes = $${cost.toFixed(4)}`);
+                    return;
+                }
 
                 // Special handling for Gemini audio transcription
+                let pricing = MODEL_PRICING[model];
                 if (provider === 'gemini' && feature === 'transcription') {
                     pricing = GEMINI_AUDIO_PRICING;
                     console.log(`Using Gemini audio pricing for ${model} transcription`);
@@ -803,9 +823,18 @@
                 const feature = item.feature;
                 const model = item.model;
                 const provider = item.provider;
-                let pricing = MODEL_PRICING[model];
+                const audioDuration = item.total_audio_duration_seconds || 0;
+
+                // Check if this model uses per-second audio pricing
+                if (AUDIO_PRICING_PER_SECOND[model] && audioDuration > 0) {
+                    const cost = audioDuration * AUDIO_PRICING_PER_SECOND[model];
+                    featureCosts[feature] = (featureCosts[feature] || 0) + cost;
+                    featureCalls[feature] = (featureCalls[feature] || 0) + item.call_count;
+                    return;
+                }
 
                 // Special handling for Gemini audio transcription
+                let pricing = MODEL_PRICING[model];
                 if (provider === 'gemini' && feature === 'transcription') {
                     pricing = GEMINI_AUDIO_PRICING;
                 }

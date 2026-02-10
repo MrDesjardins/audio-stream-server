@@ -155,15 +155,19 @@ class TestStartTranscription:
         assert "Audio file not found" in response.json()["detail"]
 
     @patch("routes.transcription.get_transcription_queue")
-    @patch("routes.transcription.os.path.exists")
+    @patch("routes.transcription.expand_path")
     @patch("routes.transcription.config")
     def test_start_transcription_success(
-        self, mock_config, mock_exists, mock_get_queue, client
+        self, mock_config, mock_expand_path, mock_get_queue, client
     ):
         """Test successful transcription start."""
         mock_config.transcription_enabled = True
         mock_config.get_audio_path.return_value = "/tmp/test123.mp3"
-        mock_exists.return_value = True
+
+        # Mock expand_path to return a Mock Path object with exists() returning True
+        mock_path = Mock()
+        mock_path.exists.return_value = True
+        mock_expand_path.return_value = mock_path
 
         mock_queue = Mock()
         mock_get_queue.return_value = mock_queue
@@ -182,15 +186,20 @@ class TestStartTranscription:
         assert job.audio_path == "/tmp/test123.mp3"
 
     @patch("routes.transcription.get_transcription_queue")
-    @patch("routes.transcription.os.path.exists")
+    @patch("routes.transcription.expand_path")
     @patch("routes.transcription.config")
     def test_start_transcription_error(
-        self, mock_config, mock_exists, mock_get_queue, client
+        self, mock_config, mock_expand_path, mock_get_queue, client
     ):
         """Test start transcription with error."""
         mock_config.transcription_enabled = True
         mock_config.get_audio_path.return_value = "/tmp/test123.mp3"
-        mock_exists.return_value = True
+
+        # Mock expand_path to return a Mock Path object with exists() returning True
+        mock_path = Mock()
+        mock_path.exists.return_value = True
+        mock_expand_path.return_value = mock_path
+
         mock_get_queue.side_effect = Exception("Queue error")
 
         response = client.post("/transcription/start/test123")
