@@ -62,16 +62,21 @@ async def stream_summary_audio(week_year: str):
                 status_code=404, detail=f"No audio file for summary: {week_year}"
             )
 
+        # Expand path (handles ~ and symlinks)
+        expanded_path = expand_path(audio_path)
+
         # Check if file exists
-        if not expand_path(audio_path).exists():
-            logger.error(f"Audio file not found: {audio_path}")
+        if not expanded_path.exists():
+            logger.error(
+                f"Audio file not found: {audio_path} (expanded: {expanded_path})"
+            )
             raise HTTPException(
                 status_code=404, detail=f"Audio file not found: {audio_path}"
             )
 
-        # Stream the file
+        # Stream the file (must use expanded path)
         return FileResponse(
-            audio_path,
+            expanded_path,
             media_type="audio/mpeg",
             filename=f"{week_year}.mp3",
         )
