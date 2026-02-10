@@ -3,7 +3,7 @@
 import os
 import threading
 import logging
-from typing import Optional
+from typing import Optional, Literal, cast
 from dataclasses import dataclass
 from dotenv import load_dotenv
 
@@ -104,8 +104,12 @@ class Config:
 
     # TTS settings
     tts_enabled: bool
+    tts_provider: Literal["openai", "elevenlabs"]
+    openai_tts_voice: str  # OpenAI voice (alloy, echo, fable, onyx, nova, shimmer)
+    openai_tts_model: str  # OpenAI model (tts-1 or tts-1-hd)
     elevenlabs_api_key: Optional[str]
     elevenlabs_voice_id: str
+    elevenlabs_model_id: str
     weekly_summary_audio_dir: str
 
     # Client-side logging settings
@@ -194,10 +198,17 @@ class Config:
             == "true",
             # TTS settings
             tts_enabled=os.getenv("TTS_ENABLED", "false").lower() == "true",
+            tts_provider=cast(
+                Literal["openai", "elevenlabs"],
+                os.getenv("TTS_PROVIDER", "openai").lower(),
+            ),
+            openai_tts_voice=os.getenv("OPENAI_TTS_VOICE", "alloy"),
+            openai_tts_model=os.getenv("OPENAI_TTS_MODEL", "tts-1"),
             elevenlabs_api_key=os.getenv("ELEVENLABS_API_KEY"),
             elevenlabs_voice_id=os.getenv(
                 "ELEVENLABS_VOICE_ID", "pNInz6obpgDQGcFmaJgB"
             ),  # Adam - free voice
+            elevenlabs_model_id=os.getenv("ELEVENLABS_MODEL_ID", "eleven_flash_v2_5"),
             weekly_summary_audio_dir=os.getenv(
                 "WEEKLY_SUMMARY_AUDIO_DIR", "/var/audio-summaries"
             ),
@@ -328,8 +339,21 @@ class Config:
         """Validate that required configuration for TTS is present."""
         errors = []
 
-        if not self.elevenlabs_api_key:
-            errors.append("ELEVENLABS_API_KEY is required when TTS_ENABLED=true")
+        # Validate TTS provider
+        if self.tts_provider not in ["openai", "elevenlabs"]:
+            errors.append(
+                f"TTS_PROVIDER must be 'openai' or 'elevenlabs', got '{self.tts_provider}'"
+            )
+
+        # Validate provider-specific configuration
+        if self.tts_provider == "openai":
+            if not self.openai_api_key:
+                errors.append("OPENAI_API_KEY is required when TTS_PROVIDER=openai")
+        elif self.tts_provider == "elevenlabs":
+            if not self.elevenlabs_api_key:
+                errors.append(
+                    "ELEVENLABS_API_KEY is required when TTS_PROVIDER=elevenlabs"
+                )
 
         if errors:
             error_msg = "TTS configuration validation failed:\n  - " + "\n  - ".join(

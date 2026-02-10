@@ -1,15 +1,18 @@
 """
-Text-to-Speech service using ElevenLabs API.
+Text-to-Speech service supporting multiple providers (OpenAI, ElevenLabs).
 
 Handles audio generation from text and file management.
 """
 
 import re
-from typing import Optional
+from typing import Optional, Literal
 from elevenlabs.client import ElevenLabs
+from openai import OpenAI
 from bs4 import BeautifulSoup
 
 from services.path_utils import expand_path
+
+TTSProvider = Literal["openai", "elevenlabs"]
 
 
 class TTSError(Exception):
@@ -90,7 +93,58 @@ def extract_summary_text_for_tts(html_content: str) -> str:
     return text
 
 
-def generate_audio(
+def _generate_audio_openai(
+    text: str, voice: str, api_key: str, model: str = "tts-1"
+) -> bytes:
+    """
+    Generate audio using OpenAI TTS API.
+
+    Args:
+        text: Text to convert to speech
+        voice: OpenAI voice (alloy, echo, fable, onyx, nova, shimmer)
+        api_key: OpenAI API key
+        model: Model to use (tts-1 or tts-1-hd)
+
+    Returns:
+        MP3 audio data as bytes
+
+    Raises:
+        TTSAPIError: If API request fails
+
+    Note:
+        OpenAI TTS has a 4096 character limit per request.
+        For longer text, this function will truncate.
+    """
+    max_chars = 4096
+
+    # Truncate if needed
+    if len(text) > max_chars:
+        text = text[: max_chars - 3] + "..."
+
+    try:
+        client = OpenAI(api_key=api_key)
+
+        response = client.audio.speech.create(
+            model=model, voice=voice, input=text, response_format="mp3"
+        )
+
+        # Read the audio data from the response
+        return response.read()
+
+    except Exception as e:
+        error_msg = str(e)
+
+        if "401" in error_msg or "unauthorized" in error_msg.lower():
+            raise TTSAPIError("Invalid OpenAI API key")
+        elif "429" in error_msg or "rate" in error_msg.lower():
+            raise TTSAPIError(f"Rate limited: {error_msg}")
+        elif "insufficient_quota" in error_msg.lower():
+            raise TTSAPIError(f"Insufficient quota: {error_msg}")
+        else:
+            raise TTSAPIError(f"OpenAI TTS failed: {error_msg}")
+
+
+def _generate_audio_elevenlabs(
     text: str,
     voice_id: str,
     api_key: str,
@@ -98,20 +152,19 @@ def generate_audio(
     output_format: str = "mp3_44100_128",
 ) -> bytes:
     """
-    Generate audio from text using ElevenLabs Python SDK.
+    Generate audio using ElevenLabs API.
 
     Args:
         text: Text to convert to speech
         voice_id: ElevenLabs voice ID
         api_key: ElevenLabs API key
-        model_id: Model to use for generation (default: eleven_multilingual_v2)
-        output_format: Audio format (default: mp3_44100_128)
+        model_id: Model to use for generation
+        output_format: Audio format
 
     Returns:
         MP3 audio data as bytes
 
     Raises:
-        TTSTextTooLongError: If text exceeds maximum length
         TTSAPIError: If API request fails
 
     Note:
@@ -120,25 +173,21 @@ def generate_audio(
         - eleven_turbo_v2_5: 40,000 chars
         - eleven_flash_v2_5: 40,000 chars
     """
-    # Get character limit based on model
     model_limits = {
         "eleven_multilingual_v2": 10000,
         "eleven_turbo_v2_5": 40000,
         "eleven_flash_v2_5": 40000,
         "eleven_monolingual_v1": 5000,
     }
-    max_chars = model_limits.get(model_id, 10000)  # Default to multilingual v2 limit
+    max_chars = model_limits.get(model_id, 10000)
 
-    # Check text length and truncate if needed
+    # Truncate if needed
     if len(text) > max_chars:
-        # Truncate with ellipsis
         text = text[: max_chars - 3] + "..."
 
     try:
-        # Initialize ElevenLabs client
         client = ElevenLabs(api_key=api_key)
 
-        # Generate audio using SDK
         audio_generator = client.text_to_speech.convert(
             text=text,
             voice_id=voice_id,
@@ -146,23 +195,68 @@ def generate_audio(
             output_format=output_format,
         )
 
-        # The SDK returns an iterator of audio chunks, collect them all
-        audio_bytes = b"".join(audio_generator)
-
-        return audio_bytes
+        return b"".join(audio_generator)
 
     except Exception as e:
-        # Parse error message for common issues
         error_msg = str(e)
 
-        if "401" in error_msg or "unauthorized" in error_msg.lower():
-            raise TTSAPIError("Invalid API key")
+        if "quota_exceeded" in error_msg.lower():
+            raise TTSAPIError(f"Quota exceeded: {error_msg}")
+        elif "401" in error_msg or "unauthorized" in error_msg.lower():
+            raise TTSAPIError("Invalid ElevenLabs API key")
         elif "402" in error_msg or "payment_required" in error_msg.lower():
             raise TTSAPIError(f"Payment required: {error_msg}")
         elif "429" in error_msg or "rate" in error_msg.lower():
             raise TTSAPIError(f"Rate limited: {error_msg}")
         else:
-            raise TTSAPIError(f"Failed to generate audio: {error_msg}")
+            raise TTSAPIError(f"ElevenLabs TTS failed: {error_msg}")
+
+
+def generate_audio(
+    text: str,
+    api_key: str,
+    provider: TTSProvider = "openai",
+    voice: Optional[str] = None,
+    model: Optional[str] = None,
+) -> bytes:
+    """
+    Generate audio from text using the specified TTS provider.
+
+    Args:
+        text: Text to convert to speech
+        api_key: API key for the provider
+        provider: TTS provider to use ("openai" or "elevenlabs")
+        voice: Voice ID/name (provider-specific)
+        model: Model ID (provider-specific)
+
+    Returns:
+        MP3 audio data as bytes
+
+    Raises:
+        TTSAPIError: If API request fails
+        ValueError: If provider is invalid
+
+    Provider-specific defaults:
+        OpenAI:
+            - voice: "alloy" (options: alloy, echo, fable, onyx, nova, shimmer)
+            - model: "tts-1" (options: tts-1, tts-1-hd)
+        ElevenLabs:
+            - voice: Must be provided
+            - model: "eleven_flash_v2_5"
+    """
+    if provider == "openai":
+        voice = voice or "alloy"
+        model = model or "tts-1"
+        return _generate_audio_openai(text, voice, api_key, model)
+
+    elif provider == "elevenlabs":
+        if not voice:
+            raise ValueError("ElevenLabs requires a voice_id")
+        model = model or "eleven_flash_v2_5"
+        return _generate_audio_elevenlabs(text, voice, api_key, model)
+
+    else:
+        raise ValueError(f"Unsupported TTS provider: {provider}")
 
 
 def save_audio_file(audio_data: bytes, file_path: str) -> int:

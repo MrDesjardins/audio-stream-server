@@ -36,6 +36,26 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+# Custom filter to suppress polling endpoint logs
+class PollingEndpointFilter(logging.Filter):
+    """Filter out frequently polled endpoint access logs to reduce noise."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        # Filter out frequently polled endpoints
+        return not any(
+            pattern in message
+            for pattern in [
+                "GET /status HTTP",  # Stream status polling
+                "GET /transcription/status/",  # Transcription status polling
+            ]
+        )
+
+
+# Apply filter to uvicorn access logger
+logging.getLogger("uvicorn.access").addFilter(PollingEndpointFilter())
+
 # Configurable host and port
 host = os.environ.get("FASTAPI_HOST", "127.0.0.1")
 api_port = int(os.environ.get("FASTAPI_API_PORT", 8000))

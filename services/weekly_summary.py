@@ -606,13 +606,30 @@ def _generate_and_attach_tts(
             if not tts_text or len(tts_text) < 50:
                 raise Exception("Text too short for TTS")
 
-            logger.info(f"Generating TTS audio ({len(tts_text)} chars)...")
-            if not config.elevenlabs_api_key:
-                raise ValueError("ElevenLabs API key not configured")
+            logger.info(
+                f"Generating TTS audio with {config.tts_provider} ({len(tts_text)} chars)..."
+            )
+
+            # Get provider-specific settings
+            if config.tts_provider == "openai":
+                if not config.openai_api_key:
+                    raise ValueError("OpenAI API key not configured")
+                api_key = config.openai_api_key
+                voice = config.openai_tts_voice
+                model = config.openai_tts_model
+            else:  # elevenlabs
+                if not config.elevenlabs_api_key:
+                    raise ValueError("ElevenLabs API key not configured")
+                api_key = config.elevenlabs_api_key
+                voice = config.elevenlabs_voice_id
+                model = config.elevenlabs_model_id
+
             audio_data = generate_audio(
                 text=tts_text,
-                voice_id=config.elevenlabs_voice_id,
-                api_key=config.elevenlabs_api_key,
+                api_key=api_key,
+                provider=config.tts_provider,
+                voice=voice,
+                model=model,
             )
             duration = save_audio_file(audio_data, audio_path)
             logger.info(f"Saved audio file: {audio_path} ({duration}s)")

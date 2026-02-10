@@ -79,9 +79,39 @@ class TestExtractSummaryTextForTTS:
 class TestGenerateAudio:
     """Tests for generate_audio function."""
 
+    @patch("services.tts.OpenAI")
+    def test_successful_generation_openai(self, mock_openai_class):
+        """Should generate audio successfully with OpenAI provider."""
+        # Setup mock
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.read.return_value = b"fake audio data"
+        mock_client.audio.speech.create.return_value = mock_response
+        mock_openai_class.return_value = mock_client
+
+        # Call function
+        result = generate_audio(
+            text="Hello world",
+            api_key="test-api-key",
+            provider="openai",
+            voice="alloy",
+            model="tts-1",
+        )
+
+        # Assertions
+        assert result == b"fake audio data"
+        mock_openai_class.assert_called_once_with(api_key="test-api-key")
+        mock_client.audio.speech.create.assert_called_once()
+
+        # Check parameters
+        call_kwargs = mock_client.audio.speech.create.call_args.kwargs
+        assert call_kwargs["input"] == "Hello world"
+        assert call_kwargs["voice"] == "alloy"
+        assert call_kwargs["model"] == "tts-1"
+
     @patch("services.tts.ElevenLabs")
-    def test_successful_generation(self, mock_elevenlabs_class):
-        """Should generate audio successfully."""
+    def test_successful_generation_elevenlabs(self, mock_elevenlabs_class):
+        """Should generate audio successfully with ElevenLabs provider."""
         # Setup mock
         mock_client = Mock()
         mock_tts = Mock()
@@ -94,8 +124,10 @@ class TestGenerateAudio:
         # Call function
         result = generate_audio(
             text="Hello world",
-            voice_id="test-voice-id",
             api_key="test-api-key",
+            provider="elevenlabs",
+            voice="test-voice-id",
+            model="eleven_flash_v2_5",
         )
 
         # Assertions
@@ -109,8 +141,34 @@ class TestGenerateAudio:
         assert call_kwargs["voice_id"] == "test-voice-id"
         assert call_kwargs["model_id"] == "eleven_flash_v2_5"
 
+    @patch("services.tts.OpenAI")
+    def test_truncates_long_text_openai(self, mock_openai_class):
+        """Should truncate text longer than OpenAI limit (4096 chars)."""
+        # Setup mock
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.read.return_value = b"audio"
+        mock_client.audio.speech.create.return_value = mock_response
+        mock_openai_class.return_value = mock_client
+
+        # Generate long text (longer than 4096 chars)
+        long_text = "x" * 5000
+
+        # Call function
+        generate_audio(
+            text=long_text,
+            api_key="test-api-key",
+            provider="openai",
+        )
+
+        # Check that text was truncated to 4096 chars
+        call_kwargs = mock_client.audio.speech.create.call_args.kwargs
+        posted_text = call_kwargs["input"]
+        assert len(posted_text) == 4096
+        assert posted_text.endswith("...")
+
     @patch("services.tts.ElevenLabs")
-    def test_truncates_long_text(self, mock_elevenlabs_class):
+    def test_truncates_long_text_elevenlabs(self, mock_elevenlabs_class):
         """Should truncate text longer than model limit (40,000 for flash v2.5)."""
         # Setup mock
         mock_client = Mock()
@@ -122,11 +180,13 @@ class TestGenerateAudio:
         # Generate long text (longer than 40,000 chars for eleven_flash_v2_5)
         long_text = "x" * 45000
 
-        # Call function with default model (eleven_flash_v2_5)
+        # Call function with ElevenLabs
         generate_audio(
             text=long_text,
-            voice_id="test-voice-id",
             api_key="test-api-key",
+            provider="elevenlabs",
+            voice="test-voice-id",
+            model="eleven_flash_v2_5",
         )
 
         # Check that text was truncated to 40,000 chars
@@ -135,9 +195,25 @@ class TestGenerateAudio:
         assert len(posted_text) == 40000
         assert posted_text.endswith("...")
 
+    @patch("services.tts.OpenAI")
+    def test_raises_on_auth_error_openai(self, mock_openai_class):
+        """Should raise TTSAPIError on OpenAI authentication error."""
+        # Setup mock to raise auth error
+        mock_client = Mock()
+        mock_client.audio.speech.create.side_effect = Exception("401 Unauthorized")
+        mock_openai_class.return_value = mock_client
+
+        # Call function and expect error
+        with pytest.raises(TTSAPIError, match="Invalid OpenAI API key"):
+            generate_audio(
+                text="Test",
+                api_key="bad-key",
+                provider="openai",
+            )
+
     @patch("services.tts.ElevenLabs")
-    def test_raises_on_auth_error(self, mock_elevenlabs_class):
-        """Should raise TTSAPIError on authentication error."""
+    def test_raises_on_auth_error_elevenlabs(self, mock_elevenlabs_class):
+        """Should raise TTSAPIError on ElevenLabs authentication error."""
         # Setup mock to raise auth error
         mock_client = Mock()
         mock_tts = Mock()
@@ -146,11 +222,31 @@ class TestGenerateAudio:
         mock_elevenlabs_class.return_value = mock_client
 
         # Call function and expect error
-        with pytest.raises(TTSAPIError, match="Invalid API key"):
+        with pytest.raises(TTSAPIError, match="Invalid ElevenLabs API key"):
             generate_audio(
                 text="Test",
-                voice_id="voice-id",
                 api_key="bad-key",
+                provider="elevenlabs",
+                voice="voice-id",
+            )
+
+    @patch("services.tts.ElevenLabs")
+    def test_raises_on_quota_exceeded(self, mock_elevenlabs_class):
+        """Should raise TTSAPIError on quota exceeded error."""
+        # Setup mock to raise quota error
+        mock_client = Mock()
+        mock_tts = Mock()
+        mock_tts.convert.side_effect = Exception("quota_exceeded: insufficient credits")
+        mock_client.text_to_speech = mock_tts
+        mock_elevenlabs_class.return_value = mock_client
+
+        # Call function and expect error
+        with pytest.raises(TTSAPIError, match="Quota exceeded"):
+            generate_audio(
+                text="Test",
+                api_key="api-key",
+                provider="elevenlabs",
+                voice="voice-id",
             )
 
     @patch("services.tts.ElevenLabs")
@@ -167,8 +263,9 @@ class TestGenerateAudio:
         with pytest.raises(TTSAPIError, match="Payment required"):
             generate_audio(
                 text="Test",
-                voice_id="voice-id",
                 api_key="api-key",
+                provider="elevenlabs",
+                voice="voice-id",
             )
 
     @patch("services.tts.ElevenLabs")
@@ -185,13 +282,14 @@ class TestGenerateAudio:
         with pytest.raises(TTSAPIError, match="Rate limited"):
             generate_audio(
                 text="Test",
-                voice_id="voice-id",
                 api_key="api-key",
+                provider="elevenlabs",
+                voice="voice-id",
             )
 
     @patch("services.tts.ElevenLabs")
     def test_model_specific_limits(self, mock_elevenlabs_class):
-        """Should apply correct character limits for different models."""
+        """Should apply correct character limits for different ElevenLabs models."""
         # Setup mock
         mock_client = Mock()
         mock_tts = Mock()
@@ -203,9 +301,10 @@ class TestGenerateAudio:
         long_text = "x" * 45000
         generate_audio(
             text=long_text,
-            voice_id="test-voice",
             api_key="test-key",
-            model_id="eleven_flash_v2_5",
+            provider="elevenlabs",
+            voice="test-voice",
+            model="eleven_flash_v2_5",
         )
         posted_text = mock_tts.convert.call_args.kwargs["text"]
         assert len(posted_text) == 40000
@@ -215,13 +314,32 @@ class TestGenerateAudio:
         long_text = "x" * 12000
         generate_audio(
             text=long_text,
-            voice_id="test-voice",
             api_key="test-key",
-            model_id="eleven_multilingual_v2",
+            provider="elevenlabs",
+            voice="test-voice",
+            model="eleven_multilingual_v2",
         )
         posted_text = mock_tts.convert.call_args.kwargs["text"]
         assert len(posted_text) == 10000
         assert posted_text.endswith("...")
+
+    def test_raises_on_invalid_provider(self):
+        """Should raise ValueError on invalid provider."""
+        with pytest.raises(ValueError, match="Unsupported TTS provider"):
+            generate_audio(
+                text="Test",
+                api_key="test-key",
+                provider="invalid",
+            )
+
+    def test_raises_on_elevenlabs_without_voice(self):
+        """Should raise ValueError when using ElevenLabs without voice_id."""
+        with pytest.raises(ValueError, match="ElevenLabs requires a voice_id"):
+            generate_audio(
+                text="Test",
+                api_key="test-key",
+                provider="elevenlabs",
+            )
 
 
 class TestSaveAudioFile:
