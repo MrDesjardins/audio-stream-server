@@ -125,8 +125,14 @@ def play_next_in_queue():
         # Add type-specific fields
         if next_item.type == "summary":
             response["week_year"] = next_item.week_year
+            logger.info(
+                f"Playing next item (summary): {next_item.title} - week_year: {next_item.week_year}"
+            )
         else:
             response["youtube_id"] = next_item.youtube_id
+            logger.info(
+                f"Playing next item (youtube): {next_item.title} - video_id: {next_item.youtube_id}"
+            )
 
         return JSONResponse(response)
     except Exception as e:

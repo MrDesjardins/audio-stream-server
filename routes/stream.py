@@ -110,6 +110,14 @@ def stream_video(request: StreamRequest):
 
     logger.info(f"🎬 /stream requested for video: {video_id}")
 
+    # Validate video ID
+    if not video_id or video_id.strip() == "":
+        logger.error("Received empty video_id in /stream request")
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid request: video_id is required and cannot be empty",
+        )
+
     # Fetch video metadata and save to database
     try:
         metadata = get_video_metadata(video_id)

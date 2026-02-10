@@ -62,6 +62,10 @@ class QueueItem:
     @classmethod
     def from_db_row(cls, row) -> "QueueItem":
         """Create instance from database row."""
+        # Get type from row, defaulting to 'youtube' only if None
+        # This preserves explicit 'summary' types while handling backward compatibility
+        item_type = row["type"] if row["type"] is not None else "youtube"
+
         return cls(
             id=row["id"],
             youtube_id=row["youtube_id"],
@@ -70,7 +74,7 @@ class QueueItem:
             thumbnail_url=row["thumbnail_url"],
             position=row["position"],
             created_at=row["created_at"],
-            type=row["type"] or "youtube",
+            type=item_type,
             week_year=row["week_year"],
         )
 
@@ -86,7 +90,9 @@ class QueueItem:
             "created_at": self.created_at,
             "type": self.type,
         }
-        if self.week_year:
+        # Always include week_year for summary items (even if None)
+        # This ensures the frontend can properly identify summary types
+        if self.type == "summary":
             result["week_year"] = self.week_year
         return result
 
