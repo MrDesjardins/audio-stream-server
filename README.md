@@ -538,6 +538,14 @@ curl "http://localhost:8000/admin/llm-usage/summary?start_date=2026-02-01T00:00:
 curl -X POST "http://localhost:8000/admin/weekly-summary/trigger"
 ```
 
+or  for a specific week:
+
+```bash
+curl -X POST "http://10.0.0.181:8000/admin/weekly-summary/trigger" \
+  -H "Content-Type: application/json" \
+  -d '{"date": "2026-02-06"}'
+```
+
 **Get next scheduled run time:**
 ```bash
 curl "http://localhost:8000/admin/weekly-summary/next-run"

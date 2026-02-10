@@ -661,11 +661,17 @@ def _generate_and_attach_tts(
         return {"noteId": note_id, "url": _get_trilium_note_url(note_id)}
 
 
-def generate_and_save_weekly_summary() -> Optional[Dict[str, str]]:
+def generate_and_save_weekly_summary(
+    target_date: Optional[datetime] = None,
+) -> Optional[Dict[str, str]]:
     """
     Main function to generate and save weekly summary.
 
     This is called by the scheduler every Friday at 11pm Pacific.
+
+    Args:
+        target_date: Optional datetime to generate summary for.
+                     If None, uses current date. Used to generate summaries for past weeks.
 
     Behavior for existing summaries:
     - If audio file exists on disk:
@@ -690,8 +696,8 @@ def generate_and_save_weekly_summary() -> Optional[Dict[str, str]]:
     try:
         logger.info("Starting weekly summary generation")
 
-        # Get current week number
-        now = datetime.now(timezone.utc)
+        # Get week number for target date (defaults to current date)
+        now = target_date if target_date else datetime.now(timezone.utc)
         year, week = get_week_number(now)
         week_year = f"{year}-W{week:02d}"
         logger.info(f"Generating summary for week {week_year}")

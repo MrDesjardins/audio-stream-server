@@ -5,6 +5,8 @@ Uses APScheduler to run scheduled tasks like weekly summaries.
 """
 
 import logging
+from datetime import datetime
+from typing import Optional
 from apscheduler.schedulers.background import BackgroundScheduler  # type: ignore
 from apscheduler.triggers.cron import CronTrigger  # type: ignore
 from pytz import timezone  # type: ignore
@@ -88,15 +90,22 @@ def get_scheduler() -> BackgroundScheduler | None:
     return _scheduler
 
 
-def trigger_weekly_summary_now() -> None:
+def trigger_weekly_summary_now(target_date: Optional[datetime] = None) -> None:
     """
     Manually trigger the weekly summary job immediately.
 
     Useful for testing or manual runs.
+
+    Args:
+        target_date: Optional datetime to generate summary for.
+                     If None, uses current date.
     """
     try:
-        logger.info("Manually triggering weekly summary")
-        result = generate_and_save_weekly_summary()
+        if target_date:
+            logger.info(f"Manually triggering weekly summary for date: {target_date}")
+        else:
+            logger.info("Manually triggering weekly summary for current week")
+        result = generate_and_save_weekly_summary(target_date)
 
         if result:
             logger.info(f"Weekly summary created: {result['url']}")

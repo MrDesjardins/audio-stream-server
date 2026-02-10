@@ -18,6 +18,13 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 config = get_config()
 templates = Jinja2Templates(directory="templates")
 
+
+class WeeklySummaryTriggerRequest(BaseModel):
+    """Request body for triggering weekly summary generation."""
+
+    date: Optional[str] = None  # Format: YYYY-MM-DD (e.g., "2026-02-04")
+
+
 # Client logs storage
 CLIENT_LOGS_DIR = Path("/tmp/audio-stream-client-logs")
 CLIENT_LOGS_FILE = CLIENT_LOGS_DIR / "client.log"
@@ -40,11 +47,20 @@ async def stats_page(request: Request):
 
 
 @router.post("/weekly-summary/trigger")
-def trigger_weekly_summary():
+def trigger_weekly_summary(
+    request: WeeklySummaryTriggerRequest = WeeklySummaryTriggerRequest(),
+):
     """
     Manually trigger the weekly summary generation.
 
     Useful for testing the weekly summary feature without waiting for Friday 11pm.
+
+    Request body (optional):
+    {
+        "date": "YYYY-MM-DD"  // Generate summary for the week containing this date
+    }
+
+    If no date is provided, generates summary for the current week.
     """
     if not config.weekly_summary_enabled:
         raise HTTPException(
@@ -54,16 +70,41 @@ def trigger_weekly_summary():
     try:
         from services.scheduler import trigger_weekly_summary_now
 
-        logger.info("Manual trigger of weekly summary requested")
-        trigger_weekly_summary_now()
+        # Parse the date if provided
+        target_date = None
+        if request.date:
+            try:
+                # Parse YYYY-MM-DD format
+                target_date = datetime.strptime(request.date, "%Y-%m-%d")
+                logger.info(
+                    f"Manual trigger of weekly summary requested for date: {request.date}"
+                )
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid date format. Expected YYYY-MM-DD, got: {request.date}",
+                )
+        else:
+            logger.info("Manual trigger of weekly summary requested for current week")
+
+        trigger_weekly_summary_now(target_date)
+
+        message = (
+            f"Weekly summary generation started for {request.date}. Check logs for progress."
+            if request.date
+            else "Weekly summary generation started for current week. Check logs for progress."
+        )
 
         return JSONResponse(
             {
                 "status": "triggered",
-                "message": "Weekly summary generation started. Check logs for progress.",
+                "message": message,
+                "date": request.date if request.date else "current",
             }
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error triggering weekly summary: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
