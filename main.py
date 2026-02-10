@@ -14,6 +14,7 @@ from fastapi.templating import Jinja2Templates
 from config import get_config
 from services.background_tasks import init_background_tasks
 from services.database import init_database
+from services.path_utils import expand_path
 
 from routes.stream import router as stream_router, init_stream_globals
 from routes.queue import router as queue_router
@@ -83,14 +84,14 @@ logger.info("Initializing database")
 init_database()
 
 # Audio download directory is always needed
-os.makedirs(config.temp_audio_dir, exist_ok=True)
+expand_path(config.temp_audio_dir).mkdir(parents=True, exist_ok=True)
 
 # Create TTS audio directory if TTS is enabled
 if config.tts_enabled:
     logger.info(
         f"TTS enabled - creating audio directory: {config.weekly_summary_audio_dir}"
     )
-    os.makedirs(config.weekly_summary_audio_dir, exist_ok=True)
+    expand_path(config.weekly_summary_audio_dir).mkdir(parents=True, exist_ok=True)
 
 # Initialize background tasks if transcription is enabled
 if config.transcription_enabled:

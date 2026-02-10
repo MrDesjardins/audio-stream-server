@@ -9,6 +9,7 @@ import httpx
 from config import get_config
 from services.database import get_video_title_from_history
 from services.api_clients import get_httpx_client
+from services.path_utils import expand_path_str
 
 logger = logging.getLogger(__name__)
 
@@ -410,7 +411,7 @@ def attach_audio_to_note(
         logger.info(f"Created file note: {file_note_id}")
 
         # Step 2: Upload the file content using a direct HTTP client
-        with open(audio_file_path, "rb") as f:
+        with open(expand_path_str(audio_file_path), "rb") as f:
             audio_data = f.read()
 
         file_size_mb = len(audio_data) / (1024 * 1024)

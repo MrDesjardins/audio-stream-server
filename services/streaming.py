@@ -9,7 +9,7 @@ import os
 import subprocess
 
 from services.cache import get_audio_cache
-from services.path_utils import expand_path
+from services.path_utils import expand_path, expand_path_str
 from config import get_config
 
 logger = logging.getLogger(__name__)
@@ -63,7 +63,7 @@ def start_youtube_download(youtube_video_id: str):
     # -o uses the base path WITHOUT extension — yt-dlp appends .mp3 via --audio-format.
     # Passing -o with .mp3 extension causes yt-dlp to create path.mp3.mp3.
     # --extract-audio handles the ffmpeg conversion internally.
-    base_path = os.path.join(config.temp_audio_dir, youtube_video_id)
+    base_path = expand_path_str(os.path.join(config.temp_audio_dir, youtube_video_id))
     yt_cmd = [
         "/usr/local/bin/yt-dlp",
         "-f",
