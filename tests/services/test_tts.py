@@ -79,20 +79,19 @@ class TestExtractSummaryTextForTTS:
 class TestGenerateAudio:
     """Tests for generate_audio function."""
 
-    @patch("services.tts.OpenAI")
-    def test_successful_generation_openai(self, mock_openai_class):
+    @patch("services.tts.get_tracked_openai_client")
+    def test_successful_generation_openai(self, mock_get_client):
         """Should generate audio successfully with OpenAI provider."""
         # Setup mock
         mock_client = Mock()
         mock_response = Mock()
         mock_response.read.return_value = b"fake audio data"
-        mock_client.audio.speech.create.return_value = mock_response
-        mock_openai_class.return_value = mock_client
+        mock_client.text_to_speech.return_value = mock_response
+        mock_get_client.return_value = mock_client
 
         # Call function
         result = generate_audio(
             text="Hello world",
-            api_key="test-api-key",
             provider="openai",
             voice="alloy",
             model="tts-1",
@@ -100,14 +99,15 @@ class TestGenerateAudio:
 
         # Assertions
         assert result == b"fake audio data"
-        mock_openai_class.assert_called_once_with(api_key="test-api-key")
-        mock_client.audio.speech.create.assert_called_once()
+        mock_get_client.assert_called_once()
+        mock_client.text_to_speech.assert_called_once()
 
         # Check parameters
-        call_kwargs = mock_client.audio.speech.create.call_args.kwargs
-        assert call_kwargs["input"] == "Hello world"
+        call_kwargs = mock_client.text_to_speech.call_args.kwargs
+        assert call_kwargs["text"] == "Hello world"
         assert call_kwargs["voice"] == "alloy"
         assert call_kwargs["model"] == "tts-1"
+        assert call_kwargs["feature"] == "tts"
 
     @patch("services.tts.ElevenLabs")
     def test_successful_generation_elevenlabs(self, mock_elevenlabs_class):
@@ -141,15 +141,15 @@ class TestGenerateAudio:
         assert call_kwargs["voice_id"] == "test-voice-id"
         assert call_kwargs["model_id"] == "eleven_flash_v2_5"
 
-    @patch("services.tts.OpenAI")
-    def test_truncates_long_text_openai(self, mock_openai_class):
+    @patch("services.tts.get_tracked_openai_client")
+    def test_truncates_long_text_openai(self, mock_get_client):
         """Should truncate text longer than OpenAI limit (4096 chars)."""
         # Setup mock
         mock_client = Mock()
         mock_response = Mock()
         mock_response.read.return_value = b"audio"
-        mock_client.audio.speech.create.return_value = mock_response
-        mock_openai_class.return_value = mock_client
+        mock_client.text_to_speech.return_value = mock_response
+        mock_get_client.return_value = mock_client
 
         # Generate long text (longer than 4096 chars)
         long_text = "x" * 5000
@@ -157,13 +157,12 @@ class TestGenerateAudio:
         # Call function
         generate_audio(
             text=long_text,
-            api_key="test-api-key",
             provider="openai",
         )
 
         # Check that text was truncated to 4096 chars
-        call_kwargs = mock_client.audio.speech.create.call_args.kwargs
-        posted_text = call_kwargs["input"]
+        call_kwargs = mock_client.text_to_speech.call_args.kwargs
+        posted_text = call_kwargs["text"]
         assert len(posted_text) == 4096
         assert posted_text.endswith("...")
 
@@ -195,19 +194,18 @@ class TestGenerateAudio:
         assert len(posted_text) == 40000
         assert posted_text.endswith("...")
 
-    @patch("services.tts.OpenAI")
-    def test_raises_on_auth_error_openai(self, mock_openai_class):
+    @patch("services.tts.get_tracked_openai_client")
+    def test_raises_on_auth_error_openai(self, mock_get_client):
         """Should raise TTSAPIError on OpenAI authentication error."""
         # Setup mock to raise auth error
         mock_client = Mock()
-        mock_client.audio.speech.create.side_effect = Exception("401 Unauthorized")
-        mock_openai_class.return_value = mock_client
+        mock_client.text_to_speech.side_effect = Exception("401 Unauthorized")
+        mock_get_client.return_value = mock_client
 
         # Call function and expect error
         with pytest.raises(TTSAPIError, match="Invalid OpenAI API key"):
             generate_audio(
                 text="Test",
-                api_key="bad-key",
                 provider="openai",
             )
 

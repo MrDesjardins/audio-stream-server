@@ -167,6 +167,66 @@ class TrackedOpenAIClient:
         except Exception:
             raise
 
+    def text_to_speech(
+        self,
+        text: str,
+        voice: str,
+        feature: str,
+        video_id: Optional[str] = None,
+        metadata: Optional[Dict] = None,
+        model: str = "tts-1",
+    ) -> Any:
+        """
+        Generate speech from text with automatic usage tracking.
+
+        Args:
+            text: Text to convert to speech
+            voice: Voice to use (alloy, echo, fable, onyx, nova, shimmer)
+            feature: Feature name for tracking (e.g., "weekly_summary_tts")
+            video_id: Associated video ID (optional)
+            metadata: Additional metadata (optional)
+            model: TTS model to use (tts-1 or tts-1-hd)
+
+        Returns:
+            OpenAI response object with audio data
+        """
+        try:
+            # Make API call
+            response = self.client.audio.speech.create(
+                model=model,
+                voice=voice,
+                input=text,
+                response_format="mp3",
+            )
+
+            # Track usage
+            # TTS is priced per character, not tokens
+            try:
+                tracking_metadata = metadata or {}
+                tracking_metadata["character_count"] = len(text)
+                tracking_metadata["voice"] = voice
+                tracking_metadata["audio_format"] = "mp3"
+
+                log_llm_usage(
+                    provider="openai",
+                    model=model,
+                    feature=feature,
+                    prompt_tokens=len(text),  # Store character count in prompt_tokens
+                    response_tokens=0,  # TTS doesn't have response tokens
+                    video_id=video_id,
+                    metadata=tracking_metadata,
+                )
+                logger.info(
+                    f"OpenAI TTS {model} call tracked for {feature} ({len(text)} chars)"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to track OpenAI TTS usage: {e}")
+
+            return response
+
+        except Exception:
+            raise
+
 
 class TrackedGeminiClient:
     """

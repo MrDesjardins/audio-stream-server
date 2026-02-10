@@ -7,10 +7,10 @@ Handles audio generation from text and file management.
 import re
 from typing import Optional, Literal
 from elevenlabs.client import ElevenLabs
-from openai import OpenAI
 from bs4 import BeautifulSoup
 
 from services.path_utils import expand_path
+from services.llm_clients import get_tracked_openai_client
 
 TTSProvider = Literal["openai", "elevenlabs"]
 
@@ -94,16 +94,21 @@ def extract_summary_text_for_tts(html_content: str) -> str:
 
 
 def _generate_audio_openai(
-    text: str, voice: str, api_key: str, model: str = "tts-1"
+    text: str,
+    voice: str,
+    model: str = "tts-1",
+    feature: str = "tts",
+    video_id: Optional[str] = None,
 ) -> bytes:
     """
-    Generate audio using OpenAI TTS API.
+    Generate audio using OpenAI TTS API with usage tracking.
 
     Args:
         text: Text to convert to speech
         voice: OpenAI voice (alloy, echo, fable, onyx, nova, shimmer)
-        api_key: OpenAI API key
         model: Model to use (tts-1 or tts-1-hd)
+        feature: Feature name for tracking (default: "tts")
+        video_id: Associated video ID for tracking (optional)
 
     Returns:
         MP3 audio data as bytes
@@ -122,10 +127,15 @@ def _generate_audio_openai(
         text = text[: max_chars - 3] + "..."
 
     try:
-        client = OpenAI(api_key=api_key)
+        # Use tracked client for automatic usage tracking
+        client = get_tracked_openai_client()
 
-        response = client.audio.speech.create(
-            model=model, voice=voice, input=text, response_format="mp3"
+        response = client.text_to_speech(
+            text=text,
+            voice=voice,
+            model=model,
+            feature=feature,
+            video_id=video_id,
         )
 
         # Read the audio data from the response
@@ -214,42 +224,50 @@ def _generate_audio_elevenlabs(
 
 def generate_audio(
     text: str,
-    api_key: str,
+    api_key: Optional[str] = None,
     provider: TTSProvider = "openai",
     voice: Optional[str] = None,
     model: Optional[str] = None,
+    feature: str = "tts",
+    video_id: Optional[str] = None,
 ) -> bytes:
     """
     Generate audio from text using the specified TTS provider.
 
     Args:
         text: Text to convert to speech
-        api_key: API key for the provider
+        api_key: API key for the provider (required for ElevenLabs, optional for OpenAI)
         provider: TTS provider to use ("openai" or "elevenlabs")
         voice: Voice ID/name (provider-specific)
         model: Model ID (provider-specific)
+        feature: Feature name for usage tracking (default: "tts")
+        video_id: Associated video ID for tracking (optional)
 
     Returns:
         MP3 audio data as bytes
 
     Raises:
         TTSAPIError: If API request fails
-        ValueError: If provider is invalid
+        ValueError: If provider is invalid or required parameters are missing
 
     Provider-specific defaults:
         OpenAI:
             - voice: "alloy" (options: alloy, echo, fable, onyx, nova, shimmer)
             - model: "tts-1" (options: tts-1, tts-1-hd)
+            - api_key: Read from config (automatic tracking)
         ElevenLabs:
             - voice: Must be provided
             - model: "eleven_flash_v2_5"
+            - api_key: Required
     """
     if provider == "openai":
         voice = voice or "alloy"
         model = model or "tts-1"
-        return _generate_audio_openai(text, voice, api_key, model)
+        return _generate_audio_openai(text, voice, model, feature, video_id)
 
     elif provider == "elevenlabs":
+        if not api_key:
+            raise ValueError("ElevenLabs requires api_key parameter")
         if not voice:
             raise ValueError("ElevenLabs requires a voice_id")
         model = model or "eleven_flash_v2_5"

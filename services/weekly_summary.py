@@ -614,23 +614,24 @@ def _generate_and_attach_tts(
             if config.tts_provider == "openai":
                 if not config.openai_api_key:
                     raise ValueError("OpenAI API key not configured")
-                api_key = config.openai_api_key
-                voice = config.openai_tts_voice
-                model = config.openai_tts_model
+                audio_data = generate_audio(
+                    text=tts_text,
+                    provider="openai",
+                    voice=config.openai_tts_voice,
+                    model=config.openai_tts_model,
+                    feature="weekly_summary_tts",
+                )
             else:  # elevenlabs
                 if not config.elevenlabs_api_key:
                     raise ValueError("ElevenLabs API key not configured")
-                api_key = config.elevenlabs_api_key
-                voice = config.elevenlabs_voice_id
-                model = config.elevenlabs_model_id
-
-            audio_data = generate_audio(
-                text=tts_text,
-                api_key=api_key,
-                provider=config.tts_provider,
-                voice=voice,
-                model=model,
-            )
+                audio_data = generate_audio(
+                    text=tts_text,
+                    api_key=config.elevenlabs_api_key,
+                    provider="elevenlabs",
+                    voice=config.elevenlabs_voice_id,
+                    model=config.elevenlabs_model_id,
+                    feature="weekly_summary_tts",
+                )
             duration = save_audio_file(audio_data, audio_path)
             logger.info(f"Saved audio file: {audio_path} ({duration}s)")
 
