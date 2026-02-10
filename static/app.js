@@ -806,9 +806,15 @@ async function playQueue() {
         return;
     }
 
-    // Start streaming the first item
+    // Start streaming the first item (check type)
     const firstItem = queue[0];
-    await startStreamFromQueue(firstItem.youtube_id, firstItem.id);
+    const itemType = firstItem.type || 'youtube';
+
+    if (itemType === 'summary') {
+        await startSummaryFromQueue(firstItem.week_year, firstItem.id);
+    } else {
+        await startStreamFromQueue(firstItem.youtube_id, firstItem.id);
+    }
 }
 
 async function playNext() {
