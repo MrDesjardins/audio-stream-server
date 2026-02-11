@@ -191,14 +191,13 @@ class TestFetchSummaryForVideo:
         assert result is None
 
 
-@pytest.mark.asyncio
 class TestGetRecentSummaries:
     """Tests for fetching recent summaries."""
 
     @patch("services.trilium.get_note_content")
     @patch("services.trilium.check_video_exists")
     @patch("services.book_suggestions.get_history")
-    async def test_fetch_summaries_success(
+    def test_fetch_summaries_success(
         self, mock_get_history, mock_check_video, mock_get_content
     ):
         """Test successful summary fetching from history and Trilium."""
@@ -237,7 +236,7 @@ class TestGetRecentSummaries:
         ]
 
         # Call function
-        summaries = await get_recent_summaries(5)
+        summaries = get_recent_summaries(5)
 
         # Verify
         assert len(summaries) == 2
@@ -246,27 +245,27 @@ class TestGetRecentSummaries:
         assert "summary for video 1" in summaries[0].summary
 
     @patch("services.book_suggestions.get_history")
-    async def test_get_recent_summaries_empty(self, mock_get_history):
+    def test_get_recent_summaries_empty(self, mock_get_history):
         """Test when no history found."""
         mock_get_history.return_value = []
 
-        summaries = await get_recent_summaries(5)
+        summaries = get_recent_summaries(5)
 
         assert len(summaries) == 0
 
     @patch("services.book_suggestions.get_history")
-    async def test_fetch_summaries_error(self, mock_get_history):
+    def test_fetch_summaries_error(self, mock_get_history):
         """Test error handling."""
         mock_get_history.side_effect = Exception("Database error")
 
-        summaries = await get_recent_summaries(5)
+        summaries = get_recent_summaries(5)
 
         assert len(summaries) == 0
 
     @patch("services.trilium.get_note_content")
     @patch("services.trilium.check_video_exists")
     @patch("services.book_suggestions.get_history")
-    async def test_stops_when_limit_reached(
+    def test_stops_when_limit_reached(
         self, mock_get_history, mock_check_video, mock_get_content
     ):
         """Test that fetching stops when we have enough summaries."""
@@ -290,7 +289,7 @@ class TestGetRecentSummaries:
         mock_get_content.return_value = "<h3>Summary</h3><p>Test content</p>"
 
         # Request only 3 summaries
-        summaries = await get_recent_summaries(3)
+        summaries = get_recent_summaries(3)
 
         # Should stop after 3 summaries
         assert len(summaries) == 3
@@ -516,12 +515,11 @@ class TestSearchYoutubeByTheme:
         assert videos[1]["video_id"] == "valid2"
 
 
-@pytest.mark.asyncio
 class TestFilterAlreadyPlayed:
     """Tests for filtering played audiobooks."""
 
     @patch("services.book_suggestions.get_history")
-    async def test_filter_played(self, mock_get_history):
+    def test_filter_played(self, mock_get_history):
         """Test filtering out already played videos."""
         mock_get_history.return_value = [
             PlayHistoryItem(
@@ -552,14 +550,14 @@ class TestFilterAlreadyPlayed:
             {"video_id": "uvw012", "title": "Another New Video"},
         ]
 
-        filtered = await filter_already_played(suggestions)
+        filtered = filter_already_played(suggestions)
 
         assert len(filtered) == 2
         assert filtered[0]["video_id"] == "xyz789"
         assert filtered[1]["video_id"] == "uvw012"
 
     @patch("services.book_suggestions.get_history")
-    async def test_filter_all_played(self, mock_get_history):
+    def test_filter_all_played(self, mock_get_history):
         """Test when all suggestions already played."""
         mock_get_history.return_value = [
             PlayHistoryItem(
@@ -589,24 +587,23 @@ class TestFilterAlreadyPlayed:
             {"video_id": "def456", "title": "Video 2"},
         ]
 
-        filtered = await filter_already_played(suggestions)
+        filtered = filter_already_played(suggestions)
 
         assert len(filtered) == 0
 
     @patch("services.book_suggestions.get_history")
-    async def test_filter_error_handling(self, mock_get_history):
+    def test_filter_error_handling(self, mock_get_history):
         """Test error handling in filter."""
         mock_get_history.side_effect = Exception("Database error")
 
         suggestions = [{"video_id": "xyz789", "title": "Video"}]
 
         # Should return unfiltered on error
-        filtered = await filter_already_played(suggestions)
+        filtered = filter_already_played(suggestions)
 
         assert len(filtered) == 1
 
 
-@pytest.mark.asyncio
 class TestGetVideoSuggestions:
     """Tests for main suggestion workflow."""
 
@@ -615,7 +612,7 @@ class TestGetVideoSuggestions:
     @patch("services.book_suggestions.generate_theme_openai")
     @patch("services.book_suggestions.get_recent_summaries")
     @patch("services.book_suggestions.config")
-    async def test_full_workflow_success(
+    def test_full_workflow_success(
         self,
         mock_config_module,
         mock_get_summaries,
@@ -650,7 +647,7 @@ class TestGetVideoSuggestions:
         mock_filter.return_value = mock_videos
 
         # Call function
-        result = await get_video_suggestions()
+        result = get_video_suggestions()
 
         # Verify
         assert len(result) == 2
@@ -660,31 +657,31 @@ class TestGetVideoSuggestions:
         mock_search.assert_called_once()
 
     @patch("services.book_suggestions.config")
-    async def test_disabled_feature(self, mock_config_module, mock_config):
+    def test_disabled_feature(self, mock_config_module, mock_config):
         """Test when feature is disabled."""
         mock_config_module.book_suggestions_enabled = False
 
-        result = await get_video_suggestions()
+        result = get_video_suggestions()
 
         assert len(result) == 0
 
     @patch("services.book_suggestions.get_recent_summaries")
     @patch("services.book_suggestions.config")
-    async def test_no_summaries_found(
+    def test_no_summaries_found(
         self, mock_config_module, mock_get_summaries, mock_config
     ):
         """Test when no summaries found."""
         mock_config_module.book_suggestions_enabled = True
         mock_get_summaries.return_value = []
 
-        result = await get_video_suggestions()
+        result = get_video_suggestions()
 
         assert len(result) == 0
 
     @patch("services.book_suggestions.generate_theme_gemini")
     @patch("services.book_suggestions.get_recent_summaries")
     @patch("services.book_suggestions.config")
-    async def test_gemini_provider(
+    def test_gemini_provider(
         self, mock_config_module, mock_get_summaries, mock_generate_gemini, mock_config
     ):
         """Test with Gemini as AI provider."""
@@ -702,14 +699,14 @@ class TestGetVideoSuggestions:
         ]
         mock_generate_gemini.return_value = None  # Theme generation failed
 
-        result = await get_video_suggestions()
+        result = get_video_suggestions()
 
         assert len(result) == 0
         mock_generate_gemini.assert_called_once()
 
     @patch("services.book_suggestions.get_recent_summaries")
     @patch("services.book_suggestions.config")
-    async def test_invalid_ai_provider(
+    def test_invalid_ai_provider(
         self, mock_config_module, mock_get_summaries, mock_config
     ):
         """Test with invalid AI provider."""
@@ -725,14 +722,14 @@ class TestGetVideoSuggestions:
             )
         ]
 
-        result = await get_video_suggestions()
+        result = get_video_suggestions()
 
         assert len(result) == 0
 
     @patch("services.book_suggestions.generate_theme_openai")
     @patch("services.book_suggestions.get_recent_summaries")
     @patch("services.book_suggestions.config")
-    async def test_theme_generation_fails(
+    def test_theme_generation_fails(
         self, mock_config_module, mock_get_summaries, mock_generate_theme, mock_config
     ):
         """Test when theme generation returns None."""
@@ -749,7 +746,7 @@ class TestGetVideoSuggestions:
         ]
         mock_generate_theme.return_value = None
 
-        result = await get_video_suggestions()
+        result = get_video_suggestions()
 
         assert len(result) == 0
 
@@ -757,7 +754,7 @@ class TestGetVideoSuggestions:
     @patch("services.book_suggestions.generate_theme_openai")
     @patch("services.book_suggestions.get_recent_summaries")
     @patch("services.book_suggestions.config")
-    async def test_no_videos_found_from_search(
+    def test_no_videos_found_from_search(
         self,
         mock_config_module,
         mock_get_summaries,
@@ -781,6 +778,6 @@ class TestGetVideoSuggestions:
         mock_generate_theme.return_value = "test theme"
         mock_search.return_value = []  # No videos found
 
-        result = await get_video_suggestions()
+        result = get_video_suggestions()
 
         assert len(result) == 0

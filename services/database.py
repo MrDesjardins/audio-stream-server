@@ -370,16 +370,7 @@ def get_queue() -> List[QueueItem]:
         """)
 
         rows = cursor.fetchall()
-        items = [QueueItem.from_db_row(row) for row in rows]
-
-        # Log queue items for debugging
-        for item in items:
-            logger.debug(
-                f"Queue item #{item.id}: type={item.type}, "
-                f"week_year={item.week_year}, title={item.title}"
-            )
-
-        return items
+        return [QueueItem.from_db_row(row) for row in rows]
 
 
 def get_next_in_queue() -> Optional[QueueItem]:
@@ -639,8 +630,7 @@ def add_summary_to_queue(week_year: str) -> int:
 
         record_id = cursor.lastrowid
         logger.info(
-            f"Added summary to queue (position {next_position}): {summary.title} "
-            f"[type=summary, week_year={week_year}]"
+            f"Added summary to queue (position {next_position}): {summary.title}"
         )
         return record_id
 

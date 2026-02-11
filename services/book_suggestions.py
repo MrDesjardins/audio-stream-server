@@ -90,7 +90,7 @@ def _fetch_summary_for_video(item: PlayHistoryItem) -> Optional[VideoSummary]:
     )
 
 
-async def get_recent_summaries(limit: int) -> List[VideoSummary]:
+def get_recent_summaries(limit: int) -> List[VideoSummary]:
     """
     Get summaries from recently watched videos (fetched from Trilium).
 
@@ -339,7 +339,7 @@ def search_youtube_by_theme(theme: str, count: int) -> List[Dict[str, str]]:
         return []
 
 
-async def filter_already_played(videos: List[Dict[str, str]]) -> List[Dict[str, str]]:
+def filter_already_played(videos: List[Dict[str, str]]) -> List[Dict[str, str]]:
     """
     Filter out videos that have already been played.
 
@@ -368,7 +368,7 @@ async def filter_already_played(videos: List[Dict[str, str]]) -> List[Dict[str, 
         return videos  # Return unfiltered on error
 
 
-async def get_video_suggestions() -> List[Dict[str, str]]:
+def get_video_suggestions() -> List[Dict[str, str]]:
     """
     Get video suggestions based on recently watched content.
 
@@ -387,7 +387,7 @@ async def get_video_suggestions() -> List[Dict[str, str]]:
         return []
 
     # Step 1: Get recent summaries
-    summaries = await get_recent_summaries(config.books_to_analyze)
+    summaries = get_recent_summaries(config.books_to_analyze)
 
     if not summaries:
         logger.warning("No summaries found from recent videos")
@@ -418,7 +418,7 @@ async def get_video_suggestions() -> List[Dict[str, str]]:
         return []
 
     # Step 4: Filter out already played videos
-    filtered_videos = await filter_already_played(videos)
+    filtered_videos = filter_already_played(videos)
 
     logger.info(f"Generated {len(filtered_videos)} new video suggestions")
     return filtered_videos

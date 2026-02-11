@@ -2,6 +2,7 @@
 Queue management routes.
 """
 
+import asyncio
 import logging
 import threading
 from typing import List
@@ -70,18 +71,7 @@ def get_current_queue():
     """Get the current queue."""
     try:
         queue = get_queue()
-        queue_dicts = [item.to_dict() for item in queue]
-
-        # Log queue items for debugging
-        for item_dict in queue_dicts:
-            logger.info(
-                f"GET /queue returning item: id={item_dict['id']}, "
-                f"type={item_dict.get('type', 'MISSING')}, "
-                f"week_year={item_dict.get('week_year', 'MISSING')}, "
-                f"title={item_dict['title'][:50]}"
-            )
-
-        return JSONResponse({"queue": queue_dicts})
+        return JSONResponse({"queue": [item.to_dict() for item in queue]})
     except Exception as e:
         logger.error(f"Error fetching queue: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -136,14 +126,8 @@ def play_next_in_queue():
         # Add type-specific fields
         if next_item.type == "summary":
             response["week_year"] = next_item.week_year
-            logger.info(
-                f"Playing next item (summary): {next_item.title} - week_year: {next_item.week_year}"
-            )
         else:
             response["youtube_id"] = next_item.youtube_id
-            logger.info(
-                f"Playing next item (youtube): {next_item.title} - video_id: {next_item.youtube_id}"
-            )
 
         return JSONResponse(response)
     except Exception as e:
@@ -225,11 +209,92 @@ def prefetch_audio(video_id: str):
     return JSONResponse({"status": "started", "video_id": video_id})
 
 
+def _run_suggestions_sync() -> dict:
+    """
+    Run the entire suggestion pipeline synchronously.
+
+    This is designed to be called via asyncio.to_thread() so it doesn't
+    block the event loop. All operations here (LLM calls, subprocess calls,
+    database writes) are synchronous.
+    """
+    from services.book_suggestions import get_video_suggestions
+
+    logger.info("Generating video suggestions based on recently watched content...")
+
+    suggestions = get_video_suggestions()
+
+    if not suggestions:
+        return {
+            "status": "no_suggestions",
+            "message": "No suggestions could be generated. Check logs for details.",
+            "added": [],
+        }
+
+    added = []
+    failed = []
+
+    for suggestion in suggestions:
+        try:
+            video_id = suggestion["video_id"]
+            metadata = get_video_metadata(video_id)
+
+            if metadata:
+                queue_id = add_to_queue(
+                    video_id,
+                    metadata["title"],
+                    metadata.get("channel"),
+                    metadata.get("thumbnail_url"),
+                )
+                added.append(
+                    {
+                        "queue_id": queue_id,
+                        "video_id": video_id,
+                        "title": metadata["title"],
+                        "channel": suggestion.get("channel", "Unknown"),
+                    }
+                )
+                logger.info(f"Added suggestion to queue: {metadata['title']}")
+            else:
+                queue_id = add_to_queue(
+                    video_id,
+                    suggestion["title"],
+                    suggestion.get("channel"),
+                )
+                added.append(
+                    {
+                        "queue_id": queue_id,
+                        "video_id": video_id,
+                        "title": suggestion["title"],
+                        "channel": suggestion.get("channel", "Unknown"),
+                    }
+                )
+                logger.warning(
+                    f"Could not fetch YouTube metadata for {video_id}, using search result"
+                )
+
+        except Exception as e:
+            logger.error(f"Failed to add suggestion to queue: {e}")
+            failed.append(
+                {"title": suggestion.get("title", "Unknown"), "error": str(e)}
+            )
+
+    return {
+        "status": "success",
+        "message": f"Added {len(added)} video suggestions to queue",
+        "added": added,
+        "failed": failed,
+        "total_suggestions": len(suggestions),
+    }
+
+
 @router.post("/queue/suggestions")
 async def generate_and_queue_suggestions():
     """
     Generate video suggestions based on recently watched content
     and automatically add them to the queue.
+
+    Runs the blocking suggestion pipeline in a thread so the event loop
+    stays free to handle other requests (queue removal, playback, etc.).
     """
     if not config.book_suggestions_enabled:
         raise HTTPException(
@@ -238,83 +303,8 @@ async def generate_and_queue_suggestions():
         )
 
     try:
-        from services.book_suggestions import get_video_suggestions
-
-        logger.info("Generating video suggestions based on recently watched content...")
-
-        # Get suggestions
-        suggestions = await get_video_suggestions()
-
-        if not suggestions:
-            return JSONResponse(
-                {
-                    "status": "no_suggestions",
-                    "message": "No suggestions could be generated. Check logs for details.",
-                    "added": [],
-                }
-            )
-
-        # Add suggestions to queue
-        added = []
-        failed = []
-
-        for suggestion in suggestions:
-            try:
-                video_id = suggestion["video_id"]
-
-                # Try to get metadata from YouTube (validate the URL)
-                metadata = get_video_metadata(video_id)
-
-                if metadata:
-                    queue_id = add_to_queue(
-                        video_id,
-                        metadata["title"],
-                        metadata.get("channel"),
-                        metadata.get("thumbnail_url"),
-                    )
-                    added.append(
-                        {
-                            "queue_id": queue_id,
-                            "video_id": video_id,
-                            "title": metadata["title"],
-                            "channel": suggestion.get("channel", "Unknown"),
-                        }
-                    )
-                    logger.info(f"Added suggestion to queue: {metadata['title']}")
-                else:
-                    # Fall back to suggestion-provided title
-                    queue_id = add_to_queue(
-                        video_id,
-                        suggestion["title"],
-                        suggestion.get("channel"),
-                    )
-                    added.append(
-                        {
-                            "queue_id": queue_id,
-                            "video_id": video_id,
-                            "title": suggestion["title"],
-                            "channel": suggestion.get("channel", "Unknown"),
-                        }
-                    )
-                    logger.warning(
-                        f"Could not fetch YouTube metadata for {video_id}, using search result"
-                    )
-
-            except Exception as e:
-                logger.error(f"Failed to add suggestion to queue: {e}")
-                failed.append(
-                    {"title": suggestion.get("title", "Unknown"), "error": str(e)}
-                )
-
-        return JSONResponse(
-            {
-                "status": "success",
-                "message": f"Added {len(added)} video suggestions to queue",
-                "added": added,
-                "failed": failed,
-                "total_suggestions": len(suggestions),
-            }
-        )
+        result = await asyncio.to_thread(_run_suggestions_sync)
+        return JSONResponse(result)
 
     except Exception as e:
         logger.error(f"Error generating suggestions: {e}", exc_info=True)

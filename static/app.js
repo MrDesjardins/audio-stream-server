@@ -473,8 +473,17 @@ player.addEventListener('timeupdate', async function () {
     const queue = await fetchQueue();
     if (queue.length < 2) return;
 
-    const nextVideoId = queue[1].youtube_id;
-    console.log(`Prefetching next track: ${queue[1].title} (${nextVideoId}) — ${Math.round(remaining)}s remaining`);
+    const nextItem = queue[1];
+    const nextItemType = nextItem.type || 'youtube';
+
+    // Only prefetch YouTube videos — summaries are local files
+    if (nextItemType === 'summary') {
+        console.log(`Next track is a summary (${nextItem.title}), no prefetch needed`);
+        return;
+    }
+
+    const nextVideoId = nextItem.youtube_id;
+    console.log(`Prefetching next track: ${nextItem.title} (${nextVideoId}) — ${Math.round(remaining)}s remaining`);
 
     try {
         await fetch(`/queue/prefetch/${nextVideoId}`, { method: 'POST' });
@@ -979,16 +988,6 @@ async function renderQueue() {
         const positionBadge = `<span class="queue-position">${index + 1}</span>`;
         const itemType = item.type || 'youtube';
 
-        // Debug logging for queue items
-        remoteLog('debug', `renderQueue: item #${item.id}`, {
-            type: item.type,
-            typeType: typeof item.type,
-            itemType: itemType,
-            week_year: item.week_year,
-            youtube_id: item.youtube_id,
-            title: item.title ? item.title.substring(0, 50) : 'undefined'
-        });
-
         // Different icons and badges for different types
         let icon, badge, onClick;
         if (itemType === 'summary') {
@@ -1368,24 +1367,26 @@ async function addSummaryToQueue(weekYear) {
         if (res.ok) {
             updateStatus('Added summary to queue', 'streaming');
             await renderQueue();
+            return data;
         } else {
             updateStatus('Failed to add summary to queue: ' + data.detail, 'error');
+            return null;
         }
     } catch (error) {
         updateStatus('Failed to add summary to queue', 'error');
         console.error(error);
+        return null;
     }
 }
 
 async function playSummary(weekYear) {
     try {
         // Add to queue first
-        await addSummaryToQueue(weekYear);
+        const result = await addSummaryToQueue(weekYear);
+        if (!result) return;
 
-        // Then play next (which will start the summary if queue was empty)
-        if (!isPlaying) {
-            await playNext();
-        }
+        // Play it directly — don't use playNext() which removes the first item
+        await startSummaryFromQueue(weekYear, result.queue_id);
     } catch (error) {
         console.error('Error playing summary:', error);
         updateStatus('Failed to play summary', 'error');
