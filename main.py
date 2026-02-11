@@ -50,6 +50,7 @@ class PollingEndpointFilter(logging.Filter):
             for pattern in [
                 "GET /status HTTP",  # Stream status polling
                 "GET /transcription/status/",  # Transcription status polling
+                "GET /static/version.json",  # Version check polling
             ]
         )
 
