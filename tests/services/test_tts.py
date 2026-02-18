@@ -9,6 +9,7 @@ from services.tts import (
     save_audio_file,
     get_audio_duration,
     TTSAPIError,
+    _split_text_into_chunks,
 )
 
 
@@ -74,6 +75,66 @@ class TestExtractSummaryTextForTTS:
         assert "Overview" in result
         assert "BOOKS READ" not in result
         assert "Book 1" not in result
+
+
+class TestSplitTextIntoChunks:
+    """Tests for _split_text_into_chunks helper."""
+
+    def test_short_text_returned_as_single_chunk(self):
+        """Text under the limit should come back as one chunk."""
+        text = "Hello world. This is a short sentence."
+        chunks = _split_text_into_chunks(text, max_chars=4096)
+        assert chunks == [text]
+
+    def test_splits_at_sentence_boundary(self):
+        """Long text should be split between sentences, not mid-word."""
+        sentence = "This is a sentence."
+        # Build text that just exceeds 100 chars when fully joined
+        text = (" " + sentence) * 6  # ~120 chars
+        chunks = _split_text_into_chunks(text, max_chars=100)
+
+        assert len(chunks) > 1
+        for chunk in chunks:
+            assert len(chunk) <= 100
+        # Rejoin should recover the original content
+        assert " ".join(chunks).replace("  ", " ").strip() == text.strip()
+
+    def test_splits_at_paragraph_boundary(self):
+        """Should prefer splitting at paragraph breaks."""
+        para = "Short paragraph."
+        text = (para + "\n\n") * 5 + para
+        chunks = _split_text_into_chunks(text, max_chars=50)
+
+        assert len(chunks) > 1
+        for chunk in chunks:
+            assert len(chunk) <= 50
+
+    def test_hard_splits_oversized_sentence(self):
+        """A single sentence longer than max_chars should still be split."""
+        # One sentence with no internal punctuation
+        long_sentence = "word " * 100  # 500 chars
+        chunks = _split_text_into_chunks(long_sentence, max_chars=100)
+
+        assert len(chunks) > 1
+        for chunk in chunks:
+            assert len(chunk) <= 100
+
+    def test_all_content_preserved(self):
+        """No text should be dropped when splitting."""
+        sentence = "Another sentence here."
+        text = (" " + sentence) * 300  # ~7200 chars
+        chunks = _split_text_into_chunks(text, max_chars=4096)
+
+        combined = " ".join(chunks)
+        # Every sentence should appear in the output
+        assert combined.count(sentence) == 300
+
+    def test_exact_limit_text_is_single_chunk(self):
+        """Text exactly at the limit should not be split."""
+        text = "x" * 4096
+        chunks = _split_text_into_chunks(text, max_chars=4096)
+        assert len(chunks) == 1
+        assert chunks[0] == text
 
 
 class TestGenerateAudio:
@@ -142,57 +203,58 @@ class TestGenerateAudio:
         assert call_kwargs["model_id"] == "eleven_flash_v2_5"
 
     @patch("services.tts.get_tracked_openai_client")
-    def test_truncates_long_text_openai(self, mock_get_client):
-        """Should truncate text longer than OpenAI limit (4096 chars)."""
-        # Setup mock
+    def test_splits_long_text_openai(self, mock_get_client):
+        """Should split text into chunks for OpenAI (not truncate)."""
         mock_client = Mock()
         mock_response = Mock()
-        mock_response.read.return_value = b"audio"
+        mock_response.read.return_value = b"chunk"
         mock_client.text_to_speech.return_value = mock_response
         mock_get_client.return_value = mock_client
 
-        # Generate long text (longer than 4096 chars)
-        long_text = "x" * 5000
+        # Build text that spans two chunks: 250 sentences of ~20 chars each = ~5000 chars
+        sentence = "This is a sentence."
+        long_text = (" " + sentence) * 250  # ~5000 chars, needs 2 chunks
 
-        # Call function
-        generate_audio(
-            text=long_text,
-            provider="openai",
-        )
+        result = generate_audio(text=long_text, provider="openai")
 
-        # Check that text was truncated to 4096 chars
-        call_kwargs = mock_client.text_to_speech.call_args.kwargs
-        posted_text = call_kwargs["text"]
-        assert len(posted_text) == 4096
-        assert posted_text.endswith("...")
+        # Should have made multiple API calls, each with text under 4096 chars
+        assert mock_client.text_to_speech.call_count > 1
+        for call in mock_client.text_to_speech.call_args_list:
+            assert len(call.kwargs["text"]) <= 4096
+
+        # Result should be concatenated audio from all chunks
+        expected = b"chunk" * mock_client.text_to_speech.call_count
+        assert result == expected
 
     @patch("services.tts.ElevenLabs")
-    def test_truncates_long_text_elevenlabs(self, mock_elevenlabs_class):
-        """Should truncate text longer than model limit (40,000 for flash v2.5)."""
-        # Setup mock
+    def test_splits_long_text_elevenlabs(self, mock_elevenlabs_class):
+        """Should split text into chunks for ElevenLabs (not truncate)."""
         mock_client = Mock()
         mock_tts = Mock()
-        mock_tts.convert.return_value = [b"audio"]
+        mock_tts.convert.return_value = [b"chunk"]
         mock_client.text_to_speech = mock_tts
         mock_elevenlabs_class.return_value = mock_client
 
-        # Generate long text (longer than 40,000 chars for eleven_flash_v2_5)
-        long_text = "x" * 45000
+        # Build text that spans two chunks for eleven_multilingual_v2 (10K limit)
+        sentence = "This is a sentence."
+        long_text = (" " + sentence) * 600  # ~12000 chars, needs 2 chunks
 
-        # Call function with ElevenLabs
-        generate_audio(
+        result = generate_audio(
             text=long_text,
             api_key="test-api-key",
             provider="elevenlabs",
             voice="test-voice-id",
-            model="eleven_flash_v2_5",
+            model="eleven_multilingual_v2",
         )
 
-        # Check that text was truncated to 40,000 chars
-        call_kwargs = mock_tts.convert.call_args.kwargs
-        posted_text = call_kwargs["text"]
-        assert len(posted_text) == 40000
-        assert posted_text.endswith("...")
+        # Should have made multiple API calls, each with text under 10,000 chars
+        assert mock_tts.convert.call_count > 1
+        for call in mock_tts.convert.call_args_list:
+            assert len(call.kwargs["text"]) <= 10000
+
+        # Result should be concatenated audio from all chunks
+        expected = b"chunk" * mock_tts.convert.call_count
+        assert result == expected
 
     @patch("services.tts.get_tracked_openai_client")
     def test_raises_on_auth_error_openai(self, mock_get_client):
@@ -286,30 +348,32 @@ class TestGenerateAudio:
             )
 
     @patch("services.tts.ElevenLabs")
-    def test_model_specific_limits(self, mock_elevenlabs_class):
-        """Should apply correct character limits for different ElevenLabs models."""
-        # Setup mock
+    def test_model_specific_chunk_limits(self, mock_elevenlabs_class):
+        """Should respect per-model character limits when splitting chunks."""
         mock_client = Mock()
         mock_tts = Mock()
         mock_tts.convert.return_value = [b"audio"]
         mock_client.text_to_speech = mock_tts
         mock_elevenlabs_class.return_value = mock_client
 
-        # Test Flash v2.5 (40,000 char limit)
-        long_text = "x" * 45000
+        sentence = "This is a sentence."
+
+        # Flash v2.5: 40,000 char limit — short text fits in one call
+        short_text = sentence * 10  # ~200 chars
+        mock_tts.reset_mock()
         generate_audio(
-            text=long_text,
+            text=short_text,
             api_key="test-key",
             provider="elevenlabs",
             voice="test-voice",
             model="eleven_flash_v2_5",
         )
-        posted_text = mock_tts.convert.call_args.kwargs["text"]
-        assert len(posted_text) == 40000
-        assert posted_text.endswith("...")
+        assert mock_tts.convert.call_count == 1
+        assert len(mock_tts.convert.call_args.kwargs["text"]) <= 40000
 
-        # Test Multilingual v2 (10,000 char limit)
-        long_text = "x" * 12000
+        # Multilingual v2: 10,000 char limit — longer text splits into chunks
+        long_text = (" " + sentence) * 600  # ~12000 chars
+        mock_tts.reset_mock()
         generate_audio(
             text=long_text,
             api_key="test-key",
@@ -317,9 +381,9 @@ class TestGenerateAudio:
             voice="test-voice",
             model="eleven_multilingual_v2",
         )
-        posted_text = mock_tts.convert.call_args.kwargs["text"]
-        assert len(posted_text) == 10000
-        assert posted_text.endswith("...")
+        assert mock_tts.convert.call_count > 1
+        for call in mock_tts.convert.call_args_list:
+            assert len(call.kwargs["text"]) <= 10000
 
     def test_raises_on_invalid_provider(self):
         """Should raise ValueError on invalid provider."""

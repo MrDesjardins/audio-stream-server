@@ -6,7 +6,7 @@ Handles audio generation from text and file management.
 
 import re
 import logging
-from typing import Optional, Literal
+from typing import Optional, Literal, List
 from elevenlabs.client import ElevenLabs
 from bs4 import BeautifulSoup
 
@@ -97,6 +97,61 @@ def extract_summary_text_for_tts(html_content: str) -> str:
     return text
 
 
+def _split_text_into_chunks(text: str, max_chars: int) -> List[str]:
+    """
+    Split text into chunks at sentence/paragraph boundaries, each under max_chars.
+
+    Splits preferably at paragraph breaks (double newline), then sentence ends
+    (. ! ?). If a single sentence still exceeds max_chars, it is split at the
+    last space before the limit.
+
+    Args:
+        text: Text to split
+        max_chars: Maximum characters per chunk
+
+    Returns:
+        List of text chunks, each at most max_chars characters
+    """
+    if len(text) <= max_chars:
+        return [text]
+
+    # Split on sentence-ending punctuation followed by spaces, or paragraph breaks.
+    # The lookbehind keeps the punctuation attached to the preceding sentence.
+    parts = re.split(r"(?<=[.!?]) +|\n\n", text)
+
+    chunks: List[str] = []
+    current_chunk = ""
+
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+
+        candidate = (current_chunk + " " + part).strip() if current_chunk else part
+
+        if len(candidate) <= max_chars:
+            current_chunk = candidate
+        else:
+            # Flush the accumulated chunk
+            if current_chunk:
+                chunks.append(current_chunk)
+
+            # If the part itself is too long, hard-split at word boundaries
+            while len(part) > max_chars:
+                split_at = part.rfind(" ", 0, max_chars)
+                if split_at == -1:
+                    split_at = max_chars
+                chunks.append(part[:split_at])
+                part = part[split_at:].lstrip()
+
+            current_chunk = part
+
+    if current_chunk:
+        chunks.append(current_chunk)
+
+    return chunks
+
+
 def _generate_audio_openai(
     text: str,
     voice: str,
@@ -122,40 +177,44 @@ def _generate_audio_openai(
 
     Note:
         OpenAI TTS has a 4096 character limit per request.
-        For longer text, this function will truncate.
+        Longer text is split into chunks at sentence boundaries and the
+        resulting audio bytes are concatenated into a single MP3 stream.
     """
     max_chars = 4096
+    chunks = _split_text_into_chunks(text, max_chars)
 
-    # Truncate if needed
-    if len(text) > max_chars:
-        text = text[: max_chars - 3] + "..."
-
-    try:
-        # Use tracked client for automatic usage tracking
-        client = get_tracked_openai_client()
-
-        response = client.text_to_speech(
-            text=text,
-            voice=voice,
-            model=model,
-            feature=feature,
-            video_id=video_id,
+    if len(chunks) > 1:
+        logger.info(
+            f"Text split into {len(chunks)} chunks for OpenAI TTS ({len(text)} chars total)"
         )
 
-        # Read the audio data from the response
-        return response.read()
+    client = get_tracked_openai_client()
+    audio_parts: List[bytes] = []
 
-    except Exception as e:
-        error_msg = str(e)
+    for chunk in chunks:
+        try:
+            response = client.text_to_speech(
+                text=chunk,
+                voice=voice,
+                model=model,
+                feature=feature,
+                video_id=video_id,
+            )
+            audio_parts.append(response.read())
 
-        if "401" in error_msg or "unauthorized" in error_msg.lower():
-            raise TTSAPIError("Invalid OpenAI API key")
-        elif "429" in error_msg or "rate" in error_msg.lower():
-            raise TTSAPIError(f"Rate limited: {error_msg}")
-        elif "insufficient_quota" in error_msg.lower():
-            raise TTSAPIError(f"Insufficient quota: {error_msg}")
-        else:
-            raise TTSAPIError(f"OpenAI TTS failed: {error_msg}")
+        except Exception as e:
+            error_msg = str(e)
+
+            if "401" in error_msg or "unauthorized" in error_msg.lower():
+                raise TTSAPIError("Invalid OpenAI API key")
+            elif "429" in error_msg or "rate" in error_msg.lower():
+                raise TTSAPIError(f"Rate limited: {error_msg}")
+            elif "insufficient_quota" in error_msg.lower():
+                raise TTSAPIError(f"Insufficient quota: {error_msg}")
+            else:
+                raise TTSAPIError(f"OpenAI TTS failed: {error_msg}")
+
+    return b"".join(audio_parts)
 
 
 def _generate_audio_elevenlabs(
@@ -198,61 +257,66 @@ def _generate_audio_elevenlabs(
         "eleven_monolingual_v1": 5000,
     }
     max_chars = model_limits.get(model_id, 10000)
+    chunks = _split_text_into_chunks(text, max_chars)
 
-    # Truncate if needed
-    if len(text) > max_chars:
-        text = text[: max_chars - 3] + "..."
-
-    try:
-        client = ElevenLabs(api_key=api_key)
-
-        audio_generator = client.text_to_speech.convert(
-            text=text,
-            voice_id=voice_id,
-            model_id=model_id,
-            output_format=output_format,
+    if len(chunks) > 1:
+        logger.info(
+            f"Text split into {len(chunks)} chunks for ElevenLabs TTS ({len(text)} chars total)"
         )
 
-        audio_data = b"".join(audio_generator)
+    client = ElevenLabs(api_key=api_key)
+    audio_parts: List[bytes] = []
+    total_chars = 0
 
-        # Track usage - ElevenLabs TTS priced per character
+    for chunk in chunks:
         try:
-            metadata = {
-                "character_count": len(text),
-                "voice_id": voice_id,
-                "output_format": output_format,
-            }
+            audio_generator = client.text_to_speech.convert(
+                text=chunk,
+                voice_id=voice_id,
+                model_id=model_id,
+                output_format=output_format,
+            )
+            audio_parts.append(b"".join(audio_generator))
+            total_chars += len(chunk)
 
-            log_llm_usage(
-                provider="elevenlabs",
-                model=model_id,
-                feature=feature,
-                prompt_tokens=len(text),  # Store character count in prompt_tokens
-                response_tokens=0,  # TTS doesn't have response tokens
-                video_id=video_id,
-                metadata=metadata,
-            )
-            logger.info(
-                f"ElevenLabs TTS {model_id} call tracked for {feature} ({len(text)} chars)"
-            )
         except Exception as e:
-            logger.warning(f"Failed to track ElevenLabs TTS usage: {e}")
+            error_msg = str(e)
 
-        return audio_data
+            if "quota_exceeded" in error_msg.lower():
+                raise TTSAPIError(f"Quota exceeded: {error_msg}")
+            elif "401" in error_msg or "unauthorized" in error_msg.lower():
+                raise TTSAPIError("Invalid ElevenLabs API key")
+            elif "402" in error_msg or "payment_required" in error_msg.lower():
+                raise TTSAPIError(f"Payment required: {error_msg}")
+            elif "429" in error_msg or "rate" in error_msg.lower():
+                raise TTSAPIError(f"Rate limited: {error_msg}")
+            else:
+                raise TTSAPIError(f"ElevenLabs TTS failed: {error_msg}")
 
+    # Track usage - ElevenLabs TTS priced per character
+    try:
+        metadata = {
+            "character_count": total_chars,
+            "voice_id": voice_id,
+            "output_format": output_format,
+        }
+
+        log_llm_usage(
+            provider="elevenlabs",
+            model=model_id,
+            feature=feature,
+            prompt_tokens=total_chars,  # Store character count in prompt_tokens
+            response_tokens=0,  # TTS doesn't have response tokens
+            video_id=video_id,
+            metadata=metadata,
+        )
+        logger.info(
+            f"ElevenLabs TTS {model_id} call tracked for {feature} ({total_chars} chars)"
+        )
     except Exception as e:
-        error_msg = str(e)
+        logger.warning(f"Failed to track ElevenLabs TTS usage: {e}")
 
-        if "quota_exceeded" in error_msg.lower():
-            raise TTSAPIError(f"Quota exceeded: {error_msg}")
-        elif "401" in error_msg or "unauthorized" in error_msg.lower():
-            raise TTSAPIError("Invalid ElevenLabs API key")
-        elif "402" in error_msg or "payment_required" in error_msg.lower():
-            raise TTSAPIError(f"Payment required: {error_msg}")
-        elif "429" in error_msg or "rate" in error_msg.lower():
-            raise TTSAPIError(f"Rate limited: {error_msg}")
-        else:
-            raise TTSAPIError(f"ElevenLabs TTS failed: {error_msg}")
+    return b"".join(audio_parts)
 
 
 def generate_audio(
