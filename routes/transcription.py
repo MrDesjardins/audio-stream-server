@@ -3,8 +3,10 @@ Transcription routes.
 """
 
 import logging
+import re
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
+from services.trilium import check_video_exists, get_note_content
 from config import get_config
 from services.background_tasks import (
     get_transcription_queue,
@@ -19,7 +21,7 @@ config = get_config()
 
 
 @router.get("/transcription/status/{video_id}")
-def get_transcription_status(video_id: str):
+def get_transcription_status(video_id: str) -> JSONResponse:
     """Get the transcription status for a specific video."""
     if not config.transcription_enabled:
         raise HTTPException(status_code=400, detail="Transcription not enabled")
@@ -57,7 +59,7 @@ def get_transcription_status(video_id: str):
 
 
 @router.post("/transcription/start/{video_id}")
-def start_transcription(video_id: str):
+def start_transcription(video_id: str) -> JSONResponse:
     """Manually trigger transcription for a video (if audio file exists)."""
     if not config.transcription_enabled:
         raise HTTPException(status_code=400, detail="Transcription not enabled")
@@ -83,7 +85,7 @@ def start_transcription(video_id: str):
 
 
 @router.get("/transcription/summary/{video_id}")
-def get_summary(video_id: str):
+def get_summary(video_id: str) -> JSONResponse:
     """Get the summary for a specific video if available."""
     if not config.transcription_enabled:
         raise HTTPException(status_code=400, detail="Transcription not enabled")
@@ -109,9 +111,6 @@ def get_summary(video_id: str):
             )
 
         # If not in queue OR job doesn't have summary, try to fetch from Trilium
-        from services.trilium import check_video_exists, get_note_content
-        import re
-
         note_info = check_video_exists(video_id)
         if note_info:
             note_id = note_info["noteId"]

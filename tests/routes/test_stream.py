@@ -67,10 +67,10 @@ class TestStreamState:
         state = StreamState(lock)
 
         with patch(
-            "services.streaming.start_youtube_download",
+            "routes.stream.start_youtube_download",
             return_value=mock_proc,
         ):
-            with patch("services.streaming.finish_youtube_download"):
+            with patch("routes.stream.finish_youtube_download"):
                 state.start_stream("vid1", skip_transcription=False)
                 assert state.is_streaming() is True
                 wait_event.set()
@@ -87,10 +87,10 @@ class TestStreamState:
         state = StreamState(lock)
 
         with patch(
-            "services.streaming.start_youtube_download",
+            "routes.stream.start_youtube_download",
             return_value=mock_proc,
         ):
-            with patch("services.streaming.finish_youtube_download"):
+            with patch("routes.stream.finish_youtube_download"):
                 state.start_stream("vid1", skip_transcription=False)
                 result = state.stop_stream()
 
@@ -118,17 +118,17 @@ class TestStreamState:
         state = StreamState(lock)
 
         with patch(
-            "services.streaming.start_youtube_download",
+            "routes.stream.start_youtube_download",
             side_effect=[old_proc, new_proc],
         ):
-            with patch("services.streaming.finish_youtube_download"):
+            with patch("routes.stream.finish_youtube_download"):
                 state.start_stream("vid1", skip_transcription=False)
                 state.start_stream("vid2", skip_transcription=False)
 
         old_proc.terminate.assert_called()
         wait_event.set()
 
-    @patch("services.streaming.start_youtube_download")
+    @patch("routes.stream.start_youtube_download")
     def test_start_stream_when_cached(self, mock_start):
         """Handles gracefully when download returns None (already cached)."""
         mock_start.return_value = None
@@ -136,7 +136,7 @@ class TestStreamState:
         lock = threading.Lock()
         state = StreamState(lock)
 
-        with patch("services.streaming.finish_youtube_download"):
+        with patch("routes.stream.finish_youtube_download"):
             state.start_stream("cached_vid", skip_transcription=False)
 
         assert state._current_process is None
@@ -161,10 +161,10 @@ class TestStreamState:
         state = StreamState(lock)
 
         with patch(
-            "services.streaming.start_youtube_download",
+            "routes.stream.start_youtube_download",
             return_value=mock_proc,
         ):
-            with patch("services.streaming.finish_youtube_download"):
+            with patch("routes.stream.finish_youtube_download"):
                 state.start_stream("vid1", skip_transcription=False)
                 state.stop_stream()
 
@@ -395,7 +395,7 @@ class TestHeadAudioEndpoint:
 class TestAudioIsReady:
     """Tests for _audio_is_ready helper."""
 
-    @patch("services.streaming.is_download_in_progress")
+    @patch("routes.stream.is_download_in_progress")
     @patch("routes.stream.config")
     def test_ready_when_file_exists_and_not_downloading(
         self, mock_cfg, mock_in_progress, temp_audio_dir
@@ -411,7 +411,7 @@ class TestAudioIsReady:
 
         assert _audio_is_ready("check_vid") is True
 
-    @patch("services.streaming.is_download_in_progress")
+    @patch("routes.stream.is_download_in_progress")
     @patch("routes.stream.config")
     def test_not_ready_when_still_downloading(
         self, mock_cfg, mock_in_progress, temp_audio_dir
@@ -427,7 +427,7 @@ class TestAudioIsReady:
 
         assert _audio_is_ready("dl_vid") is False
 
-    @patch("services.streaming.is_download_in_progress")
+    @patch("routes.stream.is_download_in_progress")
     @patch("routes.stream.config")
     def test_not_ready_when_file_missing(
         self, mock_cfg, mock_in_progress, temp_audio_dir

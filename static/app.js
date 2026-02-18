@@ -1289,6 +1289,7 @@ player.addEventListener('ended', async function () {
     if (progressBar) {
         progressBar.style.width = '0%';
     }
+    currentQueueId = null;
     await playNext();
 });
 

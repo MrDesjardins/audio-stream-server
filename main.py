@@ -8,6 +8,7 @@ import atexit
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -120,7 +121,7 @@ _shutdown_called = False
 _shutdown_lock = threading.Lock()
 
 
-def shutdown_handler(signum=None, frame=None):
+def shutdown_handler(signum=None, frame=None) -> None:
     """Gracefully shutdown streaming and background tasks."""
     global _shutdown_called
 
@@ -191,7 +192,7 @@ app.include_router(weekly_summaries_router)
 
 
 @app.get("/")
-def index(request: Request):
+def index(request: Request) -> HTMLResponse:
     """Serve the main HTML page."""
     server_host = request.url.hostname
     client = request.client

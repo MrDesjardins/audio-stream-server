@@ -18,6 +18,12 @@ from services.database import (
     reorder_queue,
 )
 from services.youtube import get_video_metadata, extract_video_id
+from services.cache import get_audio_cache
+from services.streaming import (
+    start_youtube_download,
+    finish_youtube_download,
+    is_download_in_progress,
+)
 from config import get_config
 
 logger = logging.getLogger(__name__)
@@ -35,7 +41,7 @@ class ReorderRequest(BaseModel):
 
 
 @router.post("/queue/add")
-def add_video_to_queue(request: QueueRequest):
+def add_video_to_queue(request: QueueRequest) -> JSONResponse:
     """Add a video to the queue."""
     try:
         video_id = extract_video_id(request.youtube_video_id)
@@ -67,7 +73,7 @@ def add_video_to_queue(request: QueueRequest):
 
 
 @router.get("/queue")
-def get_current_queue():
+def get_current_queue() -> JSONResponse:
     """Get the current queue."""
     try:
         queue = get_queue()
@@ -78,7 +84,7 @@ def get_current_queue():
 
 
 @router.delete("/queue/{queue_id}")
-def remove_from_queue_endpoint(queue_id: int):
+def remove_from_queue_endpoint(queue_id: int) -> JSONResponse:
     """Remove an item from the queue."""
     try:
         success = remove_from_queue(queue_id)
@@ -94,7 +100,7 @@ def remove_from_queue_endpoint(queue_id: int):
 
 
 @router.post("/queue/next")
-def play_next_in_queue():
+def play_next_in_queue() -> JSONResponse:
     """Remove current item and start playing the next item in queue."""
     try:
         next_item = get_next_in_queue()
@@ -136,7 +142,7 @@ def play_next_in_queue():
 
 
 @router.post("/queue/clear")
-def clear_current_queue():
+def clear_current_queue() -> JSONResponse:
     """Clear all items from the queue."""
     try:
         clear_queue()
@@ -147,7 +153,7 @@ def clear_current_queue():
 
 
 @router.post("/queue/reorder")
-def reorder_queue_endpoint(request: ReorderRequest):
+def reorder_queue_endpoint(request: ReorderRequest) -> JSONResponse:
     """
     Reorder queue items by updating their positions.
 
@@ -167,19 +173,12 @@ def reorder_queue_endpoint(request: ReorderRequest):
 
 
 @router.post("/queue/prefetch/{video_id}")
-def prefetch_audio(video_id: str):
+def prefetch_audio(video_id: str) -> JSONResponse:
     """
     Pre-download audio for a video in the background.
     Called by the frontend when current track is nearing its end,
     so the next track is cached and ready to play immediately.
     """
-    from services.streaming import (
-        start_youtube_download,
-        finish_youtube_download,
-        is_download_in_progress,
-    )
-    from services.cache import get_audio_cache
-
     audio_cache = get_audio_cache()
 
     # Already cached — nothing to do
@@ -288,7 +287,7 @@ def _run_suggestions_sync() -> dict:
 
 
 @router.post("/queue/suggestions")
-async def generate_and_queue_suggestions():
+async def generate_and_queue_suggestions() -> JSONResponse:
     """
     Generate video suggestions based on recently watched content
     and automatically add them to the queue.

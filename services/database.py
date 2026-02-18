@@ -170,6 +170,7 @@ def init_database():
                 response_tokens INTEGER,
                 reasoning_tokens INTEGER,
                 total_tokens INTEGER,
+                audio_duration_seconds REAL,
                 video_id TEXT,
                 metadata TEXT,
                 created_at TEXT NOT NULL

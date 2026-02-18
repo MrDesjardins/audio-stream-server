@@ -12,6 +12,11 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from config import get_config
+from services.database import get_llm_usage_stats, get_llm_usage_summary
+from services.scheduler import (
+    trigger_weekly_summary_now,
+    get_next_run_time as get_scheduler_next_run_time,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -49,7 +54,7 @@ async def stats_page(request: Request):
 @router.post("/weekly-summary/trigger")
 def trigger_weekly_summary(
     request: WeeklySummaryTriggerRequest = WeeklySummaryTriggerRequest(),
-):
+) -> JSONResponse:
     """
     Manually trigger the weekly summary generation.
 
@@ -68,8 +73,6 @@ def trigger_weekly_summary(
         )
 
     try:
-        from services.scheduler import trigger_weekly_summary_now
-
         # Parse the date if provided
         target_date = None
         if request.date:
@@ -111,7 +114,7 @@ def trigger_weekly_summary(
 
 
 @router.get("/weekly-summary/next-run")
-def get_next_run_time():
+def get_next_run_time() -> JSONResponse:
     """
     Get the next scheduled run time for the weekly summary job.
     """
@@ -121,9 +124,7 @@ def get_next_run_time():
         )
 
     try:
-        from services.scheduler import get_next_run_time
-
-        next_run = get_next_run_time()
+        next_run = get_scheduler_next_run_time()
 
         if next_run:
             return JSONResponse(
@@ -154,7 +155,7 @@ def get_llm_usage_statistics(
     model: Optional[str] = None,
     feature: Optional[str] = None,
     limit: int = 100,
-):
+) -> JSONResponse:
     """
     Get LLM usage statistics with optional filters.
 
@@ -169,8 +170,6 @@ def get_llm_usage_statistics(
     Returns detailed usage records including token counts and metadata.
     """
     try:
-        from services.database import get_llm_usage_stats
-
         # Limit validation
         if limit > 1000:
             limit = 1000
@@ -209,7 +208,7 @@ def get_llm_usage_statistics(
 def get_llm_usage_summary_endpoint(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-):
+) -> JSONResponse:
     """
     Get aggregated LLM usage summary.
 
@@ -221,8 +220,6 @@ def get_llm_usage_summary_endpoint(
     including total token counts and call counts.
     """
     try:
-        from services.database import get_llm_usage_summary
-
         summary = get_llm_usage_summary(
             start_date=start_date,
             end_date=end_date,

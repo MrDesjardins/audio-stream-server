@@ -12,7 +12,7 @@ class TestTriggerWeeklySummary:
     """Tests for /admin/weekly-summary/trigger endpoint."""
 
     @patch("routes.admin.config")
-    @patch("services.scheduler.trigger_weekly_summary_now")
+    @patch("routes.admin.trigger_weekly_summary_now")
     def test_triggers_weekly_summary_when_enabled(self, mock_trigger, mock_config):
         """Should trigger weekly summary when feature is enabled."""
         mock_config.weekly_summary_enabled = True
@@ -36,7 +36,7 @@ class TestTriggerWeeklySummary:
         assert "disabled" in data["detail"].lower()
 
     @patch("routes.admin.config")
-    @patch("services.scheduler.trigger_weekly_summary_now")
+    @patch("routes.admin.trigger_weekly_summary_now")
     def test_handles_trigger_error(self, mock_trigger, mock_config):
         """Should return 500 on trigger error."""
         mock_config.weekly_summary_enabled = True
@@ -51,7 +51,7 @@ class TestGetNextRunTime:
     """Tests for /admin/weekly-summary/next-run endpoint."""
 
     @patch("routes.admin.config")
-    @patch("services.scheduler.get_next_run_time")
+    @patch("routes.admin.get_scheduler_next_run_time")
     def test_returns_next_run_time(self, mock_get_next_run, mock_config):
         """Should return next scheduled run time."""
         mock_config.weekly_summary_enabled = True
@@ -65,7 +65,7 @@ class TestGetNextRunTime:
         assert "2026-01-30 23:00:00" in data["next_run_time"]
 
     @patch("routes.admin.config")
-    @patch("services.scheduler.get_next_run_time")
+    @patch("routes.admin.get_scheduler_next_run_time")
     def test_returns_not_scheduled_when_no_job(self, mock_get_next_run, mock_config):
         """Should return not_scheduled when job doesn't exist."""
         mock_config.weekly_summary_enabled = True
@@ -87,7 +87,7 @@ class TestGetNextRunTime:
         assert response.status_code == 400
 
     @patch("routes.admin.config")
-    @patch("services.scheduler.get_next_run_time")
+    @patch("routes.admin.get_scheduler_next_run_time")
     def test_handles_error(self, mock_get_next_run, mock_config):
         """Should return 500 on error."""
         mock_config.weekly_summary_enabled = True

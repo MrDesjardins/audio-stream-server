@@ -5,13 +5,18 @@ Streaming and playback routes.
 import logging
 import threading
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 from config import get_config
 from services.background_tasks import get_transcription_queue, TranscriptionJob
 from services.database import add_to_history, get_history, clear_history
 from services.path_utils import expand_path
-from services.streaming import get_audio_duration
+from services.streaming import (
+    get_audio_duration,
+    start_youtube_download,
+    finish_youtube_download,
+    is_download_in_progress,
+)
 from services.youtube import get_video_metadata, extract_video_id
 
 logger = logging.getLogger(__name__)
@@ -34,8 +39,6 @@ class StreamState:
 
     def start_stream(self, video_id: str, skip_transcription: bool):
         """Start new download, stopping existing one."""
-        from services.streaming import start_youtube_download, finish_youtube_download
-
         with self._lock:
             # Terminate existing download
             if self._current_process:
@@ -104,7 +107,7 @@ def get_stream_state() -> StreamState:
 
 
 @router.post("/stream")
-def stream_video(request: StreamRequest):
+def stream_video(request: StreamRequest) -> dict:
     """Start streaming a YouTube video."""
     state = get_stream_state()
     video_id = extract_video_id(request.youtube_video_id)
@@ -169,14 +172,12 @@ def stream_video(request: StreamRequest):
 
 def _audio_is_ready(video_id: str) -> bool:
     """Check if the audio file exists and is not still being downloaded."""
-    from services.streaming import is_download_in_progress
-
     audio_path = expand_path(config.get_audio_path(video_id))
     return audio_path.exists() and not is_download_in_progress(video_id)
 
 
 @router.get("/audio/{video_id}")
-def get_audio_file(video_id: str):
+def get_audio_file(video_id: str) -> Response:
     """Serve the actual MP3 file for the player with mobile-optimized headers."""
     audio_path = expand_path(config.get_audio_path(video_id))
 
@@ -210,7 +211,7 @@ def get_audio_file(video_id: str):
 
 
 @router.head("/audio/{video_id}")
-def check_audio_file(video_id: str):
+def check_audio_file(video_id: str) -> JSONResponse:
     """Check if audio file exists and is ready (for polling). HEAD request."""
     audio_path = expand_path(config.get_audio_path(video_id))
 
@@ -233,7 +234,7 @@ def check_audio_file(video_id: str):
 
 
 @router.post("/stop")
-def stop_stream():
+def stop_stream() -> dict:
     """Stop the current stream."""
     state = get_stream_state()
     if state.stop_stream():
@@ -242,14 +243,14 @@ def stop_stream():
 
 
 @router.get("/status")
-def get_status():
+def get_status() -> dict:
     """Get the current streaming status."""
     state = get_stream_state()
     return {"status": "streaming" if state.is_streaming() else "idle"}
 
 
 @router.get("/history")
-def get_play_history(limit: int = 10):
+def get_play_history(limit: int = 10) -> JSONResponse:
     """Get play history from database."""
     try:
         history = get_history(limit=limit)
@@ -260,7 +261,7 @@ def get_play_history(limit: int = 10):
 
 
 @router.post("/history/clear")
-def clear_play_history():
+def clear_play_history() -> JSONResponse:
     """Clear all play history."""
     try:
         clear_history()
