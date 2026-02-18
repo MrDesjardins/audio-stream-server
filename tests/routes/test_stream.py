@@ -569,3 +569,54 @@ class TestHistoryEndpoints:
         response = client.post("/history/clear")
 
         assert response.status_code == 500
+
+
+class TestPlaybackPositionRoutes:
+    """Tests for playback position endpoints."""
+
+    def test_get_position_not_found_returns_zero(self, client):
+        """GET for unknown video returns position_seconds=0."""
+        with patch("routes.stream.get_playback_position", return_value=None):
+            res = client.get("/playback-position/unknown_id")
+        assert res.status_code == 200
+        assert res.json()["position_seconds"] == 0
+        assert res.json()["duration_seconds"] is None
+
+    def test_save_position(self, client):
+        """POST saves a position and returns saved status."""
+        with patch("routes.stream.save_playback_position") as mock_save:
+            res = client.post(
+                "/playback-position/vid1",
+                json={"position_seconds": 150.0, "duration_seconds": 600.0},
+            )
+            mock_save.assert_called_once_with("vid1", 150.0, 600.0)
+        assert res.status_code == 200
+        assert res.json()["status"] == "saved"
+
+    def test_save_and_get_position_roundtrip(self, client):
+        """POST then GET returns the saved position."""
+        from services.models import PlaybackPosition
+
+        saved_pos = PlaybackPosition(
+            youtube_id="vid1",
+            position_seconds=150.0,
+            duration_seconds=600.0,
+            last_updated_at="2026-01-01T00:00:00+00:00",
+        )
+        with patch("routes.stream.save_playback_position"):
+            client.post(
+                "/playback-position/vid1",
+                json={"position_seconds": 150.0, "duration_seconds": 600.0},
+            )
+        with patch("routes.stream.get_playback_position", return_value=saved_pos):
+            res = client.get("/playback-position/vid1")
+        assert res.json()["position_seconds"] == 150.0
+        assert res.json()["duration_seconds"] == 600.0
+
+    def test_delete_position(self, client):
+        """DELETE removes the position."""
+        with patch("routes.stream.clear_playback_position") as mock_clear:
+            res = client.delete("/playback-position/vid1")
+            mock_clear.assert_called_once_with("vid1")
+        assert res.status_code == 200
+        assert res.json()["status"] == "cleared"

@@ -544,25 +544,23 @@ def _check_audio_already_attached(note_id: str, filename: str) -> bool:
     """
     Check if audio file is already attached to a Trilium note.
 
+    Uses the local database as the source of truth: audio_file_path is only
+    set in weekly_summaries after a successful attach_audio_to_note call,
+    so its presence means the audio is already attached.
+
     Args:
-        note_id: The Trilium note ID
+        note_id: The Trilium note ID (unused, kept for signature compatibility)
         filename: Expected filename (e.g., "2024-W01.mp3")
 
     Returns:
         True if audio is already attached, False otherwise
     """
     try:
-        client = get_httpx_client()
-        children_url = _build_url(config.trilium_url, f"etapi/notes/{note_id}/children")
-        response = client.get(
-            children_url, headers=_get_trilium_headers(), timeout=10.0
-        )
-        response.raise_for_status()
-
-        children = response.json()
-        return any(child.get("title") == filename for child in children)
+        week_year = filename[:-4] if filename.endswith(".mp3") else filename
+        summary = get_summary_by_week_year(week_year)
+        return summary is not None and summary.audio_file_path is not None
     except Exception as e:
-        logger.warning(f"Could not check Trilium children: {e}")
+        logger.warning(f"Could not check audio attachment status: {e}")
         return False
 
 

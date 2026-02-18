@@ -13,6 +13,9 @@ from services.database import (
     reorder_queue,
     get_video_title_from_history,
     get_db_connection,
+    save_playback_position,
+    get_playback_position,
+    clear_playback_position,
 )
 
 # Note: The temp_db fixture from conftest.py is used automatically
@@ -392,3 +395,58 @@ class TestQueue:
         assert queue[1].title == "Title 1"
         assert queue[1].channel == "Channel 1"
         assert queue[1].thumbnail_url == "http://thumb1.jpg"
+
+
+class TestPlaybackPositions:
+    """Tests for playback position persistence."""
+
+    def test_save_and_get_position(self, db_path):
+        """Test saving and retrieving a playback position."""
+        init_database()
+        save_playback_position("abc123", 120.5, 3600.0)
+        pos = get_playback_position("abc123")
+        assert pos is not None
+        assert pos.youtube_id == "abc123"
+        assert pos.position_seconds == 120.5
+        assert pos.duration_seconds == 3600.0
+
+    def test_upsert_updates_existing(self, db_path):
+        """Test that saving overwrites the previous position."""
+        init_database()
+        save_playback_position("abc123", 100.0)
+        save_playback_position("abc123", 200.0, 3600.0)
+        pos = get_playback_position("abc123")
+        assert pos.position_seconds == 200.0
+        assert pos.duration_seconds == 3600.0
+
+    def test_get_nonexistent_returns_none(self, db_path):
+        """Test that getting an unknown video ID returns None."""
+        init_database()
+        assert get_playback_position("nonexistent") is None
+
+    def test_clear_position(self, db_path):
+        """Test that clearing a position removes it."""
+        init_database()
+        save_playback_position("abc123", 100.0)
+        clear_playback_position("abc123")
+        assert get_playback_position("abc123") is None
+
+    def test_save_without_duration(self, db_path):
+        """Test saving a position without a duration."""
+        init_database()
+        save_playback_position("noDuration", 55.0)
+        pos = get_playback_position("noDuration")
+        assert pos is not None
+        assert pos.position_seconds == 55.0
+        assert pos.duration_seconds is None
+
+    def test_to_dict(self, db_path):
+        """Test PlaybackPosition.to_dict() serialization."""
+        init_database()
+        save_playback_position("abc123", 120.5, 3600.0)
+        pos = get_playback_position("abc123")
+        d = pos.to_dict()
+        assert d["youtube_id"] == "abc123"
+        assert d["position_seconds"] == 120.5
+        assert d["duration_seconds"] == 3600.0
+        assert "last_updated_at" in d

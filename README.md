@@ -9,55 +9,54 @@ A powerful FastAPI application that streams audio from YouTube videos as MP3 ove
 ## Features
 
 ### Core Streaming
-- **YouTube Audio Streaming**: Stream any YouTube video as MP3 audio in real-time
-- **Multi-Client Support**: Multiple users can listen to the same stream simultaneously with individual replay buffers
-- **Smart Queue System**: Build playlists with persistent queue that survives page refreshes
-- **Auto-Play**: Automatically plays next track when current track completes
-- **Prefetching**: Pre-downloads next queue item before current track ends for seamless transitions
-- **Play History**: Track all played videos with play counts, timestamps, and rich metadata
-- **Mobile-First Web UI**: Responsive interface optimized for phones, tablets, and desktops
-- **MediaSession API**: Rich media controls in car entertainment systems, lock screens, and notification panels
+- **YouTube Audio Streaming**: Stream any YouTube video as MP3 audio; supports full YouTube URLs, short `youtu.be` links, and raw video IDs
+- **Smart Queue System**: Build playlists with a persistent queue (survives page refreshes) that supports both YouTube videos and weekly summary audio as mixed items
+- **Auto-Play & Prefetching**: Automatically plays the next track when the current one finishes; pre-downloads the upcoming track in the background for seamless transitions
+- **Play History**: Tracks all played videos with play counts, relative timestamps, and rich metadata (title, channel, thumbnail); click any entry to replay
+- **Stream Resilience**: Automatic stalling detection with up to 50 reconnection retries and adaptive back-off delay
+
+### Playback Controls
+- **Audio Player**: HTML5 player with Play/Pause, Rewind (−15 s), Fast-Forward (+15 s), and Stop
+- **Speed Controls**: Switch between 1×, 1.15×, 1.3×, and 1.5× playback speed
+- **Keyboard Shortcuts**: Space to play/pause; ↑/↓ to skip forward/back 15 s
+- **MediaSession API**: Rich media controls in car entertainment systems (Tesla tested), lock screens, and notification panels — displays title, channel, and album art
+
+### Web Interface
+- **Mobile-First Design**: Responsive layout optimised for phones, tablets, and desktops
+- **Dark / Light Theme**: Automatic system-preference detection with manual toggle; preference saved in local storage
+- **Drag-and-Drop Queue Reordering**: Reorder queue items by dragging (mouse and touch); order saved instantly to the database
 
 ### AI-Powered Features
 
-#### Automatic Transcription
-- **Multi-Provider Support**: Choose between OpenAI Whisper, Mistral Voxtral, or Google Gemini for transcription
-- **Audio Optimization**: Automatic compression and speed-up to reduce API costs by ~33%
-- **Background Processing**: Transcription happens asynchronously without blocking playback
-- **Smart Caching**: Transcripts cached locally to avoid re-processing
+#### Automatic Transcription (`TRANSCRIPTION_ENABLED=true`)
+- **Multi-Provider**: OpenAI Whisper, Mistral Voxtral, or Google Gemini — switch via config
+- **Audio Optimisation**: Automatic compression (1.5× speed, mono, 32 kbps, 16 kHz) reduces Whisper API costs ~33 %
+- **Background Processing**: Runs asynchronously; transcription status visible in UI with polling every 5 s
+- **Smart Caching**: Transcripts cached locally; Trilium deduplication prevents re-processing the same video
 
-#### Intelligent Summarization
-- **Video Summaries**: AI-generated summaries of each video's content
+#### Intelligent Summarisation
+- **Video Summaries**: AI-generated summaries posted to Trilium Notes with video title, channel, thumbnail, and YouTube link
 - **Multi-Provider**: OpenAI GPT or Google Gemini (Gemini recommended for free tier)
-- **Knowledge Management**: Automatic posting to Trilium Notes with deduplication
-- **Rich Metadata**: Includes video title, channel, thumbnail, and YouTube link
 
-#### Weekly Summaries
-- **Automated Scheduling**: Runs every Sunday at 11 PM Pacific to summarize the week (Monday-Sunday)
-- **Comprehensive Analysis**: Synthesizes all videos watched during the week
-- **Key Learnings**: Extracts 15 most important insights across all content
-- **Theme Detection**: Identifies common themes and patterns in your viewing
-- **Text-to-Speech**: Optional TTS generation (OpenAI or ElevenLabs) for listening to summaries
+#### Weekly Summaries (`WEEKLY_SUMMARY_ENABLED=true`)
+- **Automated Scheduling**: Configurable schedule (default: Fridays at 11 PM) to summarise the week's viewing
+- **Comprehensive Analysis**: Synthesises all videos watched during the week; extracts key learnings and common themes
+- **Text-to-Speech**: Optional TTS (OpenAI or ElevenLabs) converts the written summary to audio you can queue and play
 
-#### Smart Video Suggestions
-- **AI Content Discovery**: Analyzes your viewing history to suggest similar videos
-- **Theme-Based**: Identifies patterns in what you watch to find relevant content
-- **YouTube Integration**: Direct search with working YouTube links
-- **Configurable**: Control how many videos to analyze and suggestions to generate
+#### Smart Video Suggestions (`BOOK_SUGGESTIONS_ENABLED=true`)
+- **AI Content Discovery**: Analyses viewing history and Trilium summaries to find thematically related YouTube videos
+- **Configurable**: Control how many recent videos to analyse and how many suggestions to generate
 
 ### Data & Analytics
-- **LLM Usage Tracking**: Detailed logging of all API calls with token counts
-- **Cost Monitoring**: Track spending across providers, models, and features
-- **Performance Metrics**: Audio duration, file sizes, processing times
-- **Flexible Filtering**: Query by date range, provider, model, or feature
+- **LLM Usage Dashboard**: HTML dashboard at `/admin/stats` plus JSON API with filtering by date range, provider, model, and feature
+- **Cost Monitoring**: Token counts and audio-duration tracking for accurate per-minute pricing (Whisper, Voxtral)
+- **Client-Side Logging**: Browser logs batched and forwarded to the server — essential for debugging on car displays and mobile devices without a console
 
 ### Developer Experience
-- **Modern Stack**: FastAPI, Python 3.12, SQLite with type-safe models
-- **Comprehensive Testing**: 76%+ test coverage with pytest
-- **CI/CD**: Automated testing and linting with GitHub Actions
-- **Pre-commit Hooks**: Automatic code formatting with Ruff and type checking with mypy
-- **Type Safety**: Full type annotations with mypy strict mode
-- **Docker Ready**: Easy deployment with systemd service support
+- **Modern Stack**: FastAPI, Python 3.12, SQLite with type-safe models and dataclasses
+- **Comprehensive Testing**: 76 %+ test coverage with pytest and pre-commit hooks
+- **CI/CD**: Automated testing with GitHub Actions on every push and pull request
+- **Type Safety**: Full return-type annotations; mypy-compatible throughout
 
 ## Quick Start
 

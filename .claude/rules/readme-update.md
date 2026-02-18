@@ -1,0 +1,2 @@
+- Make sure that when you add new features that "Features" section in the readme.md is updated
+- Make sure when architecture change that the "Architecture" section of the readme.md is updated

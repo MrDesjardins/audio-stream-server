@@ -4,12 +4,20 @@ Streaming and playback routes.
 
 import logging
 import threading
+from typing import Optional
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 from config import get_config
 from services.background_tasks import get_transcription_queue, TranscriptionJob
-from services.database import add_to_history, get_history, clear_history
+from services.database import (
+    add_to_history,
+    get_history,
+    clear_history,
+    save_playback_position,
+    get_playback_position,
+    clear_playback_position,
+)
 from services.path_utils import expand_path
 from services.streaming import (
     get_audio_duration,
@@ -269,3 +277,31 @@ def clear_play_history() -> JSONResponse:
     except Exception as e:
         logger.error(f"Error clearing history: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class SavePositionRequest(BaseModel):
+    position_seconds: float
+    duration_seconds: Optional[float] = None
+
+
+@router.get("/playback-position/{video_id}")
+def get_position(video_id: str) -> JSONResponse:
+    """Get the saved playback position for a video."""
+    pos = get_playback_position(video_id)
+    if pos is None:
+        return JSONResponse({"position_seconds": 0, "duration_seconds": None})
+    return JSONResponse(pos.to_dict())
+
+
+@router.post("/playback-position/{video_id}")
+def save_position(video_id: str, request: SavePositionRequest) -> JSONResponse:
+    """Save or update the playback position for a video."""
+    save_playback_position(video_id, request.position_seconds, request.duration_seconds)
+    return JSONResponse({"status": "saved"})
+
+
+@router.delete("/playback-position/{video_id}")
+def delete_position(video_id: str) -> JSONResponse:
+    """Delete the saved playback position for a video."""
+    clear_playback_position(video_id)
+    return JSONResponse({"status": "cleared"})

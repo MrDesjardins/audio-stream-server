@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from queue import Queue, Empty
 import os
 
-from services.models import PlayHistoryItem, QueueItem, WeeklySummary
+from services.models import PlayHistoryItem, PlaybackPosition, QueueItem, WeeklySummary
 
 logger = logging.getLogger(__name__)
 
@@ -191,6 +191,22 @@ def init_database():
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_llm_feature
             ON llm_usage_stats(feature)
+        """)
+
+        # Playback positions table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS playback_positions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                youtube_id TEXT NOT NULL UNIQUE,
+                position_seconds REAL NOT NULL,
+                duration_seconds REAL,
+                last_updated_at TEXT NOT NULL
+            )
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_playback_positions_youtube_id
+            ON playback_positions (youtube_id)
         """)
 
         logger.info(f"Database initialized at {DB_PATH}")
@@ -881,3 +897,50 @@ def get_llm_usage_summary(
             results["totals"]["total_tokens"] += stat["total_tokens"]
 
         return results
+
+
+# Playback position functions
+
+
+def save_playback_position(
+    youtube_id: str,
+    position_seconds: float,
+    duration_seconds: Optional[float] = None,
+) -> None:
+    """Save or update the playback position for a video."""
+    timestamp = datetime.now(timezone.utc).isoformat()
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO playback_positions (youtube_id, position_seconds, duration_seconds, last_updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(youtube_id) DO UPDATE SET
+                position_seconds = excluded.position_seconds,
+                duration_seconds = excluded.duration_seconds,
+                last_updated_at  = excluded.last_updated_at
+        """,
+            (youtube_id, position_seconds, duration_seconds, timestamp),
+        )
+
+
+def get_playback_position(youtube_id: str) -> Optional[PlaybackPosition]:
+    """Get the saved playback position for a video, or None if not found."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT * FROM playback_positions WHERE youtube_id = ?", (youtube_id,)
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        return PlaybackPosition.from_db_row(row)
+
+
+def clear_playback_position(youtube_id: str) -> None:
+    """Delete the saved playback position for a video."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "DELETE FROM playback_positions WHERE youtube_id = ?", (youtube_id,)
+        )

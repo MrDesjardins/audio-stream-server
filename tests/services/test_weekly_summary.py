@@ -785,67 +785,50 @@ class TestVerifyTriliumNoteExists:
 class TestCheckAudioAlreadyAttached:
     """Tests for _check_audio_already_attached helper function."""
 
-    @patch("services.weekly_summary.get_httpx_client")
-    @patch("services.weekly_summary.config")
-    def test_returns_true_when_audio_attached(self, mock_config, mock_client_getter):
-        """Should return True when audio file is attached."""
+    @patch("services.weekly_summary.get_summary_by_week_year")
+    def test_returns_true_when_audio_attached(self, mock_get_summary):
+        """Should return True when database record has audio_file_path set."""
         from services.weekly_summary import _check_audio_already_attached
 
-        mock_config.trilium_url = "http://localhost:8080"
-        mock_config.trilium_etapi_token = "test-token"
-
-        response = Mock()
-        response.status_code = 200
-        response.json.return_value = [
-            {"title": "2024-W01.mp3", "noteId": "audio123"},
-            {"title": "other.txt", "noteId": "other123"},
-        ]
-
-        mock_client = Mock()
-        mock_client.get.return_value = response
-        mock_client_getter.return_value = mock_client
+        mock_summary = Mock()
+        mock_summary.audio_file_path = "/tmp/audio/2024-W01.mp3"
+        mock_get_summary.return_value = mock_summary
 
         result = _check_audio_already_attached("note123", "2024-W01.mp3")
 
         assert result is True
+        mock_get_summary.assert_called_once_with("2024-W01")
 
-    @patch("services.weekly_summary.get_httpx_client")
-    @patch("services.weekly_summary.config")
-    def test_returns_false_when_audio_not_attached(
-        self, mock_config, mock_client_getter
-    ):
-        """Should return False when audio file is not attached."""
+    @patch("services.weekly_summary.get_summary_by_week_year")
+    def test_returns_false_when_no_database_record(self, mock_get_summary):
+        """Should return False when no weekly summary record exists."""
         from services.weekly_summary import _check_audio_already_attached
 
-        mock_config.trilium_url = "http://localhost:8080"
-        mock_config.trilium_etapi_token = "test-token"
-
-        response = Mock()
-        response.status_code = 200
-        response.json.return_value = [
-            {"title": "other.txt", "noteId": "other123"},
-        ]
-
-        mock_client = Mock()
-        mock_client.get.return_value = response
-        mock_client_getter.return_value = mock_client
+        mock_get_summary.return_value = None
 
         result = _check_audio_already_attached("note123", "2024-W01.mp3")
 
         assert result is False
 
-    @patch("services.weekly_summary.get_httpx_client")
-    @patch("services.weekly_summary.config")
-    def test_returns_false_on_exception(self, mock_config, mock_client_getter):
-        """Should return False on exception."""
+    @patch("services.weekly_summary.get_summary_by_week_year")
+    def test_returns_false_when_audio_path_not_set(self, mock_get_summary):
+        """Should return False when record exists but audio_file_path is None."""
         from services.weekly_summary import _check_audio_already_attached
 
-        mock_config.trilium_url = "http://localhost:8080"
-        mock_config.trilium_etapi_token = "test-token"
+        mock_summary = Mock()
+        mock_summary.audio_file_path = None
+        mock_get_summary.return_value = mock_summary
 
-        mock_client = Mock()
-        mock_client.get.side_effect = Exception("Network error")
-        mock_client_getter.return_value = mock_client
+        result = _check_audio_already_attached("note123", "2024-W01.mp3")
+
+        assert result is False
+
+    @patch("services.weekly_summary.get_summary_by_week_year")
+    def test_returns_false_on_exception(self, mock_get_summary):
+        """Should return False on database error."""
+        from services.weekly_summary import _check_audio_already_attached
+
+        mock_get_summary.side_effect = Exception("Database error")
 
         result = _check_audio_already_attached("note123", "2024-W01.mp3")
 

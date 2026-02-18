@@ -1,7 +1,7 @@
 """Data models for database entities and API responses."""
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 
 @dataclass
@@ -159,6 +159,35 @@ class WeeklySummary:
         if self.audio_generated_at:
             result["audio_generated_at"] = self.audio_generated_at
         return result
+
+
+@dataclass
+class PlaybackPosition:
+    """Represents a saved playback position for a video."""
+
+    youtube_id: str
+    position_seconds: float
+    duration_seconds: Optional[float]
+    last_updated_at: str
+
+    @classmethod
+    def from_db_row(cls, row: Any) -> "PlaybackPosition":
+        """Create instance from database row."""
+        return cls(
+            youtube_id=row["youtube_id"],
+            position_seconds=row["position_seconds"],
+            duration_seconds=row["duration_seconds"],
+            last_updated_at=row["last_updated_at"],
+        )
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary."""
+        return {
+            "youtube_id": self.youtube_id,
+            "position_seconds": self.position_seconds,
+            "duration_seconds": self.duration_seconds,
+            "last_updated_at": self.last_updated_at,
+        }
 
 
 @dataclass

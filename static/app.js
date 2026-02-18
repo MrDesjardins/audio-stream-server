@@ -19,6 +19,10 @@ const defaultTitle = 'YouTube Radio';
 const prefetchThresholdSeconds = appConfig.prefetchThresholdSeconds;
 let prefetchTriggered = false;
 
+// Playback position persistence
+let lastPositionSaveTime = 0;
+const POSITION_SAVE_INTERVAL_MS = 10_000;
+
 // Remote logging for debugging on phone/car displays
 const REMOTE_LOGGING_ENABLED = true;
 const LOG_BATCH_INTERVAL = appConfig.clientLogBatchInterval;
@@ -467,6 +471,22 @@ player.addEventListener('timeupdate', async function () {
         }
     }
 
+    // Save playback position every 10 seconds (YouTube items only)
+    if (currentVideoId && isPlaying && player.currentTime > 0) {
+        const nowMs = Date.now();
+        if (nowMs - lastPositionSaveTime >= POSITION_SAVE_INTERVAL_MS) {
+            lastPositionSaveTime = nowMs;
+            fetch(`/playback-position/${currentVideoId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    position_seconds: player.currentTime,
+                    duration_seconds: isNaN(player.duration) ? null : player.duration,
+                }),
+            }).catch(() => {}); // fire-and-forget; ignore errors silently
+        }
+    }
+
     if (!isPlaying || prefetchTriggered || !player.duration) return;
 
     const remaining = player.duration - player.currentTime;
@@ -681,6 +701,18 @@ function setupMediaSession(trackInfo) {
     });
 }
 
+// Playback position helpers
+async function fetchSavedPosition(videoId) {
+    try {
+        const res = await fetch(`/playback-position/${videoId}`);
+        if (!res.ok) return 0;
+        const data = await res.json();
+        return data.position_seconds || 0;
+    } catch {
+        return 0;
+    }
+}
+
 // Queue Management
 async function fetchQueue() {
     try {
@@ -865,6 +897,9 @@ async function playNext() {
 }
 
 async function startStreamFromQueue(youtube_video_id, queue_id) {
+    // Reset position save throttle so first save of new track isn't suppressed
+    lastPositionSaveTime = 0;
+
     const skipTranscriptionCheckbox = document.getElementById('skip_transcription');
     const skip_transcription = skipTranscriptionCheckbox ? skipTranscriptionCheckbox.checked : false;
 
@@ -907,11 +942,26 @@ async function startStreamFromQueue(youtube_video_id, queue_id) {
                 return;
             }
 
+            // Fetch saved position BEFORE setting src/load so the canplay listener
+            // is always registered before the event can fire (the file is already
+            // downloaded, so canplay can fire on the next microtask after load()).
+            const savedPos = await fetchSavedPosition(youtube_video_id);
+
             // File is ready, now load and play
             const audioUrl = `${appConfig.apiBaseUrl}/audio/${data.youtube_video_id}?t=${Date.now()}`;
             console.log('Audio file ready, loading:', audioUrl);
 
             player.src = audioUrl;
+
+            if (savedPos > 30) {
+                const onCanPlay = () => {
+                    player.currentTime = savedPos;
+                    player.removeEventListener('canplay', onCanPlay);
+                };
+                player.addEventListener('canplay', onCanPlay);
+                console.log(`Restoring playback position to ${savedPos}s`);
+            }
+
             player.load();
 
             hideStreamStatus();
@@ -1284,6 +1334,10 @@ async function handleTouchEnd(e) {
 // Auto-play next track when current track ends
 player.addEventListener('ended', async function () {
     console.log('Track ended, playing next...');
+    // Clear saved position — video finished, next play should start from beginning
+    if (currentVideoId) {
+        fetch(`/playback-position/${currentVideoId}`, { method: 'DELETE' }).catch(() => {});
+    }
     // Reset progress bar
     const progressBar = document.querySelector('.queue-progress-bar');
     if (progressBar) {
