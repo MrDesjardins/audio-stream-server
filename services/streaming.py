@@ -4,9 +4,11 @@ YouTube audio download service.
 Downloads audio from YouTube using yt-dlp and saves as MP3.
 """
 
+import json
 import logging
 import os
 import subprocess
+from typing import Optional
 
 from services.cache import get_audio_cache
 from services.path_utils import expand_path, expand_path_str
@@ -14,6 +16,41 @@ from config import get_config
 
 logger = logging.getLogger(__name__)
 config = get_config()
+
+_audio_duration_cache: dict[str, float] = {}
+
+
+def get_audio_duration(youtube_video_id: str) -> Optional[float]:
+    """Return duration in seconds from ffprobe. Cached per session."""
+    if youtube_video_id in _audio_duration_cache:
+        return _audio_duration_cache[youtube_video_id]
+
+    audio_path = expand_path(config.get_audio_path(youtube_video_id))
+    if not audio_path.exists():
+        return None
+
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "quiet",
+                "-print_format",
+                "json",
+                "-show_format",
+                str(audio_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        data = json.loads(result.stdout)
+        duration = float(data["format"]["duration"])
+        _audio_duration_cache[youtube_video_id] = duration
+        return duration
+    except Exception as e:
+        logger.warning(f"ffprobe failed for {youtube_video_id}: {e}")
+        return None
 
 
 def _get_download_marker(youtube_video_id: str) -> str:

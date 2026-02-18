@@ -12,6 +12,7 @@ let currentVideoId = null;
 let currentQueueId = null;
 let isPlaying = false;
 let currentTrackTitle = null;
+let serverAudioDuration = null; // Authoritative duration from server (ffprobe)
 const defaultTitle = 'YouTube Radio';
 
 // Prefetch configuration
@@ -176,6 +177,11 @@ async function waitForAudioFile(videoId, maxWaitSeconds = 60) {
 
             if (response.ok) {
                 console.log(`Audio file ready after ${attemptCount} attempts (${Date.now() - startTime}ms)`);
+                const durationHeader = response.headers.get('X-Audio-Duration');
+                if (durationHeader) {
+                    serverAudioDuration = parseFloat(durationHeader);
+                    remoteLog('log', '[MediaSession] Server audio duration', { duration: serverAudioDuration });
+                }
                 return true;
             }
 
@@ -513,25 +519,27 @@ function updatePositionState() {
         return;
     }
 
-    // Validate that we have a valid duration
-    if (!player.duration || isNaN(player.duration) || !isFinite(player.duration) || player.duration <= 0) {
-        return;
-    }
+    // Use server duration as authoritative fallback when browser reports NaN/Infinity
+    const duration = (player.duration && !isNaN(player.duration) && isFinite(player.duration) && player.duration > 0)
+        ? player.duration
+        : serverAudioDuration;
+
+    if (!duration) return;
 
     try {
         // Clamp position to be within valid range [0, duration]
-        const position = Math.min(Math.max(0, player.currentTime || 0), player.duration);
+        const position = Math.min(Math.max(0, player.currentTime || 0), duration);
         const playbackRate = player.playbackRate || 1.0;
 
         // All parameters must be valid: duration > 0, position >= 0 && position <= duration, playbackRate != 0
         navigator.mediaSession.setPositionState({
-            duration: player.duration,
+            duration: duration,
             playbackRate: playbackRate,
             position: position
         });
 
         remoteLog('log', '[MediaSession] Position state updated', {
-            duration: player.duration,
+            duration: duration,
             position: position,
             playbackRate: playbackRate
         });
@@ -889,6 +897,7 @@ async function startStreamFromQueue(youtube_video_id, queue_id) {
 
             // Wait for audio file to be ready before playing
             showStreamStatus('Starting download from YouTube...');
+            serverAudioDuration = null; // Reset for new track
             const fileReady = await waitForAudioFile(data.youtube_video_id, 60);
 
             if (!fileReady) {
@@ -1582,6 +1591,7 @@ async function startStream() {
 
             // Wait for audio file to be ready before playing
             showStreamStatus('Starting download from YouTube...');
+            serverAudioDuration = null; // Reset for new track
             const fileReady = await waitForAudioFile(youtube_video_id, 60);
 
             if (!fileReady) {

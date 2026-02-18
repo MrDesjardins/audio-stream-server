@@ -11,6 +11,7 @@ from config import get_config
 from services.background_tasks import get_transcription_queue, TranscriptionJob
 from services.database import add_to_history, get_history, clear_history
 from services.path_utils import expand_path
+from services.streaming import get_audio_duration
 from services.youtube import get_video_metadata, extract_video_id
 
 logger = logging.getLogger(__name__)
@@ -181,19 +182,24 @@ def get_audio_file(video_id: str):
 
     if _audio_is_ready(video_id):
         file_size = audio_path.stat().st_size
+        headers = {
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "public, max-age=3600",
+            "Content-Length": str(file_size),
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Expose-Headers": "X-Audio-Duration",
+            "Connection": "keep-alive",
+        }
+        duration = get_audio_duration(video_id)
+        if duration is not None:
+            headers["X-Audio-Duration"] = str(duration)
 
         # FileResponse automatically handles streaming, chunking, and seeking (Range headers)
         return FileResponse(
             path=audio_path,
             media_type="audio/mpeg",
             filename=f"{video_id}.mp3",
-            headers={
-                "Accept-Ranges": "bytes",
-                "Cache-Control": "public, max-age=3600",
-                "Content-Length": str(file_size),
-                "Access-Control-Allow-Origin": "*",
-                "Connection": "keep-alive",
-            },
+            headers=headers,
         )
 
     return JSONResponse(
@@ -210,17 +216,18 @@ def check_audio_file(video_id: str):
 
     if _audio_is_ready(video_id):
         file_size = audio_path.stat().st_size
-        return JSONResponse(
-            status_code=200,
-            content={},
-            headers={
-                "Accept-Ranges": "bytes",
-                "Cache-Control": "public, max-age=3600",
-                "Content-Length": str(file_size),
-                "Content-Type": "audio/mpeg",
-                "Access-Control-Allow-Origin": "*",
-            },
-        )
+        headers = {
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "public, max-age=3600",
+            "Content-Length": str(file_size),
+            "Content-Type": "audio/mpeg",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Expose-Headers": "X-Audio-Duration",
+        }
+        duration = get_audio_duration(video_id)
+        if duration is not None:
+            headers["X-Audio-Duration"] = str(duration)
+        return JSONResponse(status_code=200, content={}, headers=headers)
 
     return JSONResponse(status_code=404, content={}, headers={"Retry-After": "2"})
 
