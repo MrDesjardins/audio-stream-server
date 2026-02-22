@@ -953,3 +953,18 @@ def clear_playback_position(youtube_id: str) -> None:
         cursor.execute(
             "DELETE FROM playback_positions WHERE youtube_id = ?", (youtube_id,)
         )
+
+
+def get_playback_positions_batch(youtube_ids: List[str]) -> Dict[str, PlaybackPosition]:
+    """Get playback positions for multiple video IDs in a single query."""
+    if not youtube_ids:
+        return {}
+    placeholders = ",".join("?" * len(youtube_ids))
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            f"SELECT * FROM playback_positions WHERE youtube_id IN ({placeholders})",
+            youtube_ids,
+        )
+        rows = cursor.fetchall()
+    return {row["youtube_id"]: PlaybackPosition.from_db_row(row) for row in rows}

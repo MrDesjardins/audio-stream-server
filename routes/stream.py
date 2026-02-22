@@ -18,6 +18,7 @@ from services.database import (
     save_playback_position,
     get_playback_position,
     clear_playback_position,
+    get_playback_positions_batch,
 )
 from services.path_utils import expand_path
 from services.streaming import (
@@ -313,6 +314,14 @@ def clear_play_history() -> JSONResponse:
 class SavePositionRequest(BaseModel):
     position_seconds: float
     duration_seconds: Optional[float] = None
+
+
+@router.get("/playback-positions")
+def get_positions_batch(ids: str = "") -> JSONResponse:
+    """Get playback positions for multiple video IDs (comma-separated ?ids= param)."""
+    youtube_ids = [vid.strip() for vid in ids.split(",") if vid.strip()]
+    positions = get_playback_positions_batch(youtube_ids)
+    return JSONResponse({vid: pos.to_dict() for vid, pos in positions.items()})
 
 
 @router.get("/playback-position/{video_id}")

@@ -1089,10 +1089,26 @@ async function renderQueue() {
         return;
     }
 
+    // Fetch saved positions for all youtube items in one request
+    const youtubeIds = queue
+        .filter(item => (item.type || 'youtube') === 'youtube')
+        .map(item => item.youtube_id);
+    let positions = {};
+    if (youtubeIds.length > 0) {
+        try {
+            const posRes = await fetch(`/playback-positions?ids=${youtubeIds.join(',')}`);
+            if (posRes.ok) positions = await posRes.json();
+        } catch (_) {}
+    }
+
     queueContainer.innerHTML = queue.map((item, index) => {
         const isCurrentlyPlaying = currentQueueId === item.id;
-        const positionBadge = `<span class="queue-position">${index + 1}</span>`;
         const itemType = item.type || 'youtube';
+        const savedPos = !isCurrentlyPlaying && itemType === 'youtube'
+            ? positions[item.youtube_id]
+            : null;
+        const hasResume = savedPos && savedPos.position_seconds > 30;
+        const positionBadge = `<span class="queue-position">${index + 1}</span>`;
 
         // Different icons and badges for different types
         let icon, badge, onClick;
@@ -1106,8 +1122,17 @@ async function renderQueue() {
             onClick = isCurrentlyPlaying ? '' : `startStreamFromQueue('${item.youtube_id}', ${item.id})`;
         }
 
+        let itemClasses = 'queue-item';
+        if (isCurrentlyPlaying) itemClasses += ' queue-item-playing';
+        if (hasResume) itemClasses += ' queue-item-last-started';
+
+        const resumeLabel = hasResume
+            ? `<span class="queue-resume-badge" title="Resume from ${formatTime(savedPos.position_seconds)}">` +
+              `<i class="fas fa-history"></i> ${formatTime(savedPos.position_seconds)}</span>`
+            : '';
+
         return `
-            <div class="queue-item ${isCurrentlyPlaying ? 'queue-item-playing' : ''}"
+            <div class="${itemClasses}"
                  data-queue-id="${item.id}"
                  draggable="true"
                  onclick="${onClick}">
@@ -1120,6 +1145,7 @@ async function renderQueue() {
                     ${icon}
                     <span class="queue-title">${escapeHtml(item.title)}</span>
                     ${badge}
+                    ${resumeLabel}
                     ${isCurrentlyPlaying ? '<i class="fas fa-volume-up queue-playing-icon"></i>' : ''}
                 </div>
                 <button onclick="event.stopPropagation(); removeFromQueue(${item.id})"
@@ -1584,6 +1610,12 @@ function getTimeAgo(isoTimestamp) {
     if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
     if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
     return new Date(timestamp).toLocaleDateString();
+}
+
+function formatTime(seconds) {
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
 function escapeHtml(text) {

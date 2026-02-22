@@ -568,6 +568,30 @@ main {
         var(--neu-flat);
 }
 
+/* Queue item with a saved resume position */
+.queue-item-last-started {
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(251, 191, 36, 0.05));
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    box-shadow:
+        inset 2px 2px 4px rgba(245, 158, 11, 0.08),
+        var(--neu-flat);
+}
+
+.queue-resume-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(245, 158, 11, 0.15);
+    color: rgba(245, 158, 11, 0.9);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    border-radius: 8px;
+    padding: 2px 7px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
 /* Queue item loading state - while download/init is in progress */
 .queue-item-loading {
     position: relative;
