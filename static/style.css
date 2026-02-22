@@ -807,7 +807,7 @@ main {
     cursor: not-allowed;
 }
 
-/* Player Section — fixed to bottom of viewport */
+/* Player Section — fixed to bottom of viewport, drag-to-snap */
 .player-section {
     position: fixed;
     bottom: 0;
@@ -819,13 +819,46 @@ main {
 
     background: var(--bg-elevated);
     border-radius: 20px 20px 0 0;
-    padding: 16px 20px;
+    padding: 0 20px 16px;
     box-shadow:
         0 -4px 24px rgba(0, 0, 0, 0.4),
         -6px -6px 12px var(--shadow-light);
     display: flex;
     flex-direction: column;
     gap: 12px;
+    will-change: transform;
+    /* transition set by JS; defined here as fallback */
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Drag handle */
+.player-drag-handle {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 10px 0 2px;
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+    width: 100%;
+}
+
+.player-drag-handle:active {
+    cursor: grabbing;
+}
+
+.player-drag-indicator {
+    width: 40px;
+    height: 4px;
+    background: var(--text-muted);
+    border-radius: 2px;
+    opacity: 0.45;
+    transition: opacity 0.2s, width 0.2s;
+}
+
+.player-drag-handle:hover .player-drag-indicator {
+    opacity: 0.75;
+    width: 52px;
 }
 
 /* Status Indicator */

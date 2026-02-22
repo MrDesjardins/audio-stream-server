@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>YouTube Radio</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link rel="stylesheet" href="/static/style.css?v=1770738925">
+    <link rel="stylesheet" href="/static/style.css?v=1770738926">
 </head>
 
 <body>
@@ -139,12 +139,11 @@
             </button>
         </footer>
 
-        <!-- Player bar — always visible, fixed to bottom -->
-        <div class="player-section">
-            <div class="status-indicator">
-                <span id="status-dot" class="status-dot"></span>
-                <i class="fas fa-broadcast-tower"></i>
-                <p id="status">Status: idle</p>
+        <!-- Player bar — always visible, fixed to bottom, drag-to-snap -->
+        <div class="player-section" id="player-section">
+            <!-- Drag handle -->
+            <div class="player-drag-handle" id="player-drag-handle">
+                <span class="player-drag-indicator"></span>
             </div>
 
             <!-- Audio player - source is set dynamically via JavaScript -->
@@ -157,6 +156,14 @@
                 <span id="stream-status-text">Reconnecting...</span>
             </div>
 
+            <!-- Status moved below audio (snap 3 hides this) -->
+            <div class="status-indicator">
+                <span id="status-dot" class="status-dot"></span>
+                <i class="fas fa-broadcast-tower"></i>
+                <p id="status">Status: idle</p>
+            </div>
+
+            <!-- Snap 2 hides this and below -->
             <div class="playback-controls">
                 <button onclick="rewind()" class="btn btn-control">
                     <i class="fas fa-backward"></i>
@@ -184,6 +191,7 @@
                 </button>
             </div>
 
+            <!-- Snap 1 hides this (bottommost) -->
             <div class="speed-controls">
                 <span class="speed-label">Speed:</span>
                 <button onclick="setSpeed(1.0)" class="btn btn-speed active" id="speed-1x">
@@ -219,7 +227,7 @@
     <script src="/static/update-checker.js?v=1737842302"></script>
 
     <!-- Main Application Script -->
-    <script src="/static/app.js?v=1771900000"></script>
+    <script src="/static/app.js?v=1771900001"></script>
 </body>
 
 </html>

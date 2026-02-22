@@ -2012,6 +2012,105 @@ document.addEventListener('visibilitychange', async function () {
     }
 });
 
+// ── Player Bar Drag-to-Snap ──────────────────────────────────────────────────
+// 4 snap levels (drag down = collapse from bottom):
+//   0 = full  |  1 = hide speed  |  2 = hide speed+controls  |  3 = hide all (audio only)
+(function initPlayerDrag() {
+    const bar = document.getElementById('player-section');
+    const handle = document.getElementById('player-drag-handle');
+    const container = document.querySelector('.container');
+    if (!bar || !handle) return;
+
+    const GAP = 12; // matches CSS gap on .player-section
+    let currentSnap = parseInt(localStorage.getItem('playerSnap') || '0', 10);
+    let isDragging = false;
+    let startY = 0;
+    let startTranslateY = 0;
+
+    function getSnapOffsets() {
+        const speed = bar.querySelector('.speed-controls');
+        const controls = bar.querySelector('.playback-controls');
+        const status = bar.querySelector('.status-indicator');
+        const s1 = speed.offsetHeight + GAP;
+        const s2 = s1 + controls.offsetHeight + GAP;
+        const s3 = s2 + status.offsetHeight + GAP;
+        return [0, s1, s2, s3];
+    }
+
+    function getCurrentTranslateY() {
+        const m = new DOMMatrix(getComputedStyle(bar).transform);
+        return m.m42;
+    }
+
+    function updateContainerPadding(translateY) {
+        const visible = Math.max(0, bar.offsetHeight - translateY);
+        container.style.paddingBottom = (visible + 20) + 'px';
+    }
+
+    function applySnap(snap, animate) {
+        currentSnap = Math.max(0, Math.min(3, snap));
+        localStorage.setItem('playerSnap', currentSnap);
+        const offsets = getSnapOffsets();
+        bar.style.transition = animate
+            ? 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+            : 'none';
+        bar.style.transform = `translateY(${offsets[currentSnap]}px)`;
+        updateContainerPadding(offsets[currentSnap]);
+    }
+
+    function getNearestSnap(y) {
+        const offsets = getSnapOffsets();
+        return offsets.reduce((best, offset, idx) =>
+            Math.abs(offset - y) < Math.abs(offsets[best] - y) ? idx : best, 0);
+    }
+
+    function onDragStart(clientY) {
+        isDragging = true;
+        startY = clientY;
+        startTranslateY = getCurrentTranslateY();
+        bar.style.transition = 'none';
+    }
+
+    function onDragMove(clientY) {
+        if (!isDragging) return;
+        const offsets = getSnapOffsets();
+        const delta = clientY - startY;
+        const newY = Math.max(0, Math.min(offsets[3], startTranslateY + delta));
+        bar.style.transform = `translateY(${newY}px)`;
+        updateContainerPadding(newY);
+    }
+
+    function onDragEnd() {
+        if (!isDragging) return;
+        isDragging = false;
+        applySnap(getNearestSnap(getCurrentTranslateY()), true);
+    }
+
+    // Touch events
+    handle.addEventListener('touchstart', (e) => {
+        onDragStart(e.touches[0].clientY);
+        e.preventDefault();
+    }, { passive: false });
+
+    window.addEventListener('touchmove', (e) => {
+        if (isDragging) { onDragMove(e.touches[0].clientY); e.preventDefault(); }
+    }, { passive: false });
+
+    window.addEventListener('touchend', onDragEnd);
+
+    // Mouse events
+    handle.addEventListener('mousedown', (e) => { onDragStart(e.clientY); e.preventDefault(); });
+    window.addEventListener('mousemove', (e) => { if (isDragging) onDragMove(e.clientY); });
+    window.addEventListener('mouseup', onDragEnd);
+
+    // Recalculate on resize (font/zoom may change heights)
+    window.addEventListener('resize', () => applySnap(currentSnap, false));
+
+    // Initialize from saved state after first paint
+    requestAnimationFrame(() => applySnap(currentSnap, false));
+})();
+// ── End Player Bar Drag-to-Snap ──────────────────────────────────────────────
+
 // Poll status every 3 seconds
 setInterval(fetchStatus, 3000);
 
