@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>YouTube Radio</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link rel="stylesheet" href="/static/style.css?v=1770738923">
+    <link rel="stylesheet" href="/static/style.css?v=1770738925">
 </head>
 
 <body>
@@ -76,67 +76,6 @@
                 </div>
             </div>
 
-            <div class="player-section">
-                <div class="status-indicator">
-                    <span id="status-dot" class="status-dot"></span>
-                    <i class="fas fa-broadcast-tower"></i>
-                    <p id="status">Status: idle</p>
-                </div>
-
-                <!-- Audio player - source is set dynamically via JavaScript -->
-                <!-- If playback fails, check your .env file FASTAPI_HOST setting -->
-                <audio id="player" controls playsinline preload="none">
-                    Your browser does not support audio.
-                </audio>
-                <div id="stream-status" class="stream-status hidden">
-                    <i class="fas fa-sync fa-spin"></i>
-                    <span id="stream-status-text">Reconnecting...</span>
-                </div>
-
-                <div class="playback-controls">
-                    <button onclick="rewind()" class="btn btn-control">
-                        <i class="fas fa-backward"></i>
-                        <span class="btn-label">-15s</span>
-                    </button>
-                    <button onclick="pauseAudio()" class="btn btn-control">
-                        <i class="fas fa-pause"></i>
-                        <span class="btn-label">Pause</span>
-                    </button>
-                    <button onclick="playAudio()" class="btn btn-control">
-                        <i class="fas fa-play"></i>
-                        <span class="btn-label">Play</span>
-                    </button>
-                    <button onclick="fastforward()" class="btn btn-control">
-                        <i class="fas fa-forward"></i>
-                        <span class="btn-label">+15s</span>
-                    </button>
-                    <button onclick="playNext()" class="btn btn-control btn-next">
-                        <i class="fas fa-step-forward"></i>
-                        <span class="btn-label">Next</span>
-                    </button>
-                    <button onclick="stopStream()" class="btn btn-control btn-stop">
-                        <i class="fas fa-stop"></i>
-                        <span class="btn-label">Stop</span>
-                    </button>
-                </div>
-
-                <div class="speed-controls">
-                    <span class="speed-label">Speed:</span>
-                    <button onclick="setSpeed(1.0)" class="btn btn-speed active" id="speed-1x">
-                        <span class="btn-label">1x</span>
-                    </button>
-                    <button onclick="setSpeed(1.15)" class="btn btn-speed" id="speed-1.15x">
-                        <span class="btn-label">1.15x</span>
-                    </button>
-                    <button onclick="setSpeed(1.3)" class="btn btn-speed" id="speed-1.3x">
-                        <span class="btn-label">1.3x</span>
-                    </button>
-                    <button onclick="setSpeed(1.5)" class="btn btn-speed" id="speed-1.5x">
-                        <span class="btn-label">1.5x</span>
-                    </button>
-                </div>
-            </div>
-
             {% if transcription_enabled %}
             <div class="transcription-section">
                 <div class="transcription-header">
@@ -199,6 +138,68 @@
                 <span>LLM Usage Statistics</span>
             </button>
         </footer>
+
+        <!-- Player bar — always visible, fixed to bottom -->
+        <div class="player-section">
+            <div class="status-indicator">
+                <span id="status-dot" class="status-dot"></span>
+                <i class="fas fa-broadcast-tower"></i>
+                <p id="status">Status: idle</p>
+            </div>
+
+            <!-- Audio player - source is set dynamically via JavaScript -->
+            <!-- If playback fails, check your .env file FASTAPI_HOST setting -->
+            <audio id="player" controls playsinline preload="none">
+                Your browser does not support audio.
+            </audio>
+            <div id="stream-status" class="stream-status hidden">
+                <i class="fas fa-sync fa-spin"></i>
+                <span id="stream-status-text">Reconnecting...</span>
+            </div>
+
+            <div class="playback-controls">
+                <button onclick="rewind()" class="btn btn-control">
+                    <i class="fas fa-backward"></i>
+                    <span class="btn-label">-15s</span>
+                </button>
+                <button onclick="pauseAudio()" class="btn btn-control">
+                    <i class="fas fa-pause"></i>
+                    <span class="btn-label">Pause</span>
+                </button>
+                <button onclick="playAudio()" class="btn btn-control">
+                    <i class="fas fa-play"></i>
+                    <span class="btn-label">Play</span>
+                </button>
+                <button onclick="fastforward()" class="btn btn-control">
+                    <i class="fas fa-forward"></i>
+                    <span class="btn-label">+15s</span>
+                </button>
+                <button onclick="playNext()" class="btn btn-control btn-next">
+                    <i class="fas fa-step-forward"></i>
+                    <span class="btn-label">Next</span>
+                </button>
+                <button onclick="stopStream()" class="btn btn-control btn-stop">
+                    <i class="fas fa-stop"></i>
+                    <span class="btn-label">Stop</span>
+                </button>
+            </div>
+
+            <div class="speed-controls">
+                <span class="speed-label">Speed:</span>
+                <button onclick="setSpeed(1.0)" class="btn btn-speed active" id="speed-1x">
+                    <span class="btn-label">1x</span>
+                </button>
+                <button onclick="setSpeed(1.15)" class="btn btn-speed" id="speed-1.15x">
+                    <span class="btn-label">1.15x</span>
+                </button>
+                <button onclick="setSpeed(1.3)" class="btn btn-speed" id="speed-1.3x">
+                    <span class="btn-label">1.3x</span>
+                </button>
+                <button onclick="setSpeed(1.5)" class="btn btn-speed" id="speed-1.5x">
+                    <span class="btn-label">1.5x</span>
+                </button>
+            </div>
+        </div>
     </div>
 
     <!-- Application Configuration - Injected from Server -->
@@ -218,7 +219,7 @@
     <script src="/static/update-checker.js?v=1737842302"></script>
 
     <!-- Main Application Script -->
-    <script src="/static/app.js?v=1770739505"></script>
+    <script src="/static/app.js?v=1771900000"></script>
 </body>
 
 </html>

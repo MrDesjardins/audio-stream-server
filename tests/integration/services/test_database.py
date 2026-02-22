@@ -8,6 +8,7 @@ from services.database import (
     add_to_queue,
     get_queue,
     get_next_in_queue,
+    get_queue_hash,
     remove_from_queue,
     clear_queue,
     reorder_queue,
@@ -450,3 +451,52 @@ class TestPlaybackPositions:
         assert d["position_seconds"] == 120.5
         assert d["duration_seconds"] == 3600.0
         assert "last_updated_at" in d
+
+
+class TestGetQueueHash:
+    """Tests for get_queue_hash() change-detection helper."""
+
+    def test_empty_queue_returns_zero(self, db_path):
+        """Empty queue produces hash of 0."""
+        init_database()
+        assert get_queue_hash() == 0
+
+    def test_hash_changes_when_item_added(self, db_path):
+        """Hash differs after adding an item."""
+        init_database()
+        h1 = get_queue_hash()
+        add_to_queue("vid1", "Video 1")
+        h2 = get_queue_hash()
+        assert h1 != h2
+
+    def test_hash_changes_when_item_removed(self, db_path):
+        """Hash differs after removing an item."""
+        init_database()
+        qid = add_to_queue("vid1", "Video 1")
+        h1 = get_queue_hash()
+        remove_from_queue(qid)
+        h2 = get_queue_hash()
+        assert h1 != h2
+
+    def test_hash_consistent_for_same_state(self, db_path):
+        """Calling hash twice with no changes returns the same value."""
+        init_database()
+        add_to_queue("vid1", "Video 1")
+        assert get_queue_hash() == get_queue_hash()
+
+    def test_hash_returns_zero_after_clear(self, db_path):
+        """Hash returns to 0 after the queue is cleared."""
+        init_database()
+        add_to_queue("vid1", "Video 1")
+        assert get_queue_hash() != 0
+        clear_queue()
+        assert get_queue_hash() == 0
+
+    def test_hash_differs_with_different_item_count(self, db_path):
+        """Hash is different when the queue has different numbers of items."""
+        init_database()
+        add_to_queue("vid1", "Video 1")
+        h1 = get_queue_hash()
+        add_to_queue("vid2", "Video 2")
+        h2 = get_queue_hash()
+        assert h1 != h2

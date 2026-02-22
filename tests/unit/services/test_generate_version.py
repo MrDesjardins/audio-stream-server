@@ -1,15 +1,13 @@
-"""Tests for version generation script."""
+"""Unit tests for version generation — all subprocess calls are mocked."""
 
 import json
 import subprocess
 from pathlib import Path
 from unittest.mock import patch, Mock
-import pytest
 
-# Import functions from generate_version
 import sys
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 from generate_version import get_git_hash, get_git_branch, generate_version_file
 
 
@@ -99,22 +97,10 @@ class TestGetGitBranch:
 
 
 class TestGenerateVersionFile:
-    """Tests for generate_version_file function."""
-
-    def test_version_file_creation_integration(self):
-        """Integration test: Should create version.json file."""
-        # This tests the actual function - we'll just verify it doesn't crash
-        # The real file will be created in static/version.json
-        try:
-            generate_version_file()
-            # If we get here, the function executed without errors
-            assert True
-        except Exception as e:
-            pytest.fail(f"generate_version_file() raised {e}")
+    """Unit tests for generate_version_file with mocked git and filesystem."""
 
     def test_version_file_structure(self, tmp_path):
         """Should create version file with correct JSON structure."""
-        # Create a test version file
         version_data = {
             "hash": "abc123",
             "branch": "main",
@@ -125,7 +111,6 @@ class TestGenerateVersionFile:
         with open(version_file, "w") as f:
             json.dump(version_data, f, indent=2)
 
-        # Read and verify
         with open(version_file, "r") as f:
             data = json.load(f)
 
@@ -138,7 +123,7 @@ class TestGenerateVersionFile:
     @patch("generate_version.get_git_hash")
     @patch("generate_version.get_git_branch")
     def test_handles_unknown_git_values(self, mock_branch, mock_hash, tmp_path):
-        """Should handle 'unknown' values from git commands."""
+        """Should handle 'unknown' values from git commands without raising."""
         mock_hash.return_value = "unknown"
         mock_branch.return_value = "unknown"
 
@@ -153,13 +138,12 @@ class TestGenerateVersionFile:
             )
             mock_path.return_value = instance
 
-            # Should not raise an error
             with patch("builtins.open", create=True):
                 generate_version_file()
 
 
 class TestVersionFileFormat:
-    """Tests for version file JSON format."""
+    """Tests for version file JSON format using temp files."""
 
     def test_version_json_is_valid_json(self, tmp_path):
         """Should produce valid JSON."""
@@ -173,7 +157,6 @@ class TestVersionFileFormat:
         with open(version_file, "w") as f:
             json.dump(version_data, f, indent=2)
 
-        # Should not raise JSONDecodeError
         with open(version_file, "r") as f:
             data = json.load(f)
 
@@ -212,58 +195,8 @@ class TestVersionFileFormat:
         with open(version_file, "r") as f:
             data = json.load(f)
 
-        # Verify ISO 8601 format
         assert isinstance(data["timestamp"], str)
         assert "T" in data["timestamp"]
-        # Should be parseable as datetime
         from datetime import datetime
 
         datetime.fromisoformat(data["timestamp"].replace("+00:00", "+00:00"))
-
-
-class TestIntegration:
-    """Integration tests for version generation."""
-
-    def test_real_git_commands_work(self):
-        """Should work with real git commands in repo."""
-        # Only run if we're in a git repo
-        try:
-            subprocess.run(
-                ["git", "rev-parse", "HEAD"],
-                capture_output=True,
-                check=True,
-            )
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            pytest.skip("Not in a git repository")
-
-        # Get real values
-        hash_val = get_git_hash()
-        branch_val = get_git_branch()
-
-        # Should return non-empty strings
-        assert isinstance(hash_val, str)
-        assert len(hash_val) > 0
-        assert hash_val != "unknown"
-
-        assert isinstance(branch_val, str)
-        assert len(branch_val) > 0
-        assert branch_val != "unknown"
-
-    def test_generated_file_is_readable(self):
-        """Should generate a file that is readable."""
-        from pathlib import Path
-
-        # Generate the file
-        generate_version_file()
-
-        # Read and verify it exists
-        version_file = Path(__file__).parent.parent / "static" / "version.json"
-        assert version_file.exists(), "version.json should be created"
-
-        # Verify it's valid JSON
-        with open(version_file, "r") as f:
-            data = json.load(f)
-
-        assert "hash" in data
-        assert "branch" in data
-        assert "timestamp" in data

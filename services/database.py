@@ -457,6 +457,15 @@ def clear_queue():
         logger.info("Queue cleared")
 
 
+def get_queue_hash() -> int:
+    """Return an integer representing current queue state for cheap change detection."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*), COALESCE(MAX(id), 0) FROM queue")
+        row = cursor.fetchone()
+        return row[1] * 10000 + row[0]
+
+
 def reorder_queue(queue_item_ids: List[int]) -> bool:
     """
     Reorder queue items by updating their positions.

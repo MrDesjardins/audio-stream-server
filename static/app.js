@@ -11,6 +11,9 @@ const transcriptionEnabled = appConfig.transcriptionEnabled;
 let currentVideoId = null;
 let currentQueueId = null;
 let isPlaying = false;
+let lastQueueHash = null;
+let loadingQueueId = null;
+let isDraggingQueue = false;
 let currentTrackTitle = null;
 let serverAudioDuration = null; // Authoritative duration from server (ffprobe)
 const defaultTitle = 'YouTube Radio';
@@ -389,6 +392,7 @@ player.addEventListener('playing', function () {
     }
 
     console.log('Playback started/resumed');
+    clearQueueItemLoading();
     hideStreamStatus();
     retryCount = 0; // Reset retry count when successfully playing
 
@@ -713,6 +717,25 @@ async function fetchSavedPosition(videoId) {
     }
 }
 
+async function refreshPositionFromServer() {
+    if (!currentVideoId) return;
+    try {
+        const res = await fetch(`/playback-position/${currentVideoId}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const serverPos = data.position_seconds || 0;
+        const drift = Math.abs(serverPos - player.currentTime);
+        if (drift > 15) {
+            remoteLog('log', 'Position sync: seeking to server position', {
+                local: Math.round(player.currentTime), server: Math.round(serverPos), drift: Math.round(drift)
+            });
+            player.currentTime = serverPos;
+        }
+    } catch (e) {
+        console.warn('Failed to refresh position from server:', e);
+    }
+}
+
 // Queue Management
 async function fetchQueue() {
     try {
@@ -897,6 +920,7 @@ async function playNext() {
 }
 
 async function startStreamFromQueue(youtube_video_id, queue_id) {
+    setQueueItemLoading(queue_id);
     // Reset position save throttle so first save of new track isn't suppressed
     lastPositionSaveTime = 0;
 
@@ -907,7 +931,7 @@ async function startStreamFromQueue(youtube_video_id, queue_id) {
         const res = await fetch('/stream', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ youtube_video_id, skip_transcription })
+            body: JSON.stringify({ youtube_video_id, skip_transcription, queue_id })
         });
         const data = await res.json();
         updateStatus(data.status || data.detail, res.ok ? 'streaming' : 'error');
@@ -973,9 +997,11 @@ async function startStreamFromQueue(youtube_video_id, queue_id) {
                 }
             });
         } else {
+            clearQueueItemLoading();
             updateStatus('Failed to start stream', 'error');
         }
     } catch (error) {
+        clearQueueItemLoading();
         updateStatus('Failed to start stream', 'error');
         console.error(error);
     }
@@ -983,6 +1009,7 @@ async function startStreamFromQueue(youtube_video_id, queue_id) {
 
 async function startSummaryFromQueue(weekYear, queue_id) {
     try {
+        setQueueItemLoading(queue_id);
         // For summaries, we directly play the audio file from the server
         updateStatus('Loading weekly summary...', 'streaming');
 
@@ -1020,13 +1047,33 @@ async function startSummaryFromQueue(weekYear, queue_id) {
             console.error('Audio playback failed:', e);
             updateStatus('Failed to play summary', 'error');
             isPlaying = false;
+            clearQueueItemLoading();
         });
 
         updateStatus('Playing: ' + (currentItem ? currentItem.title : 'Weekly Summary'), 'streaming');
     } catch (error) {
+        clearQueueItemLoading();
         updateStatus('Failed to play summary', 'error');
         console.error(error);
         isPlaying = false;
+    }
+}
+
+function setQueueItemLoading(queueId) {
+    loadingQueueId = queueId;
+    _applyQueueLoadingClass();
+}
+
+function clearQueueItemLoading() {
+    loadingQueueId = null;
+    _applyQueueLoadingClass();
+}
+
+function _applyQueueLoadingClass() {
+    document.querySelectorAll('.queue-item').forEach(el => el.classList.remove('queue-item-loading'));
+    if (loadingQueueId != null) {
+        const target = document.querySelector(`.queue-item[data-queue-id="${loadingQueueId}"]`);
+        if (target) target.classList.add('queue-item-loading');
     }
 }
 
@@ -1086,6 +1133,8 @@ async function renderQueue() {
 
     // Initialize drag-and-drop after rendering
     initializeQueueDragAndDrop();
+    // Restore loading shimmer if still active (survives DOM rebuild)
+    _applyQueueLoadingClass();
 }
 
 // Queue drag-and-drop functionality
@@ -1116,6 +1165,7 @@ function initializeQueueDragAndDrop() {
 }
 
 function handleDragStart(e) {
+    isDraggingQueue = true;
     draggedElement = this;
     this.classList.add('dragging');
     e.dataTransfer.effectAllowed = 'move';
@@ -1123,6 +1173,7 @@ function handleDragStart(e) {
 }
 
 function handleDragEnd(e) {
+    isDraggingQueue = false;
     this.classList.remove('dragging');
     // Remove all drag-over classes
     document.querySelectorAll('.queue-item').forEach(item => {
@@ -1211,6 +1262,7 @@ function handleTouchStart(e) {
 
     draggedElement = this;
     isTouchDragging = true;
+    isDraggingQueue = true;
 
     const touch = e.touches[0];
     touchStartY = touch.clientY;
@@ -1327,6 +1379,7 @@ async function handleTouchEnd(e) {
     draggedElement = null;
     draggedOverElement = null;
     isTouchDragging = false;
+    isDraggingQueue = false;
     touchStartY = 0;
     touchCurrentY = 0;
 }
@@ -1769,6 +1822,25 @@ async function fetchStatus() {
         const res = await fetch('/status');
         const data = await res.json();
         updateStatus(data.status, data.status);
+
+        // Queue sync: detect changes from other devices
+        const serverHash = data.queue_hash;
+        if (serverHash !== undefined) {
+            if (lastQueueHash !== null && lastQueueHash !== serverHash && !isDraggingQueue) {
+                remoteLog('log', 'Queue hash changed, refreshing queue', { old: lastQueueHash, new: serverHash });
+                await renderQueue();
+            }
+            lastQueueHash = serverHash;
+        }
+
+        // Sync "now playing" indicator when this device is passive (not playing).
+        // No status guard needed: backend correctly sets current_queue_id=null on /stop,
+        // so a non-null value always means something was started and not yet stopped.
+        const serverQueueId = data.current_queue_id;
+        if (serverQueueId !== undefined && serverQueueId !== currentQueueId && !isPlaying) {
+            currentQueueId = serverQueueId;
+            await renderQueue();
+        }
     } catch (error) {
         console.error('Failed to fetch status:', error);
     }
@@ -1928,6 +2000,17 @@ window.onclick = function (event) {
         closeSummaryModal();
     }
 }
+
+// Resync state when tab becomes visible again (e.g. switching from PC to phone)
+document.addEventListener('visibilitychange', async function () {
+    if (document.hidden) return;
+    remoteLog('log', 'Page became visible, resyncing state');
+    await fetchStatus();
+    await renderQueue();
+    if (currentVideoId && player.paused) {
+        await refreshPositionFromServer();
+    }
+});
 
 // Poll status every 3 seconds
 setInterval(fetchStatus, 3000);

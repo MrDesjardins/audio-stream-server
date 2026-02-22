@@ -1,4 +1,4 @@
-"""Tests for stream routes (download, audio serving, status, history)."""
+"""Unit tests for stream routes — all external dependencies are mocked."""
 
 import os
 import tempfile
@@ -9,7 +9,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from routes.stream import router, StreamState, init_stream_globals
+from routes.stream import router, StreamRequest, StreamState, init_stream_globals
 from services.models import PlayHistoryItem
 
 
@@ -170,6 +170,30 @@ class TestStreamState:
 
         mock_proc.kill.assert_called()
         wait_event.set()
+
+    def test_set_current_stores_values(self):
+        """set_current() stores video_id and queue_id."""
+        lock = threading.Lock()
+        state = StreamState(lock)
+        state.set_current("my_video", 42)
+        assert state.current_video_id == "my_video"
+        assert state.current_queue_id == 42
+
+    def test_set_current_clears_values(self):
+        """set_current(None, None) clears stored values."""
+        lock = threading.Lock()
+        state = StreamState(lock)
+        state.set_current("my_video", 42)
+        state.set_current(None, None)
+        assert state.current_video_id is None
+        assert state.current_queue_id is None
+
+    def test_current_properties_initially_none(self):
+        """New StreamState has current_video_id and current_queue_id as None."""
+        lock = threading.Lock()
+        state = StreamState(lock)
+        assert state.current_video_id is None
+        assert state.current_queue_id is None
 
 
 class TestStreamEndpoint:
@@ -457,6 +481,30 @@ class TestStopEndpoint:
         assert response.json()["status"] == "stream stopped"
 
     @patch("routes.stream.get_stream_state")
+    def test_stop_clears_current_state(self, mock_state, client):
+        """Successful stop calls set_current(None, None) to clear current IDs."""
+        state = Mock()
+        state.stop_stream = Mock(return_value=True)
+        mock_state.return_value = state
+
+        response = client.post("/stop")
+
+        assert response.status_code == 200
+        state.set_current.assert_called_once_with(None, None)
+
+    @patch("routes.stream.get_stream_state")
+    def test_stop_when_idle_does_not_clear_current(self, mock_state, client):
+        """When idle (stop_stream returns False), set_current is not called."""
+        state = Mock()
+        state.stop_stream = Mock(return_value=False)
+        mock_state.return_value = state
+
+        response = client.post("/stop")
+
+        assert response.status_code == 400
+        state.set_current.assert_not_called()
+
+    @patch("routes.stream.get_stream_state")
     def test_stop_when_idle(self, mock_state, client):
         """Returns 400 when nothing is running."""
         state = Mock()
@@ -472,11 +520,14 @@ class TestStopEndpoint:
 class TestStatusEndpoint:
     """Tests for GET /status."""
 
+    @patch("routes.stream.get_queue_hash", return_value=0)
     @patch("routes.stream.get_stream_state")
-    def test_status_streaming(self, mock_state, client):
+    def test_status_streaming(self, mock_state, mock_hash, client):
         """Returns 'streaming' when download is active."""
         state = Mock()
         state.is_streaming = Mock(return_value=True)
+        state.current_video_id = None
+        state.current_queue_id = None
         mock_state.return_value = state
 
         response = client.get("/status")
@@ -484,17 +535,72 @@ class TestStatusEndpoint:
         assert response.status_code == 200
         assert response.json()["status"] == "streaming"
 
+    @patch("routes.stream.get_queue_hash", return_value=0)
     @patch("routes.stream.get_stream_state")
-    def test_status_idle(self, mock_state, client):
+    def test_status_idle(self, mock_state, mock_hash, client):
         """Returns 'idle' when no download is active."""
         state = Mock()
         state.is_streaming = Mock(return_value=False)
+        state.current_video_id = None
+        state.current_queue_id = None
         mock_state.return_value = state
 
         response = client.get("/status")
 
         assert response.status_code == 200
         assert response.json()["status"] == "idle"
+
+    @patch("routes.stream.get_queue_hash", return_value=50001)
+    @patch("routes.stream.get_stream_state")
+    def test_status_includes_queue_hash_and_current(
+        self, mock_state, mock_hash, client
+    ):
+        """/status includes queue_hash, current_video_id, and current_queue_id."""
+        state = Mock()
+        state.is_streaming = Mock(return_value=True)
+        state.current_video_id = "abc123"
+        state.current_queue_id = 7
+        mock_state.return_value = state
+
+        response = client.get("/status")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["queue_hash"] == 50001
+        assert data["current_video_id"] == "abc123"
+        assert data["current_queue_id"] == 7
+
+    @patch("routes.stream.get_queue_hash", return_value=0)
+    @patch("routes.stream.get_stream_state")
+    def test_status_idle_fields_are_none(self, mock_state, mock_hash, client):
+        """When idle with no current track, video/queue ids are None."""
+        state = Mock()
+        state.is_streaming = Mock(return_value=False)
+        state.current_video_id = None
+        state.current_queue_id = None
+        mock_state.return_value = state
+
+        response = client.get("/status")
+
+        data = response.json()
+        assert data["current_video_id"] is None
+        assert data["current_queue_id"] is None
+        assert data["queue_hash"] == 0
+
+    @patch("routes.stream.get_queue_hash", side_effect=Exception("db error"))
+    @patch("routes.stream.get_stream_state")
+    def test_status_hash_failure_returns_zero(self, mock_state, mock_hash, client):
+        """If queue hash fails, status still returns with queue_hash=0."""
+        state = Mock()
+        state.is_streaming = Mock(return_value=False)
+        state.current_video_id = None
+        state.current_queue_id = None
+        mock_state.return_value = state
+
+        response = client.get("/status")
+
+        assert response.status_code == 200
+        assert response.json()["queue_hash"] == 0
 
 
 class TestHistoryEndpoints:
@@ -620,3 +726,109 @@ class TestPlaybackPositionRoutes:
             mock_clear.assert_called_once_with("vid1")
         assert res.status_code == 200
         assert res.json()["status"] == "cleared"
+
+
+class TestStreamRequestModel:
+    """Unit tests for StreamRequest Pydantic model fields."""
+
+    def test_queue_id_defaults_to_none(self):
+        """queue_id is optional and defaults to None when not supplied."""
+        req = StreamRequest(youtube_video_id="abc123")
+        assert req.queue_id is None
+
+    def test_queue_id_is_parsed_from_body(self):
+        """queue_id is accepted and stored correctly."""
+        req = StreamRequest(youtube_video_id="abc123", queue_id=42)
+        assert req.queue_id == 42
+
+    def test_queue_id_accepts_zero(self):
+        """queue_id=0 is a valid value (first DB row)."""
+        req = StreamRequest(youtube_video_id="abc123", queue_id=0)
+        assert req.queue_id == 0
+
+    def test_skip_transcription_defaults_to_false(self):
+        """skip_transcription defaults to False when omitted."""
+        req = StreamRequest(youtube_video_id="abc123")
+        assert req.skip_transcription is False
+
+
+class TestStreamEndpointSetCurrent:
+    """Verify that POST /stream propagates queue_id to StreamState.set_current()."""
+
+    @patch("routes.stream.get_stream_state")
+    @patch("routes.stream.config")
+    @patch("routes.stream.get_video_metadata")
+    @patch("routes.stream.extract_video_id")
+    @patch("routes.stream.add_to_history")
+    def test_set_current_called_with_queue_id(
+        self, mock_history, mock_extract, mock_metadata, mock_cfg, mock_state, client
+    ):
+        """When queue_id is supplied, state.set_current receives it."""
+        mock_extract.return_value = "vid_q"
+        mock_metadata.return_value = {
+            "title": "Queued Track",
+            "channel": None,
+            "thumbnail_url": None,
+        }
+        mock_cfg.transcription_enabled = False
+        state = Mock()
+        mock_state.return_value = state
+
+        response = client.post(
+            "/stream", json={"youtube_video_id": "vid_q", "queue_id": 99}
+        )
+
+        assert response.status_code == 200
+        state.set_current.assert_called_once_with("vid_q", 99)
+
+    @patch("routes.stream.get_stream_state")
+    @patch("routes.stream.config")
+    @patch("routes.stream.get_video_metadata")
+    @patch("routes.stream.extract_video_id")
+    @patch("routes.stream.add_to_history")
+    def test_set_current_called_with_none_when_no_queue_id(
+        self, mock_history, mock_extract, mock_metadata, mock_cfg, mock_state, client
+    ):
+        """When queue_id is omitted, state.set_current is called with None."""
+        mock_extract.return_value = "vid_direct"
+        mock_metadata.return_value = {
+            "title": "Direct Play",
+            "channel": None,
+            "thumbnail_url": None,
+        }
+        mock_cfg.transcription_enabled = False
+        state = Mock()
+        mock_state.return_value = state
+
+        response = client.post("/stream", json={"youtube_video_id": "vid_direct"})
+
+        assert response.status_code == 200
+        state.set_current.assert_called_once_with("vid_direct", None)
+
+    @patch("routes.stream.get_stream_state")
+    @patch("routes.stream.config")
+    @patch("routes.stream.get_video_metadata")
+    @patch("routes.stream.extract_video_id")
+    @patch("routes.stream.add_to_history")
+    def test_set_current_called_after_start_stream(
+        self, mock_history, mock_extract, mock_metadata, mock_cfg, mock_state, client
+    ):
+        """set_current is called *after* start_stream, preserving the call order."""
+        mock_extract.return_value = "vid_order"
+        mock_metadata.return_value = {
+            "title": "Order Test",
+            "channel": None,
+            "thumbnail_url": None,
+        }
+        mock_cfg.transcription_enabled = False
+        state = Mock()
+        call_order = []
+        state.start_stream.side_effect = lambda *a, **kw: call_order.append("start")
+        state.set_current.side_effect = lambda *a, **kw: call_order.append(
+            "set_current"
+        )
+        mock_state.return_value = state
+
+        client.post("/stream", json={"youtube_video_id": "vid_order", "queue_id": 5})
+
+        assert call_order == ["start", "set_current"]

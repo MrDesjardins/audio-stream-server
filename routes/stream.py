@@ -14,6 +14,7 @@ from services.database import (
     add_to_history,
     get_history,
     clear_history,
+    get_queue_hash,
     save_playback_position,
     get_playback_position,
     clear_playback_position,
@@ -35,6 +36,7 @@ config = get_config()
 class StreamRequest(BaseModel):
     youtube_video_id: str
     skip_transcription: bool = False
+    queue_id: Optional[int] = None
 
 
 class StreamState:
@@ -44,6 +46,8 @@ class StreamState:
         self._lock = lock
         self._current_process = None
         self._download_thread = None
+        self._current_video_id: Optional[str] = None
+        self._current_queue_id: Optional[int] = None
 
     def start_stream(self, video_id: str, skip_transcription: bool):
         """Start new download, stopping existing one."""
@@ -95,6 +99,21 @@ class StreamState:
         """Check if currently downloading."""
         with self._lock:
             return self._current_process is not None
+
+    @property
+    def current_video_id(self) -> Optional[str]:
+        with self._lock:
+            return self._current_video_id
+
+    @property
+    def current_queue_id(self) -> Optional[int]:
+        with self._lock:
+            return self._current_queue_id
+
+    def set_current(self, video_id: Optional[str], queue_id: Optional[int]) -> None:
+        with self._lock:
+            self._current_video_id = video_id
+            self._current_queue_id = queue_id
 
 
 # Global instance
@@ -170,6 +189,7 @@ def stream_video(request: StreamRequest) -> dict:
 
     # Start new stream (handles stopping existing stream internally)
     state.start_stream(video_id, request.skip_transcription)
+    state.set_current(video_id, request.queue_id)
 
     return {
         "status": "stream started",
@@ -246,6 +266,7 @@ def stop_stream() -> dict:
     """Stop the current stream."""
     state = get_stream_state()
     if state.stop_stream():
+        state.set_current(None, None)
         return {"status": "stream stopped"}
     raise HTTPException(status_code=400, detail="No stream running")
 
@@ -254,7 +275,17 @@ def stop_stream() -> dict:
 def get_status() -> dict:
     """Get the current streaming status."""
     state = get_stream_state()
-    return {"status": "streaming" if state.is_streaming() else "idle"}
+    try:
+        queue_hash = get_queue_hash()
+    except Exception as e:
+        logger.warning(f"Failed to compute queue hash: {e}")
+        queue_hash = 0
+    return {
+        "status": "streaming" if state.is_streaming() else "idle",
+        "current_video_id": state.current_video_id,
+        "current_queue_id": state.current_queue_id,
+        "queue_hash": queue_hash,
+    }
 
 
 @router.get("/history")
