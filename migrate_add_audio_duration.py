@@ -20,13 +20,6 @@ def migrate_add_audio_duration():
         print(f"❌ Database not found at {db_path}. Nothing to migrate.")
         return
 
-    # Create backup
-    backup_path = db_path.with_suffix(
-        f"{db_path.suffix}.backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    )
-    shutil.copy2(db_path, backup_path)
-    print(f"✅ Created backup: {backup_path}")
-
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
@@ -40,6 +33,13 @@ def migrate_add_audio_duration():
                 "✅ Column 'audio_duration_seconds' already exists. No migration needed."
             )
             return
+
+        # Create backup only when migration is actually needed
+        backup_path = db_path.with_suffix(
+            f"{db_path.suffix}.backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        )
+        shutil.copy2(db_path, backup_path)
+        print(f"✅ Created backup: {backup_path}")
 
         # Add the new column (nullable, since existing records won't have this data)
         print("Adding 'audio_duration_seconds' column...")

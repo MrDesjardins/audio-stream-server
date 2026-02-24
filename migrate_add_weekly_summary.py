@@ -56,16 +56,16 @@ def migrate_database():
         print(f"✗ Database not found at {DB_PATH}")
         return False
 
-    # Create backup
-    backup_path = backup_database()
-
     try:
         conn = sqlite3.connect(DB_PATH)
 
-        # Check if migration needed
+        # Check if migration needed before creating a backup
         if not check_if_migration_needed(conn):
             conn.close()
             return True
+
+        # Create backup only when migration is actually needed
+        backup_path = backup_database()
 
         cursor = conn.cursor()
 

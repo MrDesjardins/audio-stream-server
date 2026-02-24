@@ -39,14 +39,26 @@ def column_exists(cursor, table_name, column_name):
 
 def migrate():
     """Add channel and thumbnail_url columns to tables."""
-    backup_path = backup_database()
-
     if not os.path.exists(DB_PATH):
         logger.info("No database to migrate. New schema will be created on first run.")
         return
 
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
+
+    # Check if any columns are missing before creating a backup
+    needs_migration = (
+        not column_exists(cursor, "play_history", "channel")
+        or not column_exists(cursor, "play_history", "thumbnail_url")
+        or not column_exists(cursor, "queue", "channel")
+        or not column_exists(cursor, "queue", "thumbnail_url")
+    )
+    if not needs_migration:
+        logger.info("All columns already exist. No migration needed.")
+        conn.close()
+        return
+
+    backup_path = backup_database()
 
     try:
         # Migrate play_history table

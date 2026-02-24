@@ -74,7 +74,21 @@ uv run python migrate_add_weekly_summary.py
 uv run python -c "from services.database import init_database; init_database(); print('Database schema updated successfully')"
 
 echo ""
-echo "Step 6: Restarting service..."
+echo "Step 6: Cleaning up old database backups..."
+echo "----------------------------------------"
+KEEP_BACKUPS=5
+BACKUPS=$(ls -t audio_history.db.backup_* 2>/dev/null)
+BACKUP_COUNT=$(echo "$BACKUPS" | grep -c . 2>/dev/null || echo 0)
+if [ "$BACKUP_COUNT" -gt "$KEEP_BACKUPS" ]; then
+    TO_DELETE=$((BACKUP_COUNT - KEEP_BACKUPS))
+    echo "$BACKUPS" | tail -n +"$((KEEP_BACKUPS + 1))" | xargs rm -f
+    echo "✓ Removed $TO_DELETE old backup(s), kept $KEEP_BACKUPS most recent"
+else
+    echo "✓ $BACKUP_COUNT backup(s) found, no cleanup needed"
+fi
+
+echo ""
+echo "Step 7: Restarting service..."
 echo "----------------------------------------"
 if [ "$SERVICE_RUNNING" = true ]; then
     echo "Restarting audio-stream service..."
