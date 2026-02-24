@@ -15,7 +15,7 @@ git push origin main
 
 # SSH into remote and run update script
 echo "Deploying to $REMOTE_HOST..."
-ssh "$REMOTE_USER@$REMOTE_HOST" "cd $REMOTE_DIR && ./update.sh"
+ssh "$REMOTE_USER@$REMOTE_HOST" "$REMOTE_DIR/update.sh"
 
 echo ""
 echo "Deploy complete!"
