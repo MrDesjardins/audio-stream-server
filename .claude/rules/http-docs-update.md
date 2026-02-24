@@ -1,0 +1,4 @@
+- When adding, removing, or modifying any HTTP endpoint in routes/*.py or main.py, update docs/http_requests.md to reflect the change
+- When changing any fetch() call in static/app.js (URL, HTTP method, trigger condition, or response handling), update docs/http_requests.md
+- Diagrams use Mermaid sequenceDiagram syntax; keep them concise but accurate
+- If a new user-facing action introduces a new flow, add a new numbered section to docs/http_requests.md

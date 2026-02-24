@@ -16,6 +16,7 @@ let loadingQueueId = null;
 let isDraggingQueue = false;
 let currentTrackTitle = null;
 let serverAudioDuration = null; // Authoritative duration from server (ffprobe)
+let currentSpeed = 1.0; // Persists playback rate across track switches
 const defaultTitle = 'YouTube Radio';
 
 // Prefetch configuration
@@ -577,6 +578,19 @@ function updatePositionState() {
     }
 }
 
+// Reset MediaSession position state when starting a new track
+// Prevents old track's scrub position from persisting while new track loads
+function resetPositionState() {
+    if (!('mediaSession' in navigator) || !navigator.mediaSession.setPositionState) {
+        return;
+    }
+    try {
+        navigator.mediaSession.setPositionState({});
+    } catch (e) {
+        // setPositionState({}) not supported in all browsers; ignore
+    }
+}
+
 // Set up MediaSession for lock screen and car display controls
 function setupMediaSession(trackInfo) {
     if (!('mediaSession' in navigator)) {
@@ -957,6 +971,7 @@ async function startStreamFromQueue(youtube_video_id, queue_id) {
             // Wait for audio file to be ready before playing
             showStreamStatus('Starting download from YouTube...');
             serverAudioDuration = null; // Reset for new track
+            resetPositionState(); // Clear old scrub position from MediaSession
             const fileReady = await waitForAudioFile(data.youtube_video_id, 60);
 
             if (!fileReady) {
@@ -987,6 +1002,7 @@ async function startStreamFromQueue(youtube_video_id, queue_id) {
             }
 
             player.load();
+            player.playbackRate = currentSpeed; // Reapply speed (src change can reset it)
 
             hideStreamStatus();
 
@@ -1104,7 +1120,10 @@ async function renderQueue() {
     queueContainer.innerHTML = queue.map((item, index) => {
         const isCurrentlyPlaying = currentQueueId === item.id;
         const itemType = item.type || 'youtube';
-        const savedPos = !isCurrentlyPlaying && itemType === 'youtube'
+        // Show resume badge unless the track is *actively* playing right now.
+        // current_queue_id stays set on the server even after the stream goes idle,
+        // so we use isPlaying (local state) to distinguish "playing now" from "last played".
+        const savedPos = itemType === 'youtube' && !(isCurrentlyPlaying && isPlaying)
             ? positions[item.youtube_id]
             : null;
         const hasResume = savedPos && savedPos.position_seconds > 30;
@@ -1126,10 +1145,20 @@ async function renderQueue() {
         if (isCurrentlyPlaying) itemClasses += ' queue-item-playing';
         if (hasResume) itemClasses += ' queue-item-last-started';
 
-        const resumeLabel = hasResume
-            ? `<span class="queue-resume-badge" title="Resume from ${formatTime(savedPos.position_seconds)}">` +
-              `<i class="fas fa-history"></i> ${formatTime(savedPos.position_seconds)}</span>`
-            : '';
+        let resumeLabel = '';
+        if (hasResume) {
+            const pos = savedPos.position_seconds;
+            const dur = savedPos.duration_seconds;
+            const posStr = formatTime(pos);
+            const durStr = dur ? formatTime(dur) : null;
+            const remaining = dur ? dur - pos : null;
+            const tooltip = remaining !== null
+                ? `At ${posStr} of ${durStr} · ${formatTime(remaining)} left`
+                : `Resume from ${posStr}`;
+            const label = durStr ? `${posStr} / ${durStr}` : posStr;
+            resumeLabel = `<span class="queue-resume-badge" title="${tooltip}">` +
+                `<i class="fas fa-history"></i> ${label}</span>`;
+        }
 
         return `
             <div class="${itemClasses}"
@@ -1613,8 +1642,12 @@ function getTimeAgo(isoTimestamp) {
 }
 
 function formatTime(seconds) {
-    const m = Math.floor(seconds / 60);
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
     const s = Math.floor(seconds % 60);
+    if (h > 0) {
+        return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    }
     return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
@@ -1732,6 +1765,7 @@ async function startStream() {
             // Wait for audio file to be ready before playing
             showStreamStatus('Starting download from YouTube...');
             serverAudioDuration = null; // Reset for new track
+            resetPositionState(); // Clear old scrub position from MediaSession
             const fileReady = await waitForAudioFile(youtube_video_id, 60);
 
             if (!fileReady) {
@@ -1747,6 +1781,7 @@ async function startStream() {
 
             player.src = audioUrl;
             player.load();
+            player.playbackRate = currentSpeed; // Reapply speed (src change can reset it)
 
             hideStreamStatus();
 
@@ -1819,6 +1854,7 @@ function fastforward() {
 }
 
 function setSpeed(speed) {
+    currentSpeed = speed;
     player.playbackRate = speed;
 
     // Update active button styling

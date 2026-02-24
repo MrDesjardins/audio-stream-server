@@ -727,6 +727,43 @@ class TestPlaybackPositionRoutes:
         assert res.status_code == 200
         assert res.json()["status"] == "cleared"
 
+    def test_batch_get_returns_matching_positions(self, client):
+        """GET /playback-positions returns dict keyed by video ID."""
+        from services.models import PlaybackPosition
+
+        positions = {
+            "vid1": PlaybackPosition("vid1", 120.0, 600.0, "2026-01-01T00:00:00+00:00"),
+            "vid2": PlaybackPosition("vid2", 45.0, None, "2026-01-01T00:00:00+00:00"),
+        }
+        with patch(
+            "routes.stream.get_playback_positions_batch", return_value=positions
+        ):
+            res = client.get("/playback-positions?ids=vid1,vid2")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["vid1"]["position_seconds"] == 120.0
+        assert data["vid2"]["position_seconds"] == 45.0
+
+    def test_batch_get_empty_ids_returns_empty(self, client):
+        """GET /playback-positions with no ids returns empty dict."""
+        with patch("routes.stream.get_playback_positions_batch", return_value={}):
+            res = client.get("/playback-positions")
+        assert res.status_code == 200
+        assert res.json() == {}
+
+    def test_batch_get_strips_whitespace_from_ids(self, client):
+        """GET /playback-positions trims whitespace from each ID."""
+        from services.models import PlaybackPosition
+
+        positions = {
+            "vid1": PlaybackPosition("vid1", 30.0, None, "2026-01-01T00:00:00+00:00")
+        }
+        with patch(
+            "routes.stream.get_playback_positions_batch", return_value=positions
+        ) as mock_batch:
+            client.get("/playback-positions?ids=vid1, vid2 ")
+            mock_batch.assert_called_once_with(["vid1", "vid2"])
+
 
 class TestStreamRequestModel:
     """Unit tests for StreamRequest Pydantic model fields."""

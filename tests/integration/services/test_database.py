@@ -17,6 +17,7 @@ from services.database import (
     save_playback_position,
     get_playback_position,
     clear_playback_position,
+    get_playback_positions_batch,
 )
 
 # Note: The temp_db fixture from conftest.py is used automatically
@@ -451,6 +452,26 @@ class TestPlaybackPositions:
         assert d["position_seconds"] == 120.5
         assert d["duration_seconds"] == 3600.0
         assert "last_updated_at" in d
+
+    def test_batch_returns_only_matching_ids(self, db_path):
+        """Batch query returns positions only for IDs that exist."""
+        init_database()
+        save_playback_position("vid1", 10.0, 100.0)
+        save_playback_position("vid2", 20.0, 200.0)
+        result = get_playback_positions_batch(["vid1", "vid2", "vid3"])
+        assert set(result.keys()) == {"vid1", "vid2"}
+        assert result["vid1"].position_seconds == 10.0
+        assert result["vid2"].position_seconds == 20.0
+
+    def test_batch_empty_ids_returns_empty(self, db_path):
+        """Batch query with no IDs returns empty dict without hitting DB."""
+        init_database()
+        assert get_playback_positions_batch([]) == {}
+
+    def test_batch_no_matches_returns_empty(self, db_path):
+        """Batch query where none of the IDs exist returns empty dict."""
+        init_database()
+        assert get_playback_positions_batch(["ghost1", "ghost2"]) == {}
 
 
 class TestGetQueueHash:

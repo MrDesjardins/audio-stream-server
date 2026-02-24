@@ -719,6 +719,7 @@ main {
     font-size: 1rem;
     animation: pulse-icon 2s ease-in-out infinite;
     flex-shrink: 0;
+    margin-right: 6px;
 }
 
 @keyframes pulse-icon {
@@ -860,7 +861,7 @@ main {
     display: flex;
     justify-content: center;
     align-items: center;
-    padding: 10px 0 2px;
+    padding: 18px 0 14px;
     cursor: grab;
     touch-action: none;
     user-select: none;
@@ -872,17 +873,18 @@ main {
 }
 
 .player-drag-indicator {
-    width: 40px;
-    height: 4px;
+    width: 44px;
+    height: 5px;
     background: var(--text-muted);
-    border-radius: 2px;
-    opacity: 0.45;
+    border-radius: 3px;
+    opacity: 0.5;
     transition: opacity 0.2s, width 0.2s;
 }
 
-.player-drag-handle:hover .player-drag-indicator {
-    opacity: 0.75;
-    width: 52px;
+.player-drag-handle:hover .player-drag-indicator,
+.player-drag-handle:active .player-drag-indicator {
+    opacity: 0.85;
+    width: 56px;
 }
 
 /* Status Indicator */
