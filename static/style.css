@@ -506,9 +506,9 @@ main {
 
 .queue-item {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 12px 14px;
+    flex-direction: column;
+    align-items: stretch;
+    padding: 10px 14px;
     background: var(--bg-primary);
     border-radius: 14px;
     cursor: pointer;
@@ -554,8 +554,8 @@ main {
     flex: none;
 }
 
-.queue-item-playing .queue-info,
-.queue-item-playing .btn-remove-queue {
+.queue-item-playing .queue-row-top,
+.queue-item-playing .queue-row-bottom {
     position: relative;
     z-index: 1;
 }
@@ -592,6 +592,16 @@ main {
     white-space: nowrap;
 }
 
+.queue-duration-badge {
+    display: inline-flex;
+    align-items: center;
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    font-weight: 500;
+    opacity: 0.6;
+    white-space: nowrap;
+}
+
 /* Queue item loading state - while download/init is in progress */
 .queue-item-loading {
     position: relative;
@@ -615,9 +625,8 @@ main {
     z-index: 0;
 }
 
-.queue-item-loading .queue-info,
-.queue-item-loading .btn-remove-queue,
-.queue-item-loading .queue-drag-handle {
+.queue-item-loading .queue-row-top,
+.queue-item-loading .queue-row-bottom {
     position: relative;
     z-index: 1;
     opacity: 0.7;
@@ -633,13 +642,13 @@ main {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 24px;
-    height: 24px;
-    color: var(--text-secondary);
+    width: 20px;
+    height: 20px;
+    font-size: 0.8rem;
+    color: var(--text-muted);
     cursor: grab;
-    opacity: 0.5;
+    opacity: 0.4;
     transition: opacity 0.3s ease;
-    margin-right: 8px;
 }
 
 .queue-item:hover .queue-drag-handle {
@@ -675,12 +684,21 @@ main {
     transition: none;
 }
 
-.queue-info {
+.queue-row-top {
     display: flex;
     align-items: center;
-    gap: 10px;
-    flex: 1;
+    gap: 8px;
     overflow: hidden;
+}
+
+.queue-row-bottom {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 4px;
+    padding-top: 6px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    color: var(--text-muted);
 }
 
 .queue-position {
@@ -698,7 +716,8 @@ main {
     box-shadow: 0 2px 8px var(--accent-glow);
 }
 
-.queue-info i.fab {
+.queue-row-top i.fab,
+.queue-row-top i.fas.fa-calendar-week {
     color: var(--error-color);
     font-size: 1rem;
     flex-shrink: 0;
@@ -719,7 +738,6 @@ main {
     font-size: 1rem;
     animation: pulse-icon 2s ease-in-out infinite;
     flex-shrink: 0;
-    margin-right: 6px;
 }
 
 @keyframes pulse-icon {
@@ -728,26 +746,25 @@ main {
 }
 
 .btn-remove-queue {
-    background: var(--bg-elevated);
+    background: transparent;
     border: none;
-    border-radius: 10px;
-    padding: 6px 10px;
+    border-radius: 8px;
+    padding: 3px 8px;
     cursor: pointer;
     color: var(--text-muted);
     transition: all 0.3s ease;
     flex-shrink: 0;
-    box-shadow: var(--neu-flat);
+    font-size: 0.8rem;
+    box-shadow: none;
 }
 
 .btn-remove-queue:hover {
     color: var(--error-color);
-    box-shadow: var(--neu-raised-sm);
-    transform: translateY(-1px);
+    background: rgba(239, 68, 68, 0.08);
 }
 
 .btn-remove-queue:active {
-    transform: translateY(0);
-    box-shadow: var(--neu-pressed);
+    transform: scale(0.92);
 }
 
 .queue-controls {
@@ -1993,7 +2010,6 @@ audio {
     .queue-drag-handle {
         width: 32px;
         padding: 8px;
-        margin-right: 4px;
         opacity: 0.7;
     }
 

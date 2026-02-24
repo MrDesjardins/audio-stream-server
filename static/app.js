@@ -1158,6 +1158,10 @@ async function renderQueue() {
             const label = durStr ? `${posStr} / ${durStr}` : posStr;
             resumeLabel = `<span class="queue-resume-badge" title="${tooltip}">` +
                 `<i class="fas fa-history"></i> ${label}</span>`;
+        } else if (savedPos && savedPos.duration_seconds) {
+            const durStr = formatTime(savedPos.duration_seconds);
+            resumeLabel = `<span class="queue-duration-badge" title="Duration: ${durStr}">` +
+                `0:00 / ${durStr}</span>`;
         }
 
         return `
@@ -1166,22 +1170,24 @@ async function renderQueue() {
                  draggable="true"
                  onclick="${onClick}">
                 ${isCurrentlyPlaying ? '<div class="queue-progress-bar"></div>' : ''}
-                <div class="queue-drag-handle" title="Drag to reorder" onclick="event.stopPropagation();">
-                    <i class="fas fa-grip-vertical"></i>
-                </div>
-                <div class="queue-info">
+                <div class="queue-row-top">
                     ${positionBadge}
                     ${icon}
                     <span class="queue-title">${escapeHtml(item.title)}</span>
                     ${badge}
-                    ${resumeLabel}
                     ${isCurrentlyPlaying ? '<i class="fas fa-volume-up queue-playing-icon"></i>' : ''}
                 </div>
-                <button onclick="event.stopPropagation(); removeFromQueue(${item.id})"
-                        class="btn-remove-queue"
-                        title="Remove from queue">
-                    <i class="fas fa-times"></i>
-                </button>
+                <div class="queue-row-bottom">
+                    <div class="queue-drag-handle" title="Drag to reorder" onclick="event.stopPropagation();">
+                        <i class="fas fa-grip-vertical"></i>
+                    </div>
+                    ${resumeLabel}
+                    <button onclick="event.stopPropagation(); removeFromQueue(${item.id})"
+                            class="btn-remove-queue"
+                            title="Remove from queue">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
             </div>
         `;
     }).join('');
