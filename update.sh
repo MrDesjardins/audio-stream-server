@@ -10,6 +10,9 @@ echo "Audio Stream Server - Update"
 echo "========================================="
 echo ""
 
+# Ensure uv is in PATH (SSH non-interactive sessions don't source ~/.bashrc)
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+
 # Store the current directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
