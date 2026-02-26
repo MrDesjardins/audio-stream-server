@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>YouTube Radio</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link rel="stylesheet" href="/static/style.css?v=1771900009">
+    <link rel="stylesheet" href="/static/style.css?v=1772075939">
 </head>
 
 <body>
@@ -141,26 +141,27 @@
 
         <!-- Player bar — always visible, fixed to bottom, drag-to-snap -->
         <div class="player-section" id="player-section">
-            <!-- Drag handle -->
+            <!-- Drag handle (pill indicator) -->
             <div class="player-drag-handle" id="player-drag-handle">
                 <span class="player-drag-indicator"></span>
             </div>
 
+            <!-- Status — above audio, always visible, also a drag surface -->
+            <div class="status-indicator" id="player-status-handle">
+                <span id="status-dot" class="status-dot"></span>
+                <i class="fas fa-broadcast-tower"></i>
+                <p id="status">Status: idle</p>
+            </div>
+
             <!-- Audio player - source is set dynamically via JavaScript -->
             <!-- If playback fails, check your .env file FASTAPI_HOST setting -->
+            <!-- Snap 3 hides this and below -->
             <audio id="player" controls playsinline preload="none">
                 Your browser does not support audio.
             </audio>
             <div id="stream-status" class="stream-status hidden">
                 <i class="fas fa-sync fa-spin"></i>
                 <span id="stream-status-text">Reconnecting...</span>
-            </div>
-
-            <!-- Status moved below audio (snap 3 hides this) -->
-            <div class="status-indicator">
-                <span id="status-dot" class="status-dot"></span>
-                <i class="fas fa-broadcast-tower"></i>
-                <p id="status">Status: idle</p>
             </div>
 
             <!-- Snap 2 hides this and below -->
@@ -194,17 +195,20 @@
             <!-- Snap 1 hides this (bottommost) -->
             <div class="speed-controls">
                 <span class="speed-label">Speed:</span>
-                <button onclick="setSpeed(1.0)" class="btn btn-speed active" id="speed-1x">
+                <button onclick="setSpeed(1.0)" class="btn btn-speed" id="speed-1x">
                     <span class="btn-label">1x</span>
                 </button>
                 <button onclick="setSpeed(1.15)" class="btn btn-speed" id="speed-1.15x">
                     <span class="btn-label">1.15x</span>
                 </button>
-                <button onclick="setSpeed(1.3)" class="btn btn-speed" id="speed-1.3x">
-                    <span class="btn-label">1.3x</span>
+                <button onclick="setSpeed(1.25)" class="btn btn-speed" id="speed-1.25x">
+                    <span class="btn-label">1.25x</span>
                 </button>
-                <button onclick="setSpeed(1.5)" class="btn btn-speed" id="speed-1.5x">
-                    <span class="btn-label">1.5x</span>
+                <button onclick="setSpeed(1.35)" class="btn btn-speed" id="speed-1.35x">
+                    <span class="btn-label">1.35x</span>
+                </button>
+                <button onclick="setSpeed(1.45)" class="btn btn-speed" id="speed-1.45x">
+                    <span class="btn-label">1.45x</span>
                 </button>
             </div>
         </div>
@@ -227,7 +231,7 @@
     <script src="/static/update-checker.js?v=1737842302"></script>
 
     <!-- Main Application Script -->
-    <script src="/static/app.js?v=1771900009"></script>
+    <script src="/static/app.js?v=1772075939"></script>
 </body>
 
 </html>

@@ -6,7 +6,7 @@ const statusDot = document.getElementById('status-dot');
 const statusText = document.getElementById('status');
 const streamStatus = document.getElementById('stream-status');
 const streamStatusText = document.getElementById('stream-status-text');
-const MAX_HISTORY_ITEMS = 10;
+const MAX_HISTORY_ITEMS = 5;
 const transcriptionEnabled = appConfig.transcriptionEnabled;
 let currentVideoId = null;
 let currentQueueId = null;
@@ -18,6 +18,25 @@ let currentTrackTitle = null;
 let serverAudioDuration = null; // Authoritative duration from server (ffprobe)
 let currentSpeed = 1.0; // Persists playback rate across track switches
 const defaultTitle = 'YouTube Radio';
+
+// Soft click/tap feedback via Web Audio API (no external dependency)
+let _audioCtx = null;
+function playClickSound() {
+    try {
+        if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const ctx = _audioCtx;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = 880;
+        osc.type = 'sine';
+        gain.gain.setValueAtTime(0.07, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.08);
+    } catch (e) { /* audio not available, ignore */ }
+}
 
 // Prefetch configuration
 const prefetchThresholdSeconds = appConfig.prefetchThresholdSeconds;
@@ -166,6 +185,26 @@ window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', (e
 
 // Initialize theme on page load
 initTheme();
+
+// Speed persistence — restore saved playback speed from localStorage
+function initSpeed() {
+    const saved = parseFloat(localStorage.getItem('playbackSpeed') || '1.0');
+    if (!isNaN(saved) && saved > 0) {
+        currentSpeed = saved;
+    }
+    // Highlight the matching button; fall back to 1x if the saved value no longer exists
+    document.querySelectorAll('.btn-speed').forEach(btn => btn.classList.remove('active'));
+    const activeBtn = document.getElementById(`speed-${currentSpeed}x`);
+    if (activeBtn) {
+        activeBtn.classList.add('active');
+    } else {
+        currentSpeed = 1.0;
+        localStorage.setItem('playbackSpeed', '1.0');
+        const btn1x = document.getElementById('speed-1x');
+        if (btn1x) btn1x.classList.add('active');
+    }
+}
+initSpeed();
 
 // File polling functions
 async function waitForAudioFile(videoId, maxWaitSeconds = 60) {
@@ -397,6 +436,14 @@ player.addEventListener('playing', function () {
     hideStreamStatus();
     retryCount = 0; // Reset retry count when successfully playing
 
+    // Mark body as playing (used for queue icon pulse animation)
+    document.body.classList.add('audio-playing');
+
+    // Reapply playback speed — some browsers silently reset it on load/play
+    if (player.playbackRate !== currentSpeed) {
+        player.playbackRate = currentSpeed;
+    }
+
     // Update MediaSession playback state
     if ('mediaSession' in navigator && navigator.mediaSession.playbackState !== undefined) {
         navigator.mediaSession.playbackState = 'playing';
@@ -418,6 +465,9 @@ player.addEventListener('pause', function () {
     if (!isRetrying) {
         hideStreamStatus();
     }
+
+    // Remove playing marker (stops queue icon pulse animation)
+    document.body.classList.remove('audio-playing');
 
     // Update MediaSession playback state
     if ('mediaSession' in navigator && navigator.mediaSession.playbackState !== undefined) {
@@ -1134,11 +1184,15 @@ async function renderQueue() {
         if (itemType === 'summary') {
             icon = '<i class="fas fa-calendar-week"></i>';
             badge = '<span class="queue-badge summary-badge">Summary</span>';
-            onClick = isCurrentlyPlaying ? '' : `startSummaryFromQueue('${item.week_year}', ${item.id})`;
+            onClick = isCurrentlyPlaying
+                ? 'playClickSound(); toggleCurrentTrack()'
+                : `playClickSound(); startSummaryFromQueue('${item.week_year}', ${item.id})`;
         } else {
             icon = '<i class="fab fa-youtube"></i>';
             badge = '';
-            onClick = isCurrentlyPlaying ? '' : `startStreamFromQueue('${item.youtube_id}', ${item.id})`;
+            onClick = isCurrentlyPlaying
+                ? 'playClickSound(); toggleCurrentTrack()'
+                : `playClickSound(); startStreamFromQueue('${item.youtube_id}', ${item.id})`;
         }
 
         let itemClasses = 'queue-item';
@@ -1175,19 +1229,19 @@ async function renderQueue() {
                     ${icon}
                     <span class="queue-title">${escapeHtml(item.title)}</span>
                     ${badge}
-                    ${isCurrentlyPlaying ? '<i class="fas fa-volume-up queue-playing-icon"></i>' : ''}
                 </div>
                 <div class="queue-row-bottom">
                     <div class="queue-drag-handle" title="Drag to reorder" onclick="event.stopPropagation();">
                         <i class="fas fa-grip-vertical"></i>
                     </div>
+                    ${isCurrentlyPlaying ? '<span class="playing-bars"><span></span><span></span><span></span></span>' : ''}
                     ${resumeLabel}
-                    <button onclick="event.stopPropagation(); removeFromQueue(${item.id})"
-                            class="btn-remove-queue"
-                            title="Remove from queue">
-                        <i class="fas fa-times"></i>
-                    </button>
                 </div>
+                <button onclick="event.stopPropagation(); playClickSound(); removeFromQueue(${item.id})"
+                        class="btn-remove-queue"
+                        title="Remove from queue">
+                    <i class="fas fa-times"></i>
+                </button>
             </div>
         `;
     }).join('');
@@ -1206,6 +1260,12 @@ let touchStartY = 0;
 let touchCurrentY = 0;
 let isTouchDragging = false;
 
+// Swipe-to-remove state (horizontal swipe on queue items)
+let swipeItem = null;
+let swipeStartX = 0;
+let swipeStartY = 0;
+let swipeAxis = null; // 'h' = horizontal (remove), 'v' = vertical (scroll)
+
 function initializeQueueDragAndDrop() {
     const queueItems = document.querySelectorAll('.queue-item');
 
@@ -1217,11 +1277,17 @@ function initializeQueueDragAndDrop() {
         item.addEventListener('drop', handleDrop);
         item.addEventListener('dragleave', handleDragLeave);
 
-        // Touch events for mobile
+        // Touch events for mobile drag-to-reorder (only activates via .queue-drag-handle)
         item.addEventListener('touchstart', handleTouchStart, { passive: false });
         item.addEventListener('touchmove', handleTouchMove, { passive: false });
         item.addEventListener('touchend', handleTouchEnd);
         item.addEventListener('touchcancel', handleTouchEnd);
+
+        // Touch events for swipe-to-remove (activates on item body, not drag handle)
+        item.addEventListener('touchstart', handleSwipeTouchStart, { passive: true });
+        item.addEventListener('touchmove', handleSwipeTouchMove, { passive: false });
+        item.addEventListener('touchend', handleSwipeTouchEnd);
+        item.addEventListener('touchcancel', handleSwipeTouchCancel);
     });
 }
 
@@ -1445,6 +1511,78 @@ async function handleTouchEnd(e) {
     touchCurrentY = 0;
 }
 
+// ── Swipe-to-remove handlers ─────────────────────────────────────────────────
+function handleSwipeTouchStart(e) {
+    // Skip if touching the drag handle or remove button (those have their own handlers)
+    if (e.target.closest('.queue-drag-handle') || e.target.closest('.btn-remove-queue')) return;
+    // Skip if a drag-to-reorder is already in progress
+    if (isTouchDragging) return;
+    swipeItem = this;
+    swipeStartX = e.touches[0].clientX;
+    swipeStartY = e.touches[0].clientY;
+    swipeAxis = null;
+}
+
+function handleSwipeTouchMove(e) {
+    if (!swipeItem || swipeItem !== this) return;
+    // If drag-to-reorder started after our swipestart, abort swipe
+    if (isTouchDragging) { swipeItem = null; swipeAxis = null; return; }
+
+    const dx = e.touches[0].clientX - swipeStartX;
+    const dy = e.touches[0].clientY - swipeStartY;
+
+    if (!swipeAxis) {
+        if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return; // too small to decide
+        swipeAxis = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
+    }
+
+    if (swipeAxis === 'h') {
+        e.preventDefault(); // prevent page scroll during horizontal swipe
+        this.style.transform = `translateX(${dx}px)`;
+        this.style.opacity = String(Math.max(0.3, 1 - Math.abs(dx) / 180));
+    }
+}
+
+async function handleSwipeTouchEnd(e) {
+    if (!swipeItem || swipeItem !== this || swipeAxis !== 'h') {
+        swipeItem = null; swipeAxis = null;
+        return;
+    }
+    e.preventDefault(); // prevent the click event from firing after a swipe
+    const dx = e.changedTouches[0].clientX - swipeStartX;
+    const el = this;
+    swipeItem = null;
+    swipeAxis = null;
+
+    if (Math.abs(dx) >= 90) {
+        // Confirmed swipe — fly out and remove
+        playClickSound();
+        const queueId = parseInt(el.dataset.queueId);
+        el.style.transition = 'transform 0.25s ease, opacity 0.25s ease';
+        el.style.transform = `translateX(${dx > 0 ? 110 : -110}%)`;
+        el.style.opacity = '0';
+        setTimeout(() => removeFromQueue(queueId), 250);
+    } else {
+        // Not far enough — snap back
+        el.style.transition = 'transform 0.3s ease, opacity 0.3s ease';
+        el.style.transform = '';
+        el.style.opacity = '';
+        setTimeout(() => { el.style.transition = ''; }, 300);
+    }
+}
+
+function handleSwipeTouchCancel() {
+    if (swipeItem && swipeItem === this) {
+        this.style.transition = 'transform 0.3s ease, opacity 0.3s ease';
+        this.style.transform = '';
+        this.style.opacity = '';
+        setTimeout(() => { this.style.transition = ''; }, 300);
+        swipeItem = null;
+        swipeAxis = null;
+    }
+}
+// ── End swipe-to-remove ───────────────────────────────────────────────────────
+
 // Auto-play next track when current track ends
 player.addEventListener('ended', async function () {
     console.log('Track ended, playing next...');
@@ -1466,7 +1604,7 @@ const weeklySummaryEnabled = appConfig.weeklySummaryEnabled;
 
 async function fetchWeeklySummaries() {
     try {
-        const res = await fetch('/weekly-summaries?limit=10');
+        const res = await fetch('/weekly-summaries?limit=5');
         const data = await res.json();
         return data || [];
     } catch (e) {
@@ -1574,7 +1712,7 @@ async function playSummary(weekYear) {
 // History Management
 async function fetchHistory() {
     try {
-        const res = await fetch('/history');
+        const res = await fetch(`/history?limit=${MAX_HISTORY_ITEMS}`);
         const data = await res.json();
         return data.history || [];
     } catch (e) {
@@ -1841,6 +1979,20 @@ function pauseAudio() {
     player.pause();
 }
 
+// Toggle play/pause on the currently-selected queue item.
+// Also handles the "came back after stopping" case: if no src is loaded, restart the queue.
+function toggleCurrentTrack() {
+    if (!player.src || player.src === window.location.href) {
+        playQueue();
+        return;
+    }
+    if (player.paused) {
+        player.play().catch(e => console.error('Failed to resume track:', e));
+    } else {
+        player.pause();
+    }
+}
+
 async function playAudio() {
     // If nothing is loaded/playing, start the queue
     if (!player.src || player.src === '' || (!isPlaying && player.paused && player.currentTime === 0)) {
@@ -1862,17 +2014,12 @@ function fastforward() {
 function setSpeed(speed) {
     currentSpeed = speed;
     player.playbackRate = speed;
+    localStorage.setItem('playbackSpeed', String(speed));
 
     // Update active button styling
-    document.querySelectorAll('.btn-speed').forEach(btn => {
-        btn.classList.remove('active');
-    });
-
-    const speedId = `speed-${speed}x`;
-    const activeBtn = document.getElementById(speedId);
-    if (activeBtn) {
-        activeBtn.classList.add('active');
-    }
+    document.querySelectorAll('.btn-speed').forEach(btn => btn.classList.remove('active'));
+    const activeBtn = document.getElementById(`speed-${speed}x`);
+    if (activeBtn) activeBtn.classList.add('active');
 
     console.log(`Playback speed set to ${speed}x`);
 }
@@ -2088,10 +2235,13 @@ document.addEventListener('visibilitychange', async function () {
 
 // ── Player Bar Drag-to-Snap ──────────────────────────────────────────────────
 // 4 snap levels (drag down = collapse from bottom):
-//   0 = full  |  1 = hide speed  |  2 = hide speed+controls  |  3 = hide all (audio only)
+//   0 = full  |  1 = hide speed  |  2 = hide speed+controls  |  3 = hide audio too
+// Status indicator is always visible (it sits above the audio element).
+// Both the pill handle and the status bar are draggable surfaces.
 (function initPlayerDrag() {
     const bar = document.getElementById('player-section');
     const handle = document.getElementById('player-drag-handle');
+    const statusHandle = document.getElementById('player-status-handle');
     const container = document.querySelector('.container');
     if (!bar || !handle) return;
 
@@ -2104,10 +2254,10 @@ document.addEventListener('visibilitychange', async function () {
     function getSnapOffsets() {
         const speed = bar.querySelector('.speed-controls');
         const controls = bar.querySelector('.playback-controls');
-        const status = bar.querySelector('.status-indicator');
+        const audio = bar.querySelector('audio');
         const s1 = speed.offsetHeight + GAP;
         const s2 = s1 + controls.offsetHeight + GAP;
-        const s3 = s2 + status.offsetHeight + GAP;
+        const s3 = s2 + audio.offsetHeight + GAP;
         return [0, s1, s2, s3];
     }
 
@@ -2160,11 +2310,19 @@ document.addEventListener('visibilitychange', async function () {
         applySnap(getNearestSnap(getCurrentTranslateY()), true);
     }
 
-    // Touch events
-    handle.addEventListener('touchstart', (e) => {
-        onDragStart(e.touches[0].clientY);
-        e.preventDefault();
-    }, { passive: false });
+    // Helper: attach drag-start to any element
+    function attachDragStart(el) {
+        if (!el) return;
+        el.addEventListener('touchstart', (e) => {
+            onDragStart(e.touches[0].clientY);
+            e.preventDefault();
+        }, { passive: false });
+        el.addEventListener('mousedown', (e) => { onDragStart(e.clientY); e.preventDefault(); });
+    }
+
+    // Both the pill handle and the status bar trigger drag
+    attachDragStart(handle);
+    attachDragStart(statusHandle);
 
     window.addEventListener('touchmove', (e) => {
         if (isDragging) { onDragMove(e.touches[0].clientY); e.preventDefault(); }
@@ -2173,7 +2331,6 @@ document.addEventListener('visibilitychange', async function () {
     window.addEventListener('touchend', onDragEnd);
 
     // Mouse events
-    handle.addEventListener('mousedown', (e) => { onDragStart(e.clientY); e.preventDefault(); });
     window.addEventListener('mousemove', (e) => { if (isDragging) onDragMove(e.clientY); });
     window.addEventListener('mouseup', onDragEnd);
 
