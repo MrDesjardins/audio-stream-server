@@ -31,10 +31,10 @@ function playClickSound() {
         gain.connect(ctx.destination);
         osc.frequency.value = 880;
         osc.type = 'sine';
-        gain.gain.setValueAtTime(0.07, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
+        gain.gain.setValueAtTime(0.18, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
         osc.start(ctx.currentTime);
-        osc.stop(ctx.currentTime + 0.08);
+        osc.stop(ctx.currentTime + 0.18);
     } catch (e) { /* audio not available, ignore */ }
 }
 
@@ -1645,7 +1645,7 @@ async function renderWeeklySummaries() {
 
         return `
             <div class="summary-item ${hasAudio ? '' : 'no-audio'}">
-                <div class="summary-info" onclick="${hasAudio ? `playSummary('${item.week_year}')` : ''}">
+                <div class="summary-info" onclick="${hasAudio ? `playClickSound(); playSummary('${item.week_year}')` : ''}">
                     ${audioIcon}
                     <span class="summary-title">${escapeHtml(item.title)}</span>
                 </div>
@@ -1753,7 +1753,7 @@ async function renderHistory() {
 
         return `
             <div class="history-item">
-                <div class="history-info" onclick="loadFromHistory('${item.youtube_id}')">
+                <div class="history-info" onclick="playClickSound(); loadFromHistory('${item.youtube_id}')">
                     <i class="fab fa-youtube"></i>
                     <span class="history-title">${escapeHtml(item.title)}</span>
                 </div>
