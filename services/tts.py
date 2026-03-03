@@ -4,9 +4,11 @@ Text-to-Speech service supporting multiple providers (OpenAI, ElevenLabs).
 Handles audio generation from text and file management.
 """
 
+import asyncio
 import re
 import logging
 from typing import Optional, Literal, List
+import edge_tts
 from elevenlabs.client import ElevenLabs
 from bs4 import BeautifulSoup
 
@@ -16,7 +18,7 @@ from services.database import log_llm_usage
 
 logger = logging.getLogger(__name__)
 
-TTSProvider = Literal["openai", "elevenlabs"]
+TTSProvider = Literal["openai", "elevenlabs", "edge"]
 
 
 class TTSError(Exception):
@@ -319,6 +321,59 @@ def _generate_audio_elevenlabs(
     return b"".join(audio_parts)
 
 
+async def _stream_edge_tts(text: str, voice: str) -> bytes:
+    """Stream audio from Microsoft Edge TTS and return MP3 bytes."""
+    communicate = edge_tts.Communicate(text, voice)
+    audio_parts: List[bytes] = []
+    async for chunk in communicate.stream():
+        if chunk["type"] == "audio":
+            audio_parts.append(chunk["data"])
+    return b"".join(audio_parts)
+
+
+def _generate_audio_edge_tts(
+    text: str,
+    voice: str = "en-US-AriaNeural",
+    feature: str = "tts",
+    video_id: Optional[str] = None,
+) -> bytes:
+    """
+    Generate audio using Microsoft Edge TTS (free, no API key required).
+
+    Args:
+        text: Text to convert to speech
+        voice: Edge TTS voice name (e.g. en-US-AriaNeural, en-US-GuyNeural)
+        feature: Feature name for tracking (default: "tts")
+        video_id: Associated video ID for tracking (optional)
+
+    Returns:
+        MP3 audio data as bytes
+
+    Raises:
+        TTSAPIError: If Edge TTS request fails
+    """
+    logger.info(f"Generating Edge TTS audio ({len(text)} chars, voice={voice})")
+    try:
+        audio_data = asyncio.run(_stream_edge_tts(text, voice))
+    except Exception as e:
+        raise TTSAPIError(f"Edge TTS failed: {e}")
+
+    try:
+        log_llm_usage(
+            provider="edge",
+            model="edge-tts",
+            feature=feature,
+            prompt_tokens=len(text),
+            response_tokens=0,
+            video_id=video_id,
+            metadata={"character_count": len(text), "voice": voice},
+        )
+    except Exception as e:
+        logger.warning(f"Failed to track Edge TTS usage: {e}")
+
+    return audio_data
+
+
 def generate_audio(
     text: str,
     api_key: Optional[str] = None,
@@ -334,7 +389,7 @@ def generate_audio(
     Args:
         text: Text to convert to speech
         api_key: API key for the provider (required for ElevenLabs, optional for OpenAI)
-        provider: TTS provider to use ("openai" or "elevenlabs")
+        provider: TTS provider to use ("openai", "elevenlabs", or "edge")
         voice: Voice ID/name (provider-specific)
         model: Model ID (provider-specific)
         feature: Feature name for usage tracking (default: "tts")
@@ -356,6 +411,8 @@ def generate_audio(
             - voice: Must be provided
             - model: "eleven_flash_v2_5"
             - api_key: Required
+        Edge (free, no API key required):
+            - voice: "en-US-AriaNeural" (options: en-US-AriaNeural, en-US-GuyNeural, etc.)
     """
     if provider == "openai":
         voice = voice or "alloy"
@@ -371,6 +428,10 @@ def generate_audio(
         return _generate_audio_elevenlabs(
             text, voice, api_key, model, feature=feature, video_id=video_id
         )
+
+    elif provider == "edge":
+        voice = voice or "en-US-AriaNeural"
+        return _generate_audio_edge_tts(text, voice, feature, video_id)
 
     else:
         raise ValueError(f"Unsupported TTS provider: {provider}")

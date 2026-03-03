@@ -619,7 +619,7 @@ def _generate_and_attach_tts(
                     model=config.openai_tts_model,
                     feature="weekly_summary_tts",
                 )
-            else:  # elevenlabs
+            elif config.tts_provider == "elevenlabs":
                 if not config.elevenlabs_api_key:
                     raise ValueError("ElevenLabs API key not configured")
                 audio_data = generate_audio(
@@ -628,6 +628,13 @@ def _generate_and_attach_tts(
                     provider="elevenlabs",
                     voice=config.elevenlabs_voice_id,
                     model=config.elevenlabs_model_id,
+                    feature="weekly_summary_tts",
+                )
+            else:  # edge
+                audio_data = generate_audio(
+                    text=tts_text,
+                    provider="edge",
+                    voice=config.edge_tts_voice,
                     feature="weekly_summary_tts",
                 )
             duration = save_audio_file(audio_data, audio_path)

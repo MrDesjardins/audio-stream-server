@@ -104,12 +104,13 @@ class Config:
 
     # TTS settings
     tts_enabled: bool
-    tts_provider: Literal["openai", "elevenlabs"]
+    tts_provider: Literal["openai", "elevenlabs", "edge"]
     openai_tts_voice: str  # OpenAI voice (alloy, echo, fable, onyx, nova, shimmer)
     openai_tts_model: str  # OpenAI model (tts-1 or tts-1-hd)
     elevenlabs_api_key: Optional[str]
     elevenlabs_voice_id: str
     elevenlabs_model_id: str
+    edge_tts_voice: str  # Edge TTS voice (e.g. en-US-AriaNeural, en-US-GuyNeural)
     weekly_summary_audio_dir: str
 
     # Client-side logging settings
@@ -199,8 +200,8 @@ class Config:
             # TTS settings
             tts_enabled=os.getenv("TTS_ENABLED", "false").lower() == "true",
             tts_provider=cast(
-                Literal["openai", "elevenlabs"],
-                os.getenv("TTS_PROVIDER", "openai").lower(),
+                Literal["openai", "elevenlabs", "edge"],
+                os.getenv("TTS_PROVIDER", "edge").lower(),
             ),
             openai_tts_voice=os.getenv("OPENAI_TTS_VOICE", "alloy"),
             openai_tts_model=os.getenv("OPENAI_TTS_MODEL", "tts-1"),
@@ -209,6 +210,7 @@ class Config:
                 "ELEVENLABS_VOICE_ID", "pNInz6obpgDQGcFmaJgB"
             ),  # Adam - free voice
             elevenlabs_model_id=os.getenv("ELEVENLABS_MODEL_ID", "eleven_flash_v2_5"),
+            edge_tts_voice=os.getenv("EDGE_TTS_VOICE", "en-US-AriaNeural"),
             weekly_summary_audio_dir=os.getenv(
                 "WEEKLY_SUMMARY_AUDIO_DIR", "/var/audio-summaries"
             ),
@@ -345,9 +347,9 @@ class Config:
         errors = []
 
         # Validate TTS provider
-        if self.tts_provider not in ["openai", "elevenlabs"]:
+        if self.tts_provider not in ["openai", "elevenlabs", "edge"]:
             errors.append(
-                f"TTS_PROVIDER must be 'openai' or 'elevenlabs', got '{self.tts_provider}'"
+                f"TTS_PROVIDER must be 'openai', 'elevenlabs', or 'edge', got '{self.tts_provider}'"
             )
 
         # Validate provider-specific configuration
@@ -359,6 +361,7 @@ class Config:
                 errors.append(
                     "ELEVENLABS_API_KEY is required when TTS_PROVIDER=elevenlabs"
                 )
+        # "edge" provider needs no API key — no extra validation needed
 
         if errors:
             error_msg = "TTS configuration validation failed:\n  - " + "\n  - ".join(
