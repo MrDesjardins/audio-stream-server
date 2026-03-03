@@ -5,6 +5,8 @@ import logging
 import threading
 import signal
 import atexit
+import ipaddress
+from typing import Optional
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
@@ -191,14 +193,30 @@ app.include_router(admin_router)
 app.include_router(weekly_summaries_router)
 
 
+def _is_on_wireguard(client_ip: str, wireguard_subnet: Optional[str]) -> bool:
+    """Return True if client IP is within the configured WireGuard subnet (or no subnet is set)."""
+    if not wireguard_subnet:
+        return True
+    try:
+        network = ipaddress.ip_network(wireguard_subnet, strict=False)
+        return ipaddress.ip_address(client_ip) in network
+    except ValueError:
+        logger.warning(f"Invalid WIREGUARD_SUBNET value: {wireguard_subnet!r}")
+        return True
+
+
 @app.get("/")
 def index(request: Request) -> HTMLResponse:
     """Serve the main HTML page."""
     server_host = request.url.hostname
     client = request.client
-    logger.info(f"📄 Index page requested by {client.host if client else 'unknown'}")
+    client_ip = client.host if client else ""
+    logger.info(f"📄 Index page requested by {client_ip or 'unknown'}")
     logger.info(
         f"   Audio files served from: http://{server_host}:{api_port}/audio/{{video_id}}"
+    )
+    vpn_warning = config.wireguard_subnet is not None and not _is_on_wireguard(
+        client_ip, config.wireguard_subnet
     )
     return templates.TemplateResponse(
         "index.html",
@@ -213,6 +231,7 @@ def index(request: Request) -> HTMLResponse:
             "prefetch_threshold_seconds": config.prefetch_threshold_seconds,
             "trilium_url": config.trilium_url,
             "client_log_batch_interval": config.client_log_batch_interval,
+            "vpn_warning": vpn_warning,
         },
     )
 

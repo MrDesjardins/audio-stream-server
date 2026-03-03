@@ -188,6 +188,46 @@ body {
     flex-direction: column;
 }
 
+/* VPN Warning Banner */
+.vpn-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(245, 158, 11, 0.15);
+    border: 1px solid rgba(245, 158, 11, 0.4);
+    border-radius: 10px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    color: #f59e0b;
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+.vpn-banner i.fa-shield-alt {
+    font-size: 1.1rem;
+    flex-shrink: 0;
+}
+
+.vpn-banner span {
+    flex: 1;
+}
+
+.vpn-banner-close {
+    background: none;
+    border: none;
+    color: #f59e0b;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    opacity: 0.7;
+    flex-shrink: 0;
+}
+
+.vpn-banner-close:hover {
+    opacity: 1;
+    background: rgba(245, 158, 11, 0.2);
+}
+
 /* Header */
 header {
     text-align: center;

@@ -18,6 +18,16 @@
             <h1><i class="fab fa-youtube"></i> Private YouTube Radio</h1>
         </header>
 
+        {% if vpn_warning %}
+        <div class="vpn-banner" id="vpn-banner">
+            <i class="fas fa-shield-alt"></i>
+            <span>You are not connected to the WireGuard VPN. Turn it on for a secure connection.</span>
+            <button class="vpn-banner-close" onclick="document.getElementById('vpn-banner').remove()" aria-label="Dismiss">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        {% endif %}
+
         <main>
             <div class="control-section">
                 <div class="input-group">

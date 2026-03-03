@@ -116,6 +116,11 @@ class Config:
     # Client-side logging settings
     client_log_batch_interval: int  # Milliseconds between log batches
 
+    # WireGuard VPN settings
+    wireguard_subnet: Optional[
+        str
+    ]  # e.g. "10.13.13.0/24" — warn if client is not in this subnet
+
     @classmethod
     def load_from_env(cls) -> "Config":
         """Load configuration from environment variables."""
@@ -218,6 +223,8 @@ class Config:
             client_log_batch_interval=_parse_int(
                 os.getenv("CLIENT_LOG_BATCH_INTERVAL", "5000"), 5000, 1000, 60000
             ),  # 1-60 seconds
+            # WireGuard VPN settings
+            wireguard_subnet=os.getenv("WIREGUARD_SUBNET") or None,
         )
 
         # Validate configuration if transcription is enabled
