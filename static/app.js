@@ -2342,6 +2342,22 @@ document.addEventListener('visibilitychange', async function () {
 })();
 // ── End Player Bar Drag-to-Snap ──────────────────────────────────────────────
 
+// Re-check VPN status when the tab regains focus so the banner auto-dismisses
+// if the user turns on WireGuard and switches back.
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+        fetch('/vpn-status')
+            .then(r => r.json())
+            .then(data => {
+                const banner = document.getElementById('vpn-banner');
+                if (banner && !data.vpn_warning) {
+                    banner.remove();
+                }
+            })
+            .catch(() => {}); // Silently ignore network errors
+    }
+});
+
 // Poll status every 3 seconds
 setInterval(fetchStatus, 3000);
 

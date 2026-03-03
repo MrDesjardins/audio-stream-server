@@ -10,7 +10,7 @@ from typing import Optional
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -203,6 +203,16 @@ def _is_on_wireguard(client_ip: str, wireguard_subnet: Optional[str]) -> bool:
     except ValueError:
         logger.warning(f"Invalid WIREGUARD_SUBNET value: {wireguard_subnet!r}")
         return True
+
+
+@app.get("/vpn-status")
+def vpn_status(request: Request) -> JSONResponse:
+    """Return whether the client is currently on the WireGuard VPN."""
+    client = request.client
+    client_ip = client.host if client else ""
+    on_vpn = _is_on_wireguard(client_ip, config.wireguard_subnet)
+    vpn_warning = config.wireguard_subnet is not None and not on_vpn
+    return JSONResponse({"vpn_warning": vpn_warning})
 
 
 @app.get("/")

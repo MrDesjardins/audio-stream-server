@@ -550,6 +550,7 @@ All 33 endpoints across 5 route files plus `main.py`:
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/` | Main HTML page with injected `window.appConfig` |
+| GET | `/vpn-status` | Check if client IP is within the WireGuard subnet |
 
 ### routes/stream.py
 | Method | Path | Description |
