@@ -162,6 +162,10 @@
                 <i class="fas fa-broadcast-tower"></i>
                 <p id="status">Status: idle</p>
             </div>
+            <div id="stream-status" class="stream-status hidden">
+                <i class="fas fa-sync fa-spin"></i>
+                <span id="stream-status-text">Reconnecting...</span>
+            </div>
 
             <!-- Audio player - source is set dynamically via JavaScript -->
             <!-- If playback fails, check your .env file FASTAPI_HOST setting -->
@@ -169,10 +173,6 @@
             <audio id="player" controls playsinline preload="none">
                 Your browser does not support audio.
             </audio>
-            <div id="stream-status" class="stream-status hidden">
-                <i class="fas fa-sync fa-spin"></i>
-                <span id="stream-status-text">Reconnecting...</span>
-            </div>
 
             <!-- Snap 2 hides this and below -->
             <div class="playback-controls">

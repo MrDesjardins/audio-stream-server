@@ -928,7 +928,37 @@ const suggestAudiobooks = suggestVideos;
 async function removeFromQueue(queueId) {
     try {
         await fetch(`/queue/${queueId}`, { method: 'DELETE' });
-        await renderQueue();
+
+        if (queueId === currentQueueId) {
+            // The currently playing track was removed — stop and play the next one
+            player.pause();
+            isPlaying = false;
+            currentQueueId = null;
+            cancelRetry();
+            updateWindowTitle(null);
+            hideStreamStatus();
+            await fetch('/stop', { method: 'POST' });
+
+            // Reset progress bar
+            const progressBar = document.querySelector('.queue-progress-bar');
+            if (progressBar) progressBar.style.width = '0%';
+
+            // Play from the queue (first remaining item) without removing it
+            const queue = await fetchQueue();
+            if (queue.length === 0) {
+                updateStatus('Queue is empty', 'idle');
+                await renderQueue();
+            } else {
+                const nextItem = queue[0];
+                if (nextItem.type === 'summary') {
+                    await startSummaryFromQueue(nextItem.week_year, nextItem.id);
+                } else {
+                    await startStreamFromQueue(nextItem.youtube_id, nextItem.id);
+                }
+            }
+        } else {
+            await renderQueue();
+        }
     } catch (e) {
         console.error('Error removing from queue:', e);
     }
