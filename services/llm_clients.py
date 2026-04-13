@@ -8,6 +8,7 @@ These wrappers ensure that:
 """
 
 import logging
+import time
 from typing import Optional, Any, Dict
 
 import httpx
@@ -20,6 +21,36 @@ from services.api_clients import get_openai_client
 from services.database import log_llm_usage
 
 logger = logging.getLogger(__name__)
+
+GEMINI_TEXT_RETRY_ATTEMPTS = 4
+GEMINI_TEXT_RETRY_DELAYS_SECONDS = [15, 60, 180]
+
+
+def _get_status_code(error: Exception) -> Optional[int]:
+    """Extract an HTTP-style status code from SDK exceptions when available."""
+    status_code = getattr(error, "status_code", None)
+    if isinstance(status_code, int):
+        return status_code
+    return None
+
+
+def _is_retryable_gemini_error(error: Exception) -> bool:
+    """Return True for transient Gemini failures worth retrying."""
+    status_code = _get_status_code(error)
+    if status_code is not None:
+        return status_code in {408, 409, 429} or status_code >= 500
+
+    error_text = str(error).upper()
+    return any(
+        marker in error_text
+        for marker in [
+            "UNAVAILABLE",
+            "RESOURCE_EXHAUSTED",
+            "TOO MANY REQUESTS",
+            "503",
+            "429",
+        ]
+    )
 
 
 class TrackedOpenAIClient:
@@ -400,11 +431,35 @@ class TrackedGeminiClient:
                 f"(prompt: {prompt_size_kb:.1f}KB, video: {video_id})"
             )
 
-            # Make API call
-            response = client.models.generate_content(
-                model=model_to_use,
-                contents=prompt,
-            )
+            # Make API call. The Google SDK retries internally, but production can
+            # still see short-lived 429/5xx demand spikes after SDK retries finish.
+            for attempt in range(1, GEMINI_TEXT_RETRY_ATTEMPTS + 1):
+                try:
+                    response = client.models.generate_content(
+                        model=model_to_use,
+                        contents=prompt,
+                    )
+                    break
+                except Exception as e:
+                    if (
+                        attempt >= GEMINI_TEXT_RETRY_ATTEMPTS
+                        or not _is_retryable_gemini_error(e)
+                    ):
+                        raise
+
+                    delay = GEMINI_TEXT_RETRY_DELAYS_SECONDS[attempt - 1]
+                    logger.warning(
+                        "Gemini %s %s call failed with retryable error "
+                        "(attempt %s/%s, video: %s): %s. Retrying in %ss",
+                        model_to_use,
+                        feature,
+                        attempt,
+                        GEMINI_TEXT_RETRY_ATTEMPTS,
+                        video_id,
+                        e,
+                        delay,
+                    )
+                    time.sleep(delay)
 
             logger.info(
                 f"Gemini {model_to_use} response received "

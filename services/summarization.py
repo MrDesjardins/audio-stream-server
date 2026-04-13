@@ -3,6 +3,7 @@
 import logging
 
 from config import get_config
+from services.llm_fallback import OPENAI_FALLBACK_MODEL, has_openai_api_key
 from services.llm_clients import get_tracked_openai_client, get_tracked_gemini_client
 
 logger = logging.getLogger(__name__)
@@ -47,7 +48,9 @@ def summarize_transcript(transcript: str, video_id: str) -> str:
         raise ValueError(f"Unknown summary provider: {config.summary_provider}")
 
 
-def _summarize_with_openai(transcript: str, video_id: str) -> str:
+def _summarize_with_openai(
+    transcript: str, video_id: str, model_override: str | None = None
+) -> str:
     """Summarize using OpenAI ChatGPT."""
     config = get_config()
 
@@ -79,7 +82,7 @@ def _summarize_with_openai(transcript: str, video_id: str) -> str:
             metadata=metadata,
             temperature=0.7,
             max_tokens=1200,
-            model_override=config.summary_model,
+            model_override=model_override or config.summary_model,
         )
 
         summary = response.choices[0].message.content
@@ -127,4 +130,14 @@ def _summarize_with_gemini(transcript: str, video_id: str) -> str:
 
     except Exception as e:
         logger.error(f"Failed to summarize with Gemini: {e}")
+        if has_openai_api_key(config):
+            logger.warning(
+                "Gemini summarization failed after retries for video %s; "
+                "falling back to OpenAI %s",
+                video_id,
+                OPENAI_FALLBACK_MODEL,
+            )
+            return _summarize_with_openai(
+                transcript, video_id, model_override=OPENAI_FALLBACK_MODEL
+            )
         raise

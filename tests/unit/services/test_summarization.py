@@ -173,6 +173,7 @@ class TestSummarizeWithGemini:
 
         config = Mock()
         config.gemini_api_key = "test-key"
+        config.openai_api_key = None
         mock_config.return_value = config
 
         mock_client = Mock()
@@ -181,6 +182,38 @@ class TestSummarizeWithGemini:
 
         with pytest.raises(Exception, match="API error"):
             _summarize_with_gemini("Test transcript", "test123")
+
+    @patch("services.summarization.get_tracked_openai_client")
+    @patch("services.summarization.get_tracked_gemini_client")
+    @patch("services.summarization.get_config")
+    def test_summarize_with_gemini_falls_back_to_openai(
+        self, mock_config, mock_get_gemini_client, mock_get_openai_client
+    ):
+        """Test Gemini summarization falls back to OpenAI after API error."""
+        from services.summarization import _summarize_with_gemini
+
+        config = Mock()
+        config.gemini_api_key = "test-gemini-key"
+        config.openai_api_key = "test-openai-key"
+        config.summary_model = "gemini-2.5-flash"
+        mock_config.return_value = config
+
+        mock_gemini_client = Mock()
+        mock_gemini_client.generate_content.side_effect = Exception("API error")
+        mock_get_gemini_client.return_value = mock_gemini_client
+
+        mock_openai_client = Mock()
+        mock_openai_response = Mock()
+        mock_openai_response.choices = [Mock()]
+        mock_openai_response.choices[0].message.content = "OpenAI fallback summary"
+        mock_openai_client.create_chat_completion.return_value = mock_openai_response
+        mock_get_openai_client.return_value = mock_openai_client
+
+        result = _summarize_with_gemini("Test transcript", "test123")
+
+        assert result == "OpenAI fallback summary"
+        call_args = mock_openai_client.create_chat_completion.call_args
+        assert call_args.kwargs["model_override"] == "gpt-4o-mini"
 
 
 class TestSummaryPrompt:

@@ -644,10 +644,11 @@ class TestGenerateWeeklySummaryGemini:
     """Tests for generate_weekly_summary_gemini function."""
 
     @patch("services.weekly_summary.get_tracked_gemini_client")
-    @patch("services.weekly_summary.config")
+    @patch("services.weekly_summary.get_config")
     def test_generates_summary_with_gemini(self, mock_config, mock_gemini_client):
         """Should call Gemini API and return summary."""
-        mock_config.gemini_api_key = "test-key"
+        mock_config.return_value.gemini_api_key = "test-key"
+        mock_config.return_value.weekly_summary_model = "gemini-2.5-flash"
 
         summaries = [
             {"title": "Book 1", "summary": "Summary 1"},
@@ -666,10 +667,12 @@ class TestGenerateWeeklySummaryGemini:
         assert result == "## Overview\nWeekly summary from Gemini"
 
     @patch("services.weekly_summary.get_tracked_gemini_client")
-    @patch("services.weekly_summary.config")
+    @patch("services.weekly_summary.get_config")
     def test_handles_gemini_error(self, mock_config, mock_gemini_client):
         """Should return None on Gemini API error."""
-        mock_config.gemini_api_key = "test-key"
+        mock_config.return_value.gemini_api_key = "test-key"
+        mock_config.return_value.openai_api_key = None
+        mock_config.return_value.weekly_summary_model = "gemini-2.5-flash"
 
         summaries = [{"title": "Book 1", "summary": "Summary 1"}]
 
@@ -681,11 +684,42 @@ class TestGenerateWeeklySummaryGemini:
 
         assert result is None
 
+    @patch("services.weekly_summary.get_tracked_openai_client")
     @patch("services.weekly_summary.get_tracked_gemini_client")
-    @patch("services.weekly_summary.config")
+    @patch("services.weekly_summary.get_config")
+    def test_falls_back_to_openai_after_gemini_error(
+        self, mock_config, mock_gemini_client, mock_openai_client
+    ):
+        """Should fall back to OpenAI when Gemini summary generation fails."""
+        mock_config.return_value.gemini_api_key = "test-gemini-key"
+        mock_config.return_value.openai_api_key = "test-openai-key"
+        mock_config.return_value.weekly_summary_model = "gemini-2.5-flash"
+
+        summaries = [{"title": "Book 1", "summary": "Summary 1"}]
+
+        mock_gemini_instance = Mock()
+        mock_gemini_instance.generate_content.side_effect = Exception("API Error")
+        mock_gemini_client.return_value = mock_gemini_instance
+
+        mock_openai_response = Mock()
+        mock_openai_response.choices = [Mock()]
+        mock_openai_response.choices[0].message.content = "## OpenAI fallback"
+        mock_openai_instance = Mock()
+        mock_openai_instance.create_chat_completion.return_value = mock_openai_response
+        mock_openai_client.return_value = mock_openai_instance
+
+        result = generate_weekly_summary_gemini(summaries)
+
+        assert result == "## OpenAI fallback"
+        call_args = mock_openai_instance.create_chat_completion.call_args
+        assert call_args.kwargs["model_override"] == "gpt-4o-mini"
+
+    @patch("services.weekly_summary.get_tracked_gemini_client")
+    @patch("services.weekly_summary.get_config")
     def test_handles_empty_gemini_response(self, mock_config, mock_gemini_client):
         """Should return None when Gemini returns empty text."""
-        mock_config.gemini_api_key = "test-key"
+        mock_config.return_value.gemini_api_key = "test-key"
+        mock_config.return_value.weekly_summary_model = "gemini-2.5-flash"
 
         summaries = [{"title": "Book 1", "summary": "Summary 1"}]
 

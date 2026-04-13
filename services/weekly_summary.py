@@ -10,8 +10,9 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Optional
 
-from config import get_config
+from config import Config, get_config
 from services.api_clients import get_httpx_client
+from services.llm_fallback import OPENAI_FALLBACK_MODEL, has_openai_api_key
 from services.llm_clients import get_tracked_gemini_client, get_tracked_openai_client
 from services.database import get_history, get_summary_by_week_year, save_weekly_summary
 from services.path_utils import expand_path
@@ -325,7 +326,9 @@ Format each theme as a subsection with explanation.
 Write in markdown format. Be insightful, synthesis-focused, and highlight connections between books."""
 
 
-def generate_weekly_summary_openai(summaries: List[Dict[str, str]]) -> Optional[str]:
+def generate_weekly_summary_openai(
+    summaries: List[Dict[str, str]], model_override: Optional[str] = None
+) -> Optional[str]:
     """
     Generate weekly summary using OpenAI.
 
@@ -357,7 +360,7 @@ def generate_weekly_summary_openai(summaries: List[Dict[str, str]]) -> Optional[
             metadata=metadata,
             temperature=0.7,
             max_tokens=3500,
-            model_override=config.weekly_summary_model,
+            model_override=model_override or config.weekly_summary_model,
         )
 
         summary = response.choices[0].message.content
@@ -384,8 +387,10 @@ def generate_weekly_summary_gemini(summaries: List[Dict[str, str]]) -> Optional[
     Returns:
         Generated weekly summary in markdown format
     """
+    summary_config: Config | None = None
+
     try:
-        config = get_config()
+        summary_config = get_config()
         client = get_tracked_gemini_client()
 
         prompt = _build_weekly_summary_prompt(summaries)
@@ -396,7 +401,7 @@ def generate_weekly_summary_gemini(summaries: List[Dict[str, str]]) -> Optional[
             prompt=prompt,
             feature="weekly_summary",
             metadata=metadata,
-            model_override=config.weekly_summary_model,
+            model_override=summary_config.weekly_summary_model,
         )
 
         summary = response.text
@@ -410,6 +415,14 @@ def generate_weekly_summary_gemini(summaries: List[Dict[str, str]]) -> Optional[
 
     except Exception as e:
         logger.error(f"Error generating summary with Gemini: {e}", exc_info=True)
+        if has_openai_api_key(summary_config):
+            logger.warning(
+                "Gemini weekly summary failed after retries; falling back to OpenAI %s",
+                OPENAI_FALLBACK_MODEL,
+            )
+            return generate_weekly_summary_openai(
+                summaries, model_override=OPENAI_FALLBACK_MODEL
+            )
         return None
 
 
