@@ -3,6 +3,7 @@ Admin endpoints for testing and manual operations.
 """
 
 import logging
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -12,7 +13,12 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from config import get_config
-from services.database import get_llm_usage_stats, get_llm_usage_summary
+from services.database import (
+    get_llm_usage_stats,
+    get_llm_usage_summary,
+    get_summary_by_week_year,
+    get_weekly_summary_run,
+)
 from services.scheduler import (
     trigger_weekly_summary_now,
     get_next_run_time as get_scheduler_next_run_time,
@@ -90,19 +96,52 @@ def trigger_weekly_summary(
         else:
             logger.info("Manual trigger of weekly summary requested for current week")
 
-        trigger_weekly_summary_now(target_date)
+        result = trigger_weekly_summary_now(target_date)
+        run_date = target_date or datetime.now()
+        iso_year, iso_week, _ = run_date.isocalendar()
+        week_year = f"{iso_year}-W{iso_week:02d}"
+        run = get_weekly_summary_run(week_year)
+        summary = get_summary_by_week_year(week_year)
+        missing_video_ids: List[str] = []
+        if run and run.missing_video_ids:
+            try:
+                parsed = json.loads(run.missing_video_ids)
+                if isinstance(parsed, list):
+                    missing_video_ids = [str(x) for x in parsed]
+            except (json.JSONDecodeError, TypeError):
+                logger.warning(
+                    "Invalid missing_video_ids JSON for week_year=%s", week_year
+                )
 
-        message = (
-            f"Weekly summary generation started for {request.date}. Check logs for progress."
-            if request.date
-            else "Weekly summary generation started for current week. Check logs for progress."
-        )
+        if request.date:
+            week_label = f"the week containing {request.date}"
+        else:
+            week_label = "current week"
+
+        if isinstance(result, dict) and result.get("url"):
+            message = f"Weekly summary generated successfully for {week_label}."
+        else:
+            message = (
+                f"Weekly summary run finished for {week_label}. "
+                "See run_status, missing_video_ids, next_retry_at, and logs if incomplete."
+            )
+
+        summary_url = None
+        if isinstance(result, dict):
+            summary_url = result.get("url")
+        elif summary and summary.trilium_note_id and config.trilium_url:
+            summary_url = f"{config.trilium_url}/#root/{summary.trilium_note_id}"
 
         return JSONResponse(
             {
                 "status": "triggered",
                 "message": message,
                 "date": request.date if request.date else "current",
+                "week_year": week_year,
+                "run_status": run.status if run else None,
+                "missing_video_ids": missing_video_ids,
+                "next_retry_at": run.next_retry_at if run else None,
+                "summary_url": summary_url,
             }
         )
 

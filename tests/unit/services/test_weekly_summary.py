@@ -3,15 +3,19 @@
 from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 
+import pytest
+
 from services.weekly_summary import (
     get_week_number,
     get_books_from_last_week,
     get_books_from_trilium_last_week,
+    get_books_from_target_week,
     fetch_book_summaries,
     generate_weekly_summary_openai,
     generate_weekly_summary_gemini,
     create_weekly_summary_note,
     generate_and_save_weekly_summary,
+    WeeklySummarySourceError,
 )
 from services.models import PlayHistoryItem, WeeklySummary
 
@@ -203,6 +207,48 @@ class TestGetBooksFromLastWeek:
 
         assert len(books) == 1
 
+
+class TestGetBooksFromTargetWeek:
+    """Tests for get_books_from_target_week function."""
+
+    @patch("services.weekly_summary.get_history")
+    def test_returns_only_books_from_target_iso_week(self, mock_get_history):
+        """Should use target_date's ISO week instead of last 7 days from now."""
+        mock_get_history.return_value = [
+            PlayHistoryItem(
+                id=1,
+                youtube_id="week-book",
+                title="Week Book",
+                channel=None,
+                thumbnail_url=None,
+                play_count=1,
+                created_at="2026-04-07T00:00:00",
+                last_played_at="2026-04-08T12:00:00",
+            ),
+            PlayHistoryItem(
+                id=2,
+                youtube_id="next-week-book",
+                title="Next Week Book",
+                channel=None,
+                thumbnail_url=None,
+                play_count=1,
+                created_at="2026-04-14T00:00:00",
+                last_played_at="2026-04-14T12:00:00",
+            ),
+        ]
+
+        books = get_books_from_target_week(datetime(2026, 4, 12))
+
+        assert [book["video_id"] for book in books] == ["week-book"]
+
+    @patch("services.weekly_summary.get_history")
+    def test_raises_source_error_when_history_load_fails(self, mock_get_history):
+        """Should raise retryable source error when playback history cannot load."""
+        mock_get_history.side_effect = Exception("database unavailable")
+
+        with pytest.raises(WeeklySummarySourceError):
+            get_books_from_target_week(datetime(2026, 4, 12))
+
     @patch("services.weekly_summary.get_history")
     def test_skips_invalid_dates(self, mock_get_history):
         """Should skip entries with invalid dates."""
@@ -232,7 +278,7 @@ class TestGetBooksFromLastWeek:
             ),
         ]
 
-        books = get_books_from_last_week()
+        books = get_books_from_target_week(datetime.fromisoformat(valid))
 
         assert len(books) == 1
         assert books[0]["video_id"] == "valid"
@@ -583,6 +629,128 @@ class TestFetchBookSummaries:
 
         assert len(summaries) == 1
         assert summaries[0]["video_id"] == "vid1"
+
+
+class TestQueueMissingSummaryTranscriptions:
+    """Tests for missing weekly source summary transcription queueing."""
+
+    @patch("services.weekly_summary.expand_path")
+    @patch("services.weekly_summary.get_transcription_queue")
+    @patch("services.weekly_summary.config")
+    def test_queues_missing_video_when_audio_exists(
+        self, mock_config, mock_get_queue, mock_expand_path
+    ):
+        """Should queue transcription for missing source summaries with cached audio."""
+        from services.weekly_summary import _recover_missing_summary_sources
+
+        mock_config.get_audio_path.return_value = "/tmp/vid1.mp3"
+        mock_path = Mock()
+        mock_path.exists.return_value = True
+        mock_expand_path.return_value = mock_path
+
+        mock_queue = Mock()
+        mock_queue.add_job.return_value = True
+        mock_get_queue.return_value = mock_queue
+
+        result = _recover_missing_summary_sources(
+            [{"video_id": "vid1", "title": "Book 1"}]
+        )
+
+        assert result["queued"] == ["vid1"]
+        mock_queue.add_job.assert_called_once()
+
+    @patch("services.weekly_summary.threading.Thread")
+    @patch("services.weekly_summary.start_youtube_download")
+    @patch("services.weekly_summary.is_download_in_progress")
+    @patch("services.weekly_summary.expand_path")
+    @patch("services.weekly_summary.get_transcription_queue")
+    @patch("services.weekly_summary.config")
+    def test_starts_download_when_audio_is_not_cached(
+        self,
+        mock_config,
+        mock_get_queue,
+        mock_expand_path,
+        mock_is_download_in_progress,
+        mock_start_download,
+        mock_thread,
+    ):
+        """Should download missing audio before queueing transcription."""
+        from services.weekly_summary import _recover_missing_summary_sources
+
+        mock_config.get_audio_path.return_value = "/tmp/vid1.mp3"
+        mock_path = Mock()
+        mock_path.exists.return_value = False
+        mock_expand_path.return_value = mock_path
+        mock_is_download_in_progress.return_value = False
+        mock_start_download.return_value = Mock(returncode=None)
+
+        mock_queue = Mock()
+        mock_get_queue.return_value = mock_queue
+
+        mock_thread_instance = Mock()
+        mock_thread.return_value = mock_thread_instance
+
+        result = _recover_missing_summary_sources(
+            [{"video_id": "vid1", "title": "Book 1"}]
+        )
+
+        assert result["downloading"] == ["vid1"]
+        mock_queue.add_job.assert_not_called()
+        mock_start_download.assert_called_once_with("vid1")
+        mock_thread_instance.start.assert_called_once()
+
+    @patch("services.weekly_summary.start_youtube_download")
+    @patch("services.weekly_summary.is_download_in_progress")
+    @patch("services.weekly_summary.expand_path")
+    @patch("services.weekly_summary.get_transcription_queue")
+    @patch("services.weekly_summary.config")
+    def test_waits_when_audio_download_is_already_in_progress(
+        self,
+        mock_config,
+        mock_get_queue,
+        mock_expand_path,
+        mock_is_download_in_progress,
+        mock_start_download,
+    ):
+        """Should not duplicate an existing audio download."""
+        from services.weekly_summary import _recover_missing_summary_sources
+
+        mock_config.get_audio_path.return_value = "/tmp/vid1.mp3"
+        mock_path = Mock()
+        mock_path.exists.return_value = False
+        mock_expand_path.return_value = mock_path
+        mock_is_download_in_progress.return_value = True
+        mock_get_queue.return_value = Mock()
+
+        result = _recover_missing_summary_sources(
+            [{"video_id": "vid1", "title": "Book 1"}]
+        )
+
+        assert result["already_downloading"] == ["vid1"]
+        mock_start_download.assert_not_called()
+
+    @patch("services.weekly_summary.get_transcription_queue")
+    @patch("services.weekly_summary.expand_path")
+    @patch("services.weekly_summary.finish_youtube_download")
+    def test_queues_transcription_after_successful_download(
+        self, mock_finish_download, mock_expand_path, mock_get_queue
+    ):
+        """Should queue transcription after a recovered audio download succeeds."""
+        from services.weekly_summary import _queue_transcription_after_download
+
+        mock_proc = Mock(returncode=0)
+        mock_path = Mock()
+        mock_path.exists.return_value = True
+        mock_expand_path.return_value = mock_path
+        mock_queue = Mock()
+        mock_queue.add_job.return_value = True
+        mock_get_queue.return_value = mock_queue
+
+        _queue_transcription_after_download("vid1", "/tmp/vid1.mp3", mock_proc)
+
+        mock_proc.wait.assert_called_once()
+        mock_finish_download.assert_called_once_with("vid1", 0)
+        mock_queue.add_job.assert_called_once()
 
 
 class TestGenerateWeeklySummaryOpenAI:
@@ -1184,7 +1352,7 @@ class TestGenerateAndAttachTts:
     def test_returns_note_info_when_text_too_short(
         self, mock_config, mock_expand_path, mock_get_content, mock_extract_text
     ):
-        """Should return note info when text is too short for TTS."""
+        """Should return None when text is too short for TTS."""
         from services.weekly_summary import _generate_and_attach_tts
 
         mock_config.tts_enabled = True
@@ -1206,8 +1374,7 @@ class TestGenerateAndAttachTts:
             note_title="Summary of week 2024-W01",
         )
 
-        assert result is not None
-        assert result["noteId"] == "note123"
+        assert result is None
 
     @patch("services.weekly_summary.generate_audio")
     @patch("services.weekly_summary.extract_summary_text_for_tts")
@@ -1222,7 +1389,7 @@ class TestGenerateAndAttachTts:
         mock_extract_text,
         mock_generate_audio,
     ):
-        """Should return note info when audio generation fails."""
+        """Should return None when audio generation fails."""
         from services.weekly_summary import _generate_and_attach_tts
 
         mock_config.tts_enabled = True
@@ -1247,8 +1414,7 @@ class TestGenerateAndAttachTts:
             note_title="Summary of week 2024-W01",
         )
 
-        assert result is not None
-        assert result["noteId"] == "note123"
+        assert result is None
 
     @patch("services.weekly_summary.get_audio_duration")
     @patch("services.weekly_summary.expand_path")
@@ -1295,7 +1461,7 @@ class TestGenerateAndSaveWeeklySummary:
     @patch("services.weekly_summary.create_weekly_summary_note")
     @patch("services.weekly_summary.generate_weekly_summary_openai")
     @patch("services.weekly_summary.fetch_book_summaries")
-    @patch("services.weekly_summary.get_books_from_trilium_last_week")
+    @patch("services.weekly_summary.get_books_from_target_week")
     @patch("services.weekly_summary.config")
     def test_full_workflow_success(
         self,
@@ -1347,32 +1513,31 @@ class TestGenerateAndSaveWeeklySummary:
         mock_save_summary.assert_called_once()
 
     @patch("services.weekly_summary.get_summary_by_week_year")
-    @patch("services.weekly_summary.get_books_from_trilium_last_week")
-    @patch("services.weekly_summary.get_books_from_last_week")
-    def test_falls_back_to_database_when_trilium_fails(
-        self, mock_get_books_db, mock_get_books_trilium, mock_get_existing_summary
+    @patch("services.weekly_summary.get_books_from_target_week")
+    def test_skips_when_no_target_week_books(
+        self, mock_get_books, mock_get_existing_summary
     ):
-        """Should fallback to database when Trilium search fails."""
+        """Should skip when no books were played in target week."""
         mock_get_existing_summary.return_value = None  # No existing summary
-        mock_get_books_trilium.return_value = []  # Trilium returns nothing
-        mock_get_books_db.return_value = []  # Database also empty
+        mock_get_books.return_value = []
 
         result = generate_and_save_weekly_summary()
 
         assert result is None
-        mock_get_books_db.assert_called_once()
+        mock_get_books.assert_called_once()
 
+    @patch("services.weekly_summary.save_weekly_summary_run")
     @patch("services.weekly_summary.config")
     @patch("services.weekly_summary.get_summary_by_week_year")
     def test_handles_invalid_summary_provider(
-        self, mock_get_existing_summary, mock_config
+        self, mock_get_existing_summary, mock_config, mock_save_run
     ):
-        """Should return None when invalid summary provider is configured."""
+        """Should record failure when invalid summary provider is configured."""
         mock_config.weekly_summary_provider = "invalid_provider"
         mock_get_existing_summary.return_value = None
 
         with patch(
-            "services.weekly_summary.get_books_from_trilium_last_week",
+            "services.weekly_summary.get_books_from_target_week",
             return_value=[{"video_id": "vid1", "title": "Book 1"}],
         ):
             with patch(
@@ -1389,12 +1554,39 @@ class TestGenerateAndSaveWeeklySummary:
                 result = generate_and_save_weekly_summary()
 
         assert result is None
+        assert mock_save_run.call_args.kwargs["status"] == "failed"
+        assert (
+            "Invalid weekly summary provider"
+            in mock_save_run.call_args.kwargs["last_error"]
+        )
+
+    @patch("services.weekly_summary.save_weekly_summary_run")
+    @patch("services.weekly_summary.get_summary_by_week_year")
+    @patch("services.weekly_summary.get_books_from_target_week")
+    def test_records_retry_when_source_history_fails(
+        self, mock_get_books, mock_get_existing_summary, mock_save_run
+    ):
+        """Should retry when source playback history cannot be loaded."""
+        mock_get_existing_summary.return_value = None
+        mock_get_books.side_effect = WeeklySummarySourceError(
+            "Could not load playback history"
+        )
+
+        result = generate_and_save_weekly_summary(datetime(2026, 4, 12))
+
+        assert result is None
+        assert mock_save_run.call_args.kwargs["week_year"] == "2026-W15"
+        assert mock_save_run.call_args.kwargs["status"] == "retrying"
+        assert (
+            mock_save_run.call_args.kwargs["last_error"]
+            == "Could not load playback history"
+        )
 
     @patch("services.weekly_summary.save_weekly_summary")
     @patch("services.weekly_summary.create_weekly_summary_note")
     @patch("services.weekly_summary.generate_weekly_summary_gemini")
     @patch("services.weekly_summary.fetch_book_summaries")
-    @patch("services.weekly_summary.get_books_from_trilium_last_week")
+    @patch("services.weekly_summary.get_books_from_target_week")
     @patch("services.weekly_summary.get_summary_by_week_year")
     @patch("services.weekly_summary.config")
     def test_handles_gemini_summary_failure(
@@ -1432,7 +1624,7 @@ class TestGenerateAndSaveWeeklySummary:
     @patch("services.weekly_summary.create_weekly_summary_note")
     @patch("services.weekly_summary.generate_weekly_summary_openai")
     @patch("services.weekly_summary.fetch_book_summaries")
-    @patch("services.weekly_summary.get_books_from_trilium_last_week")
+    @patch("services.weekly_summary.get_books_from_target_week")
     @patch("services.weekly_summary.get_summary_by_week_year")
     @patch("services.weekly_summary.config")
     def test_handles_note_creation_failure(
@@ -1469,24 +1661,80 @@ class TestGenerateAndSaveWeeklySummary:
 
     @patch("services.weekly_summary.get_summary_by_week_year")
     @patch("services.weekly_summary.fetch_book_summaries")
-    @patch("services.weekly_summary.get_books_from_trilium_last_week")
+    @patch("services.weekly_summary._recover_missing_summary_sources")
+    @patch("services.weekly_summary.get_books_from_target_week")
     def test_skips_when_no_summaries_found(
-        self, mock_get_books, mock_fetch_summaries, mock_get_existing_summary
+        self,
+        mock_get_books,
+        mock_recover_sources,
+        mock_fetch_summaries,
+        mock_get_existing_summary,
     ):
         """Should skip when no summaries found in Trilium."""
         mock_get_existing_summary.return_value = None  # No existing summary
         mock_get_books.return_value = [{"video_id": "vid1", "title": "Book 1"}]
         mock_fetch_summaries.return_value = []  # No summaries
+        mock_recover_sources.return_value = {
+            "queued": [],
+            "downloading": [],
+            "already_downloading": [],
+            "unrecoverable": ["vid1"],
+        }
 
         result = generate_and_save_weekly_summary()
 
         assert result is None
 
+    @patch("services.weekly_summary.save_weekly_summary_run")
+    @patch("services.weekly_summary.create_weekly_summary_note")
+    @patch("services.weekly_summary.get_summary_by_week_year")
+    @patch("services.weekly_summary.fetch_book_summaries")
+    @patch("services.weekly_summary._recover_missing_summary_sources")
+    @patch("services.weekly_summary.get_books_from_target_week")
+    def test_records_retry_when_source_summary_is_missing(
+        self,
+        mock_get_books,
+        mock_recover_sources,
+        mock_fetch_summaries,
+        mock_get_existing_summary,
+        mock_create_note,
+        mock_save_run,
+    ):
+        """Should wait for every source video summary before creating weekly note."""
+        mock_get_existing_summary.return_value = None
+        mock_get_books.return_value = [
+            {"video_id": "vid1", "title": "Book 1"},
+            {"video_id": "vid2", "title": "Book 2"},
+        ]
+        mock_fetch_summaries.return_value = [
+            {
+                "video_id": "vid1",
+                "title": "Book 1",
+                "summary": "Summary",
+                "note_url": "url",
+            }
+        ]
+        mock_recover_sources.return_value = {
+            "queued": [],
+            "downloading": [],
+            "already_downloading": [],
+            "unrecoverable": ["vid2"],
+        }
+
+        result = generate_and_save_weekly_summary(datetime(2026, 4, 12))
+
+        assert result is None
+        mock_create_note.assert_not_called()
+        call_kwargs = mock_save_run.call_args.kwargs
+        assert call_kwargs["week_year"] == "2026-W15"
+        assert call_kwargs["status"] == "retrying"
+        assert call_kwargs["missing_video_ids"] == '["vid2"]'
+
     @patch("services.weekly_summary.save_weekly_summary")
     @patch("services.weekly_summary.create_weekly_summary_note")
     @patch("services.weekly_summary.generate_weekly_summary_openai")
     @patch("services.weekly_summary.fetch_book_summaries")
-    @patch("services.weekly_summary.get_books_from_trilium_last_week")
+    @patch("services.weekly_summary.get_books_from_target_week")
     @patch("services.weekly_summary.get_httpx_client")
     @patch("services.weekly_summary.get_summary_by_week_year")
     @patch("services.weekly_summary.config")

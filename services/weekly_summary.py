@@ -6,7 +6,9 @@ including overview, key learnings, and common themes.
 """
 
 import logging
+import json
 import re
+import threading
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Optional
 
@@ -14,8 +16,22 @@ from config import Config, get_config
 from services.api_clients import get_httpx_client
 from services.llm_fallback import OPENAI_FALLBACK_MODEL, has_openai_api_key
 from services.llm_clients import get_tracked_gemini_client, get_tracked_openai_client
-from services.database import get_history, get_summary_by_week_year, save_weekly_summary
+from services.background_tasks import TranscriptionJob, get_transcription_queue
+from services.database import (
+    get_due_weekly_summary_runs,
+    get_history,
+    get_summary_by_week_year,
+    get_weekly_summary_run,
+    save_weekly_summary,
+    save_weekly_summary_run,
+)
+from services.models import WeeklySummaryRun
 from services.path_utils import expand_path
+from services.streaming import (
+    finish_youtube_download,
+    is_download_in_progress,
+    start_youtube_download,
+)
 from services.trilium import (
     check_video_exists,
     get_note_content,
@@ -35,6 +51,17 @@ from services.tts import (
 logger = logging.getLogger(__name__)
 config = get_config()
 
+WEEKLY_SUMMARY_RETRY_DELAYS = [
+    timedelta(minutes=15),
+    timedelta(hours=1),
+    timedelta(hours=4),
+]
+WEEKLY_SUMMARY_MAX_RETRY_DAYS = 14
+
+
+class WeeklySummarySourceError(Exception):
+    """Raised when weekly source history cannot be loaded."""
+
 
 def get_week_number(date: datetime) -> tuple[int, int]:
     """
@@ -48,6 +75,82 @@ def get_week_number(date: datetime) -> tuple[int, int]:
     """
     iso_calendar = date.isocalendar()
     return (iso_calendar[0], iso_calendar[1])
+
+
+def _week_year_for_date(date: datetime) -> str:
+    """Return ISO week identifier for date."""
+    year, week = get_week_number(date)
+    return f"{year}-W{week:02d}"
+
+
+def _get_iso_week_bounds(target_date: datetime) -> tuple[datetime, datetime]:
+    """Return inclusive start and exclusive end for target_date's ISO week."""
+    iso_year, iso_week = get_week_number(target_date)
+    week_start = datetime.fromisocalendar(iso_year, iso_week, 1)
+    return week_start, week_start + timedelta(days=7)
+
+
+def _get_retry_delay(attempt_count: int) -> timedelta:
+    """Return delay before the next weekly summary retry."""
+    if attempt_count <= 0:
+        return WEEKLY_SUMMARY_RETRY_DELAYS[0]
+    index = min(attempt_count - 1, len(WEEKLY_SUMMARY_RETRY_DELAYS) - 1)
+    if attempt_count > len(WEEKLY_SUMMARY_RETRY_DELAYS):
+        return timedelta(days=1)
+    return WEEKLY_SUMMARY_RETRY_DELAYS[index]
+
+
+def _next_retry_at(attempt_count: int) -> str:
+    """Calculate the next retry timestamp for an attempt count."""
+    return (datetime.now(timezone.utc) + _get_retry_delay(attempt_count)).isoformat()
+
+
+def _should_stop_retrying(target_date: datetime) -> bool:
+    """Return True when a weekly summary run is too old to keep retrying."""
+    target = target_date
+    if target.tzinfo is None:
+        target = target.replace(tzinfo=timezone.utc)
+    cutoff = target + timedelta(days=WEEKLY_SUMMARY_MAX_RETRY_DAYS)
+    return datetime.now(timezone.utc) > cutoff
+
+
+def _save_weekly_summary_run_for_result(
+    week_year: str,
+    target_date: datetime,
+    status: str,
+    attempt_count: int,
+    next_retry_at: Optional[str] = None,
+    last_error: Optional[str] = None,
+    missing_video_ids: Optional[List[str]] = None,
+) -> None:
+    """Persist weekly summary retry state."""
+    completed_at = (
+        datetime.now(timezone.utc).isoformat() if status == "completed" else None
+    )
+    try:
+        save_weekly_summary_run(
+            week_year=week_year,
+            target_date=target_date.date().isoformat(),
+            status=status,
+            attempt_count=attempt_count,
+            next_retry_at=next_retry_at,
+            last_error=last_error,
+            missing_video_ids=json.dumps(missing_video_ids)
+            if missing_video_ids
+            else None,
+            completed_at=completed_at,
+        )
+    except Exception as e:
+        logger.warning(f"Could not persist weekly summary run state: {e}")
+
+
+def _get_weekly_summary_run_safely(week_year: str) -> Optional[WeeklySummaryRun]:
+    """Get weekly summary run state, tolerating older databases."""
+    try:
+        return get_weekly_summary_run(week_year)
+    except Exception as e:
+        logger.warning(f"Could not fetch weekly summary run state: {e}")
+        return None
 
 
 def _fetch_youtube_id_from_note(note: Dict) -> Optional[Dict[str, str]]:
@@ -202,6 +305,58 @@ def get_books_from_last_week() -> List[Dict[str, str]]:
         return []
 
 
+def get_books_from_target_week(target_date: datetime) -> List[Dict[str, str]]:
+    """
+    Get all books played in the ISO week containing target_date.
+
+    Args:
+        target_date: Date within the week to inspect
+
+    Returns:
+        List of dicts with video_id, title, last_played_at
+    """
+    try:
+        history = get_history(limit=1000)
+    except Exception as e:
+        logger.error(f"Error loading history for target week: {e}", exc_info=True)
+        raise WeeklySummarySourceError("Could not load playback history") from e
+
+    if not history:
+        logger.warning("No history found")
+        return []
+
+    week_start, week_end = _get_iso_week_bounds(target_date)
+    weekly_books = []
+
+    for item in history:
+        try:
+            played_at_str = item.last_played_at.replace("Z", "+00:00")
+            played_at = datetime.fromisoformat(played_at_str)
+            if played_at.tzinfo is not None:
+                played_at = played_at.replace(tzinfo=None)
+
+            if week_start <= played_at < week_end:
+                weekly_books.append(
+                    {
+                        "video_id": item.youtube_id,
+                        "title": item.title,
+                        "last_played_at": item.last_played_at,
+                    }
+                )
+        except Exception as e:
+            logger.error(
+                f"Error parsing date for {getattr(item, 'youtube_id', 'unknown')}: {e}"
+            )
+
+    logger.info(
+        "Found %s books played in target week %s to %s",
+        len(weekly_books),
+        week_start.date().isoformat(),
+        week_end.date().isoformat(),
+    )
+    return weekly_books
+
+
 def _fetch_summary_for_book(book: Dict[str, str]) -> Optional[Dict[str, str]]:
     """
     Fetch summary for a single book from Trilium.
@@ -278,6 +433,124 @@ def fetch_book_summaries(books: List[Dict[str, str]]) -> List[Dict[str, str]]:
 
     logger.info(f"Fetched {len(summaries)} summaries out of {len(books)} books")
     return summaries
+
+
+def _get_missing_summary_video_ids(
+    books: List[Dict[str, str]], summaries: List[Dict[str, str]]
+) -> List[str]:
+    """Return video IDs that do not have fetched summaries."""
+    summarized_ids = {summary["video_id"] for summary in summaries}
+    return [
+        book["video_id"] for book in books if book["video_id"] not in summarized_ids
+    ]
+
+
+def _queue_transcription_job(queue, video_id: str, audio_path: str) -> bool:
+    """Queue a transcription job for a recovered weekly summary source."""
+    return queue.add_job(TranscriptionJob(video_id=video_id, audio_path=audio_path))
+
+
+def _queue_transcription_after_download(video_id: str, audio_path: str, proc) -> None:
+    """Finish an audio download and queue transcription if it succeeds."""
+    try:
+        proc.wait()
+        finish_youtube_download(video_id, proc.returncode)
+        if not expand_path(audio_path).exists():
+            logger.warning(
+                "Download finished for %s but audio is still missing at %s",
+                video_id,
+                audio_path,
+            )
+            return
+
+        queue = get_transcription_queue()
+        if _queue_transcription_job(queue, video_id, audio_path):
+            logger.info("Queued weekly summary source %s after download", video_id)
+    except Exception as e:
+        logger.error(
+            "Could not queue weekly summary source %s after download: %s",
+            video_id,
+            e,
+            exc_info=True,
+        )
+
+
+def _recover_missing_summary_sources(
+    books: List[Dict[str, str]],
+) -> Dict[str, List[str]]:
+    """
+    Recover missing source summaries by queueing transcription or downloading audio.
+
+    Returns:
+        Dict of video IDs by recovery action.
+    """
+    result: Dict[str, List[str]] = {
+        "queued": [],
+        "downloading": [],
+        "already_downloading": [],
+        "unrecoverable": [],
+    }
+    queued_video_ids = []
+    try:
+        queue = get_transcription_queue()
+    except Exception as e:
+        logger.warning(f"Could not access transcription queue for weekly summary: {e}")
+        result["unrecoverable"] = [book["video_id"] for book in books]
+        return result
+
+    for book in books:
+        video_id = book["video_id"]
+        audio_path = config.get_audio_path(video_id)
+        if expand_path(audio_path).exists():
+            if _queue_transcription_job(queue, video_id, audio_path):
+                queued_video_ids.append(video_id)
+                result["queued"].append(video_id)
+            continue
+
+        if is_download_in_progress(video_id):
+            logger.info(
+                "Audio download already in progress for missing weekly source %s",
+                video_id,
+            )
+            result["already_downloading"].append(video_id)
+            continue
+
+        proc = start_youtube_download(video_id)
+        if proc is None:
+            if expand_path(audio_path).exists():
+                if _queue_transcription_job(queue, video_id, audio_path):
+                    queued_video_ids.append(video_id)
+                    result["queued"].append(video_id)
+                continue
+
+            logger.warning(
+                "Cannot recover missing summary for %s because audio download did not start",
+                video_id,
+            )
+            result["unrecoverable"].append(video_id)
+            continue
+
+        thread = threading.Thread(
+            target=_queue_transcription_after_download,
+            args=(video_id, audio_path, proc),
+            daemon=True,
+        )
+        thread.start()
+        result["downloading"].append(video_id)
+
+    if queued_video_ids:
+        logger.info(
+            "Queued %s missing weekly summary source videos for transcription: %s",
+            len(queued_video_ids),
+            ", ".join(queued_video_ids),
+        )
+    if result["downloading"]:
+        logger.info(
+            "Started downloads for %s missing weekly summary source videos: %s",
+            len(result["downloading"]),
+            ", ".join(result["downloading"]),
+        )
+    return result
 
 
 def _build_weekly_summary_prompt(summaries: List[Dict[str, str]]) -> str:
@@ -675,9 +948,7 @@ def _generate_and_attach_tts(
 
     except Exception as e:
         logger.error(f"TTS generation failed: {e}", exc_info=True)
-        if "Could not fetch note content" in str(e):
-            return None
-        return {"noteId": note_id, "url": _get_trilium_note_url(note_id)}
+        return None
 
 
 def generate_and_save_weekly_summary(
@@ -720,6 +991,8 @@ def generate_and_save_weekly_summary(
         year, week = get_week_number(now)
         week_year = f"{year}-W{week:02d}"
         logger.info(f"Generating summary for week {week_year}")
+        existing_run = _get_weekly_summary_run_safely(week_year)
+        attempt_count = (existing_run.attempt_count if existing_run else 0) + 1
 
         # Check if summary already exists
         existing_summary = get_summary_by_week_year(week_year)
@@ -739,36 +1012,102 @@ def generate_and_save_weekly_summary(
             # Note exists in Trilium, handle TTS if needed
             if not note_id:
                 raise ValueError("Existing summary has no Trilium note ID")
-            return _generate_and_attach_tts(
+            result = _generate_and_attach_tts(
                 note_id=note_id,
                 week_year=week_year,
                 year=year,
                 week=week,
                 note_title=note_title,
             )
+            if result:
+                _save_weekly_summary_run_for_result(
+                    week_year, now, "completed", attempt_count
+                )
+            else:
+                _save_weekly_summary_run_for_result(
+                    week_year,
+                    now,
+                    "retrying",
+                    attempt_count,
+                    next_retry_at=_next_retry_at(attempt_count),
+                    last_error="TTS generation or attachment failed",
+                )
+            return result
 
         # No existing summary - proceed with full generation
         logger.info("No existing summary found, proceeding with full generation")
 
-        # Step 1: Get books from last week (prefer Trilium as source of truth)
-        logger.info("Fetching books from Trilium (last 7 days)...")
-        books = get_books_from_trilium_last_week()
-
-        # Fallback to database if Trilium search fails
-        if not books:
-            logger.info("No books from Trilium, trying database history...")
-            books = get_books_from_last_week()
+        # Step 1: Get books from the target ISO week.
+        try:
+            books = get_books_from_target_week(now)
+        except WeeklySummarySourceError as e:
+            _save_weekly_summary_run_for_result(
+                week_year,
+                now,
+                "retrying",
+                attempt_count,
+                next_retry_at=_next_retry_at(attempt_count),
+                last_error=str(e),
+            )
+            return None
 
         if not books:
             logger.warning("No books found in the last week, skipping summary")
+            _save_weekly_summary_run_for_result(
+                week_year,
+                now,
+                "completed",
+                attempt_count,
+                last_error="No books found in target week",
+            )
             return None
 
         logger.info(f"Found {len(books)} books to summarize")
 
         # Step 2: Fetch summaries from Trilium
         summaries = fetch_book_summaries(books)
-        if not summaries:
-            logger.warning("No summaries found in Trilium, skipping weekly summary")
+        missing_video_ids = _get_missing_summary_video_ids(books, summaries)
+        if missing_video_ids:
+            logger.warning(
+                "Missing %s source summaries for weekly summary %s: %s",
+                len(missing_video_ids),
+                week_year,
+                ", ".join(missing_video_ids),
+            )
+            missing_books = [
+                book for book in books if book["video_id"] in set(missing_video_ids)
+            ]
+            recovery = _recover_missing_summary_sources(missing_books)
+            if _should_stop_retrying(now):
+                _save_weekly_summary_run_for_result(
+                    week_year,
+                    now,
+                    "failed",
+                    attempt_count,
+                    last_error="Missing source video summaries after retry window",
+                    missing_video_ids=missing_video_ids,
+                )
+            else:
+                _save_weekly_summary_run_for_result(
+                    week_year,
+                    now,
+                    "retrying",
+                    attempt_count,
+                    next_retry_at=_next_retry_at(attempt_count),
+                    last_error=(
+                        "Missing source video summaries; queued transcription for "
+                        f"{', '.join(recovery['queued'])}"
+                        if recovery["queued"]
+                        else "Missing source video summaries; downloading audio for "
+                        f"{', '.join(recovery['downloading'])}"
+                        if recovery["downloading"]
+                        else "Missing source video summaries; audio download already in progress for "
+                        f"{', '.join(recovery['already_downloading'])}"
+                        if recovery["already_downloading"]
+                        else "Missing source video summaries"
+                    ),
+                    missing_video_ids=missing_video_ids,
+                )
             return None
 
         logger.info(f"Fetched {len(summaries)} summaries from Trilium")
@@ -782,10 +1121,27 @@ def generate_and_save_weekly_summary(
             logger.error(
                 f"Invalid weekly summary provider: {config.weekly_summary_provider}"
             )
+            _save_weekly_summary_run_for_result(
+                week_year,
+                now,
+                "failed",
+                attempt_count,
+                last_error=(
+                    f"Invalid weekly summary provider: {config.weekly_summary_provider}"
+                ),
+            )
             return None
 
         if not summary_content:
             logger.error("Failed to generate summary content")
+            _save_weekly_summary_run_for_result(
+                week_year,
+                now,
+                "retrying",
+                attempt_count,
+                next_retry_at=_next_retry_at(attempt_count),
+                last_error="Failed to generate weekly summary content",
+            )
             return None
 
         # Step 4: Create Trilium note with summary
@@ -793,6 +1149,14 @@ def generate_and_save_weekly_summary(
 
         if not note_info:
             logger.error("Failed to create weekly summary note")
+            _save_weekly_summary_run_for_result(
+                week_year,
+                now,
+                "retrying",
+                attempt_count,
+                next_retry_at=_next_retry_at(attempt_count),
+                last_error="Failed to create weekly summary note",
+            )
             return None
 
         logger.info(f"Successfully created weekly summary: {note_info['url']}")
@@ -810,8 +1174,78 @@ def generate_and_save_weekly_summary(
         logger.info(f"Saved weekly summary to database: {week_year}")
 
         # Step 5: Generate TTS audio if enabled
-        return _generate_and_attach_tts(note_id, week_year, year, week, note_title)
+        result = _generate_and_attach_tts(note_id, week_year, year, week, note_title)
+        if result:
+            _save_weekly_summary_run_for_result(
+                week_year, now, "completed", attempt_count
+            )
+        else:
+            _save_weekly_summary_run_for_result(
+                week_year,
+                now,
+                "retrying",
+                attempt_count,
+                next_retry_at=_next_retry_at(attempt_count),
+                last_error="TTS generation or attachment failed",
+            )
+        return result
 
     except Exception as e:
         logger.error(f"Error in weekly summary generation: {e}", exc_info=True)
+        target = target_date if target_date else datetime.now(timezone.utc)
+        week_year = _week_year_for_date(target)
+        existing_run = _get_weekly_summary_run_safely(week_year)
+        attempt_count = (existing_run.attempt_count if existing_run else 0) + 1
+        _save_weekly_summary_run_for_result(
+            week_year,
+            target,
+            "retrying",
+            attempt_count,
+            next_retry_at=_next_retry_at(attempt_count),
+            last_error=str(e),
+        )
         return None
+
+
+def process_due_weekly_summary_runs(limit: int = 10) -> List[Dict[str, Optional[str]]]:
+    """
+    Retry weekly summary runs that are due for another attempt.
+
+    Args:
+        limit: Maximum number of due runs to process
+
+    Returns:
+        List of result dictionaries for processed runs
+    """
+    results: List[Dict[str, Optional[str]]] = []
+    try:
+        due_runs = get_due_weekly_summary_runs(limit=limit)
+    except Exception as e:
+        logger.warning(f"Could not fetch due weekly summary runs: {e}")
+        return results
+
+    for run in due_runs:
+        try:
+            target_date = datetime.fromisoformat(run.target_date)
+        except ValueError:
+            logger.error(
+                "Invalid target_date for weekly summary run %s: %s",
+                run.week_year,
+                run.target_date,
+            )
+            continue
+
+        logger.info(
+            "Retrying weekly summary run %s (attempts so far: %s)",
+            run.week_year,
+            run.attempt_count,
+        )
+        result = generate_and_save_weekly_summary(target_date)
+        results.append(
+            {
+                "week_year": run.week_year,
+                "noteId": result.get("noteId") if result else None,
+                "url": result.get("url") if result else None,
+            }
+        )
+    return results

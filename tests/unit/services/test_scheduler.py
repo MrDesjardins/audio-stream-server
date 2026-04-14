@@ -21,9 +21,10 @@ class TestInitScheduler:
         services.scheduler._scheduler = None
 
     @patch("services.scheduler.config")
+    @patch("services.scheduler.process_due_weekly_summary_runs")
     @patch("services.scheduler.BackgroundScheduler")
     def test_initializes_scheduler_when_enabled(
-        self, mock_scheduler_class, mock_config
+        self, mock_scheduler_class, mock_process_due_runs, mock_config
     ):
         """Should initialize scheduler when weekly_summary_enabled is True."""
         mock_config.weekly_summary_enabled = True
@@ -34,8 +35,13 @@ class TestInitScheduler:
         init_scheduler()
 
         mock_scheduler_class.assert_called_once()
-        mock_scheduler_instance.add_job.assert_called_once()
+        assert mock_scheduler_instance.add_job.call_count == 2
+        job_ids = {
+            call.kwargs["id"] for call in mock_scheduler_instance.add_job.call_args_list
+        }
+        assert job_ids == {"weekly_summary", "weekly_summary_retries"}
         mock_scheduler_instance.start.assert_called_once()
+        mock_process_due_runs.assert_called_once()
 
     @patch("services.scheduler.config")
     @patch("services.scheduler.BackgroundScheduler")

@@ -7,7 +7,13 @@ from contextlib import contextmanager
 from queue import Queue, Empty
 import os
 
-from services.models import PlayHistoryItem, PlaybackPosition, QueueItem, WeeklySummary
+from services.models import (
+    PlayHistoryItem,
+    PlaybackPosition,
+    QueueItem,
+    WeeklySummary,
+    WeeklySummaryRun,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -150,6 +156,27 @@ def init_database():
                 created_at TEXT NOT NULL,
                 audio_generated_at TEXT
             )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS weekly_summary_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                week_year TEXT NOT NULL UNIQUE,
+                target_date TEXT NOT NULL,
+                status TEXT NOT NULL,
+                attempt_count INTEGER NOT NULL DEFAULT 0,
+                next_retry_at TEXT,
+                last_error TEXT,
+                missing_video_ids TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                completed_at TEXT
+            )
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_weekly_summary_runs_due
+            ON weekly_summary_runs(status, next_retry_at)
         """)
 
         # Create index on position for faster ordering
@@ -613,6 +640,99 @@ def get_summary_by_week_year(week_year: str) -> Optional[WeeklySummary]:
 
         row = cursor.fetchone()
         return WeeklySummary.from_db_row(row) if row else None
+
+
+def save_weekly_summary_run(
+    week_year: str,
+    target_date: str,
+    status: str,
+    attempt_count: int = 0,
+    next_retry_at: Optional[str] = None,
+    last_error: Optional[str] = None,
+    missing_video_ids: Optional[str] = None,
+    completed_at: Optional[str] = None,
+) -> int:
+    """Insert or update weekly summary retry state."""
+    timestamp = datetime.now(timezone.utc).isoformat()
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO weekly_summary_runs (
+                week_year, target_date, status, attempt_count, next_retry_at,
+                last_error, missing_video_ids, created_at, updated_at, completed_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(week_year) DO UPDATE SET
+                target_date = excluded.target_date,
+                status = excluded.status,
+                attempt_count = excluded.attempt_count,
+                next_retry_at = excluded.next_retry_at,
+                last_error = excluded.last_error,
+                missing_video_ids = excluded.missing_video_ids,
+                updated_at = excluded.updated_at,
+                completed_at = excluded.completed_at
+        """,
+            (
+                week_year,
+                target_date,
+                status,
+                attempt_count,
+                next_retry_at,
+                last_error,
+                missing_video_ids,
+                timestamp,
+                timestamp,
+                completed_at,
+            ),
+        )
+        cursor.execute(
+            "SELECT id FROM weekly_summary_runs WHERE week_year = ?", (week_year,)
+        )
+        row = cursor.fetchone()
+        return row["id"]
+
+
+def get_weekly_summary_run(week_year: str) -> Optional[WeeklySummaryRun]:
+    """Get retry state for a weekly summary run."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT id, week_year, target_date, status, attempt_count, next_retry_at,
+                   last_error, missing_video_ids, created_at, updated_at, completed_at
+            FROM weekly_summary_runs
+            WHERE week_year = ?
+            LIMIT 1
+        """,
+            (week_year,),
+        )
+        row = cursor.fetchone()
+        return WeeklySummaryRun.from_db_row(row) if row else None
+
+
+def get_due_weekly_summary_runs(
+    now: Optional[str] = None, limit: int = 10
+) -> List[WeeklySummaryRun]:
+    """Get retrying weekly summary runs due for another attempt."""
+    now = now or datetime.now(timezone.utc).isoformat()
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT id, week_year, target_date, status, attempt_count, next_retry_at,
+                   last_error, missing_video_ids, created_at, updated_at, completed_at
+            FROM weekly_summary_runs
+            WHERE status = 'retrying'
+              AND (next_retry_at IS NULL OR next_retry_at <= ?)
+            ORDER BY COALESCE(next_retry_at, created_at) ASC
+            LIMIT ?
+        """,
+            (now, limit),
+        )
+        rows = cursor.fetchall()
+        return [WeeklySummaryRun.from_db_row(row) for row in rows]
 
 
 def add_summary_to_queue(week_year: str) -> int:

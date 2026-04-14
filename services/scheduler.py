@@ -6,11 +6,14 @@ Uses APScheduler to run scheduled tasks like weekly summaries.
 
 import logging
 from datetime import datetime
-from typing import Optional
+from typing import Dict, Optional
 from apscheduler.schedulers.background import BackgroundScheduler  # type: ignore
 from apscheduler.triggers.cron import CronTrigger  # type: ignore
 from pytz import timezone  # type: ignore
-from services.weekly_summary import generate_and_save_weekly_summary
+from services.weekly_summary import (
+    generate_and_save_weekly_summary,
+    process_due_weekly_summary_runs,
+)
 from config import get_config
 
 logger = logging.getLogger(__name__)
@@ -53,12 +56,24 @@ def init_scheduler() -> None:
                 misfire_grace_time=3600,  # Allow 1 hour grace for missed jobs
             )
             logger.info("Added weekly summary job: Every Sunday at 11:00 PM Pacific")
+            _scheduler.add_job(
+                func=process_due_weekly_summary_runs,
+                trigger=CronTrigger(minute=7, timezone=pacific),
+                id="weekly_summary_retries",
+                name="Weekly Audiobook Summary Retries",
+                replace_existing=True,
+                misfire_grace_time=3600,
+            )
+            logger.info("Added weekly summary retry job: Hourly at minute 7")
         else:
             logger.info("Weekly summary feature is disabled")
 
         # Start the scheduler
         _scheduler.start()
         logger.info("Scheduler started successfully")
+
+        if config.weekly_summary_enabled:
+            process_due_weekly_summary_runs()
 
     except Exception as e:
         logger.error(f"Error initializing scheduler: {e}", exc_info=True)
@@ -90,7 +105,9 @@ def get_scheduler() -> BackgroundScheduler | None:
     return _scheduler
 
 
-def trigger_weekly_summary_now(target_date: Optional[datetime] = None) -> None:
+def trigger_weekly_summary_now(
+    target_date: Optional[datetime] = None,
+) -> Optional[Dict[str, str]]:
     """
     Manually trigger the weekly summary job immediately.
 
@@ -116,9 +133,11 @@ def trigger_weekly_summary_now(target_date: Optional[datetime] = None) -> None:
             logger.warning("Weekly summary generation returned None")
 
         logger.info("trigger_weekly_summary_now() completed successfully")
+        return result
 
     except Exception as e:
         logger.error(f"Error triggering weekly summary: {e}", exc_info=True)
+        return None
 
 
 def get_next_run_time() -> str | None:

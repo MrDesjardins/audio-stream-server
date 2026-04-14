@@ -72,6 +72,7 @@ uv run python migrate_add_queue_columns.py
 uv run python migrate_add_llm_stats.py
 uv run python migrate_add_audio_duration.py
 uv run python migrate_add_weekly_summary.py
+uv run python migrate_add_weekly_summary_runs.py
 
 # Then initialize/update schema (creates tables if they don't exist)
 uv run python -c "from services.database import init_database; init_database(); print('Database schema updated successfully')"

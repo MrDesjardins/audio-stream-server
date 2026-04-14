@@ -162,6 +162,56 @@ class WeeklySummary:
 
 
 @dataclass
+class WeeklySummaryRun:
+    """Represents retry state for a weekly summary generation run."""
+
+    id: int
+    week_year: str
+    target_date: str
+    status: str
+    attempt_count: int
+    next_retry_at: Optional[str]
+    last_error: Optional[str]
+    missing_video_ids: Optional[str]
+    created_at: str
+    updated_at: str
+    completed_at: Optional[str] = None
+
+    @classmethod
+    def from_db_row(cls, row) -> "WeeklySummaryRun":
+        """Create instance from database row."""
+        return cls(
+            id=row["id"],
+            week_year=row["week_year"],
+            target_date=row["target_date"],
+            status=row["status"],
+            attempt_count=row["attempt_count"],
+            next_retry_at=row["next_retry_at"],
+            last_error=row["last_error"],
+            missing_video_ids=row["missing_video_ids"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+            completed_at=row["completed_at"],
+        )
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary."""
+        return {
+            "id": self.id,
+            "week_year": self.week_year,
+            "target_date": self.target_date,
+            "status": self.status,
+            "attempt_count": self.attempt_count,
+            "next_retry_at": self.next_retry_at,
+            "last_error": self.last_error,
+            "missing_video_ids": self.missing_video_ids,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "completed_at": self.completed_at,
+        }
+
+
+@dataclass
 class PlaybackPosition:
     """Represents a saved playback position for a video."""
 

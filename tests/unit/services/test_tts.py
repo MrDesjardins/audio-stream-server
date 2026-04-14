@@ -408,33 +408,34 @@ class TestGenerateAudio:
 class TestGenerateAudioEdgeTTS:
     """Tests for Edge TTS provider."""
 
-    @patch("services.tts.asyncio.run")
-    def test_success(self, mock_asyncio_run):
+    @patch("services.tts._stream_edge_tts")
+    def test_success(self, mock_stream):
         """Should return MP3 bytes from Edge TTS."""
-        mock_asyncio_run.return_value = b"fake mp3 audio"
+        mock_stream.return_value = b"fake mp3 audio"
 
         result = _generate_audio_edge_tts("Hello world")
 
         assert result == b"fake mp3 audio"
-        mock_asyncio_run.assert_called_once()
+        mock_stream.assert_awaited_once_with("Hello world", "en-US-AriaNeural")
 
     @patch("services.tts.log_llm_usage")
-    @patch("services.tts.asyncio.run")
-    def test_default_voice(self, mock_asyncio_run, mock_log):
+    @patch("services.tts._stream_edge_tts")
+    def test_default_voice(self, mock_stream, mock_log):
         """Should use en-US-AriaNeural as the default voice."""
-        mock_asyncio_run.return_value = b"audio"
+        mock_stream.return_value = b"audio"
 
         _generate_audio_edge_tts("Hello")
 
+        mock_stream.assert_awaited_once_with("Hello", "en-US-AriaNeural")
         mock_log.assert_called_once()
         call_kwargs = mock_log.call_args.kwargs
         assert call_kwargs["metadata"]["voice"] == "en-US-AriaNeural"
 
     @patch("services.tts.log_llm_usage")
-    @patch("services.tts.asyncio.run")
-    def test_usage_tracked(self, mock_asyncio_run, mock_log):
+    @patch("services.tts._stream_edge_tts")
+    def test_usage_tracked(self, mock_stream, mock_log):
         """Should track usage with provider='edge' and model='edge-tts'."""
-        mock_asyncio_run.return_value = b"audio"
+        mock_stream.return_value = b"audio"
 
         _generate_audio_edge_tts("Hello world", feature="weekly_summary_tts")
 
@@ -445,34 +446,32 @@ class TestGenerateAudioEdgeTTS:
         assert call_kwargs["feature"] == "weekly_summary_tts"
         assert call_kwargs["prompt_tokens"] == len("Hello world")
 
-    @patch("services.tts.asyncio.run")
-    def test_api_error_raises_tts_api_error(self, mock_asyncio_run):
+    @patch("services.tts._stream_edge_tts")
+    def test_api_error_raises_tts_api_error(self, mock_stream):
         """Should raise TTSAPIError when Edge TTS fails."""
-        mock_asyncio_run.side_effect = RuntimeError("network error")
+        mock_stream.side_effect = RuntimeError("network error")
 
         with pytest.raises(TTSAPIError, match="Edge TTS failed"):
             _generate_audio_edge_tts("Hello")
 
-    @patch("services.tts.asyncio.run")
-    def test_via_generate_audio(self, mock_asyncio_run):
+    @patch("services.tts._stream_edge_tts")
+    def test_via_generate_audio(self, mock_stream):
         """generate_audio(provider='edge') should route to Edge TTS."""
-        mock_asyncio_run.return_value = b"edge audio"
+        mock_stream.return_value = b"edge audio"
 
         result = generate_audio(text="Hello", provider="edge")
 
         assert result == b"edge audio"
-        mock_asyncio_run.assert_called_once()
+        mock_stream.assert_awaited_once_with("Hello", "en-US-AriaNeural")
 
-    @patch("services.tts.asyncio.run")
-    def test_via_generate_audio_custom_voice(self, mock_asyncio_run):
+    @patch("services.tts._stream_edge_tts")
+    def test_via_generate_audio_custom_voice(self, mock_stream):
         """generate_audio(provider='edge', voice=...) should pass the voice through."""
-        mock_asyncio_run.return_value = b"edge audio"
+        mock_stream.return_value = b"edge audio"
 
         generate_audio(text="Hello", provider="edge", voice="en-US-GuyNeural")
 
-        # The asyncio.run call should have been invoked with a coroutine
-        # We verify the voice is threaded through by checking the coroutine args
-        mock_asyncio_run.assert_called_once()
+        mock_stream.assert_awaited_once_with("Hello", "en-US-GuyNeural")
 
 
 class TestSaveAudioFile:
