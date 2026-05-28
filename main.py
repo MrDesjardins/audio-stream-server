@@ -245,8 +245,7 @@ def index(request: Request) -> HTMLResponse:
             "api_port": api_port,
             "transcription_enabled": config.transcription_enabled,
             "book_suggestions_enabled": config.book_suggestions_enabled,
-            "weekly_summary_enabled": config.tts_enabled
-            and config.weekly_summary_enabled,
+            "weekly_summary_enabled": config.weekly_summary_enabled,
             "prefetch_threshold_seconds": config.prefetch_threshold_seconds,
             "trilium_url": config.trilium_url,
             "client_log_batch_interval": config.client_log_batch_interval,
