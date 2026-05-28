@@ -4,11 +4,14 @@ Queue management routes.
 
 import asyncio
 import logging
-import threading
 from typing import List
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from services.audio_prefetch import (
+    enqueue_audio_prefetch,
+    get_audio_prefetch_status,
+)
 from services.database import (
     add_to_queue,
     get_queue,
@@ -18,12 +21,6 @@ from services.database import (
     reorder_queue,
 )
 from services.youtube import get_video_metadata, extract_video_id
-from services.cache import get_audio_cache
-from services.streaming import (
-    start_youtube_download,
-    finish_youtube_download,
-    is_download_in_progress,
-)
 from config import get_config
 
 logger = logging.getLogger(__name__)
@@ -38,6 +35,42 @@ class QueueRequest(BaseModel):
 
 class ReorderRequest(BaseModel):
     queue_item_ids: List[int]
+
+
+def _queue_item_to_response(item) -> dict:
+    """Convert a queue item to API response data with audio readiness."""
+    data = item.to_dict()
+    if (item.type or "youtube") == "youtube":
+        data["audio_status"] = get_audio_prefetch_status(item.youtube_id)
+    return data
+
+
+def get_queue_audio_status_hash() -> int:
+    """Return a cheap hash for current YouTube queue audio readiness."""
+    try:
+        queue = get_queue()
+    except Exception as e:
+        logger.warning("Failed to compute queue audio status hash: %s", e)
+        return 0
+
+    status_value = 0
+    for item in queue:
+        if (item.type or "youtube") != "youtube":
+            continue
+        status = get_audio_prefetch_status(item.youtube_id)
+        status_value = (
+            (status_value * 131) + (item.id * 17) + sum(ord(char) for char in status)
+        )
+    return status_value
+
+
+def _enqueue_prefetch_safely(video_id: str) -> None:
+    """Start warming audio without failing the queue operation."""
+    try:
+        status = enqueue_audio_prefetch(video_id)
+        logger.info("Prefetch enqueue for %s returned %s", video_id, status)
+    except Exception as e:
+        logger.warning("Failed to enqueue prefetch for %s: %s", video_id, e)
 
 
 @router.post("/queue/add")
@@ -59,6 +92,8 @@ def add_video_to_queue(request: QueueRequest) -> JSONResponse:
             video_title = f"YouTube Video {video_id}"
             queue_id = add_to_queue(video_id, video_title)
 
+        _enqueue_prefetch_safely(video_id)
+
         return JSONResponse(
             {
                 "status": "added",
@@ -77,7 +112,9 @@ def get_current_queue() -> JSONResponse:
     """Get the current queue."""
     try:
         queue = get_queue()
-        return JSONResponse({"queue": [item.to_dict() for item in queue]})
+        return JSONResponse(
+            {"queue": [_queue_item_to_response(item) for item in queue]}
+        )
     except Exception as e:
         logger.error(f"Error fetching queue: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -179,33 +216,8 @@ def prefetch_audio(video_id: str) -> JSONResponse:
     Called by the frontend when current track is nearing its end,
     so the next track is cached and ready to play immediately.
     """
-    audio_cache = get_audio_cache()
-
-    # Already cached — nothing to do
-    if audio_cache.check_file_exists(video_id):
-        logger.info(f"Prefetch {video_id}: already cached")
-        return JSONResponse({"status": "cached", "video_id": video_id})
-
-    # Already downloading — don't start a second one
-    if is_download_in_progress(video_id):
-        logger.info(f"Prefetch {video_id}: download already in progress")
-        return JSONResponse({"status": "downloading", "video_id": video_id})
-
-    # Start background download (fire and forget)
-    proc = start_youtube_download(video_id)
-
-    if proc is None:
-        return JSONResponse({"status": "cached", "video_id": video_id})
-
-    def _prefetch_worker():
-        proc.wait()
-        finish_youtube_download(video_id, proc.returncode)
-
-    thread = threading.Thread(target=_prefetch_worker, daemon=True)
-    thread.start()
-
-    logger.info(f"Prefetch {video_id}: started background download")
-    return JSONResponse({"status": "started", "video_id": video_id})
+    status = enqueue_audio_prefetch(video_id)
+    return JSONResponse({"status": status, "video_id": video_id})
 
 
 def _run_suggestions_sync() -> dict:
@@ -252,6 +264,7 @@ def _run_suggestions_sync() -> dict:
                         "channel": suggestion.get("channel", "Unknown"),
                     }
                 )
+                _enqueue_prefetch_safely(video_id)
                 logger.info(f"Added suggestion to queue: {metadata['title']}")
             else:
                 queue_id = add_to_queue(
@@ -267,6 +280,7 @@ def _run_suggestions_sync() -> dict:
                         "channel": suggestion.get("channel", "Unknown"),
                     }
                 )
+                _enqueue_prefetch_safely(video_id)
                 logger.warning(
                     f"Could not fetch YouTube metadata for {video_id}, using search result"
                 )

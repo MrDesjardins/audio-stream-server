@@ -28,6 +28,7 @@ from services.streaming import (
     is_download_in_progress,
 )
 from services.youtube import get_video_metadata, extract_video_id
+from routes.queue import get_queue_audio_status_hash
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -94,12 +95,20 @@ class StreamState:
                     self._current_process.kill()
                 self._current_process = None
                 return True
+            if self._current_video_id and is_download_in_progress(
+                self._current_video_id
+            ):
+                return True
             return False
 
     def is_streaming(self) -> bool:
         """Check if currently downloading."""
         with self._lock:
-            return self._current_process is not None
+            current_video_id = self._current_video_id
+            has_process = self._current_process is not None
+        return has_process or (
+            current_video_id is not None and is_download_in_progress(current_video_id)
+        )
 
     @property
     def current_video_id(self) -> Optional[str]:
@@ -281,11 +290,17 @@ def get_status() -> dict:
     except Exception as e:
         logger.warning(f"Failed to compute queue hash: {e}")
         queue_hash = 0
+    try:
+        queue_audio_status_hash = get_queue_audio_status_hash()
+    except Exception as e:
+        logger.warning(f"Failed to compute queue audio status hash: {e}")
+        queue_audio_status_hash = 0
     return {
         "status": "streaming" if state.is_streaming() else "idle",
         "current_video_id": state.current_video_id,
         "current_queue_id": state.current_queue_id,
         "queue_hash": queue_hash,
+        "queue_audio_status_hash": queue_audio_status_hash,
     }
 
 

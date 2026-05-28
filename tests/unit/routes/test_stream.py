@@ -141,6 +141,36 @@ class TestStreamState:
 
         assert state._current_process is None
 
+    @patch("routes.stream.is_download_in_progress", return_value=True)
+    @patch("routes.stream.start_youtube_download")
+    def test_is_streaming_true_when_attached_to_existing_download(
+        self, mock_start, mock_in_progress
+    ):
+        """A stream waiting on a prefetch-owned download should report streaming."""
+        mock_start.return_value = None
+        lock = threading.Lock()
+        state = StreamState(lock)
+
+        state.start_stream("prefetch_vid", skip_transcription=False)
+        state.set_current("prefetch_vid", 7)
+
+        assert state.is_streaming() is True
+
+    @patch("routes.stream.is_download_in_progress", return_value=True)
+    @patch("routes.stream.start_youtube_download")
+    def test_stop_stream_succeeds_when_attached_to_existing_download(
+        self, mock_start, mock_in_progress
+    ):
+        """Stop clears UI state even when the download is owned by the prefetcher."""
+        mock_start.return_value = None
+        lock = threading.Lock()
+        state = StreamState(lock)
+
+        state.start_stream("prefetch_vid", skip_transcription=False)
+        state.set_current("prefetch_vid", 7)
+
+        assert state.stop_stream() is True
+
     def test_stop_stream_kills_on_wait_timeout(self):
         """If wait() times out during stop, process is killed."""
         wait_event = threading.Event()
@@ -551,11 +581,12 @@ class TestStatusEndpoint:
         assert response.json()["status"] == "idle"
 
     @patch("routes.stream.get_queue_hash", return_value=50001)
+    @patch("routes.stream.get_queue_audio_status_hash", return_value=9001)
     @patch("routes.stream.get_stream_state")
     def test_status_includes_queue_hash_and_current(
-        self, mock_state, mock_hash, client
+        self, mock_state, mock_audio_hash, mock_hash, client
     ):
-        """/status includes queue_hash, current_video_id, and current_queue_id."""
+        """/status includes queue hashes, current_video_id, and current_queue_id."""
         state = Mock()
         state.is_streaming = Mock(return_value=True)
         state.current_video_id = "abc123"
@@ -567,6 +598,7 @@ class TestStatusEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert data["queue_hash"] == 50001
+        assert data["queue_audio_status_hash"] == 9001
         assert data["current_video_id"] == "abc123"
         assert data["current_queue_id"] == 7
 

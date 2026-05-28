@@ -84,6 +84,10 @@ def start_youtube_download(youtube_video_id: str):
         logger.info(f"Audio file for video {youtube_video_id} already exists in cache")
         return None
 
+    if is_download_in_progress(youtube_video_id):
+        logger.info(f"Audio file for video {youtube_video_id} is already downloading")
+        return None
+
     logger.info(f"Downloading audio for video {youtube_video_id}")
     url = f"https://www.youtube.com/watch?v={youtube_video_id}"
 
@@ -193,9 +197,12 @@ def finish_youtube_download(youtube_video_id: str, returncode: int):
             # Clean up old audio files to maintain cache limit
             try:
                 from services.cache import get_audio_cache
+                from services.database import get_queued_youtube_ids
 
                 audio_cache = get_audio_cache()
-                audio_cache.cleanup_old_files()
+                protected_video_ids = set(get_queued_youtube_ids())
+                protected_video_ids.add(youtube_video_id)
+                audio_cache.cleanup_old_files(protected_video_ids=protected_video_ids)
             except Exception as e:
                 logger.error(f"Error during audio cache cleanup: {e}")
         else:

@@ -5,7 +5,7 @@ import logging
 import os
 import threading
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Optional, Dict, Set
 from datetime import datetime
 
 from config import get_config
@@ -113,8 +113,9 @@ class AudioCache:
             f"Audio cache initialized: max {max_files} files in {self.audio_dir}"
         )
 
-    def cleanup_old_files(self) -> None:
+    def cleanup_old_files(self, protected_video_ids: Optional[Set[str]] = None) -> None:
         """Remove oldest audio files if we exceed max_files limit."""
+        protected_video_ids = protected_video_ids or set()
         try:
             # Get all mp3 files with their modification times
             audio_files = []
@@ -127,10 +128,15 @@ class AudioCache:
             # Remove oldest files if we exceed the limit
             files_to_remove = len(audio_files) - self.max_files
             if files_to_remove > 0:
+                removable_files = [
+                    (file_path, mtime)
+                    for file_path, mtime in audio_files
+                    if file_path.stem not in protected_video_ids
+                ]
                 logger.info(
                     f"Cleaning up {files_to_remove} old audio files (limit: {self.max_files})"
                 )
-                for file_path, _ in audio_files[:files_to_remove]:
+                for file_path, _ in removable_files[:files_to_remove]:
                     try:
                         file_path.unlink()
                         logger.info(f"Removed old audio file: {file_path.name}")

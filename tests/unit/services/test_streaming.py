@@ -2,9 +2,12 @@
 
 import os
 import tempfile
+import time
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
+from services.cache import AudioCache
 
 
 @pytest.fixture
@@ -99,6 +102,28 @@ class TestStartYoutubeDownload:
         from services.streaming import start_youtube_download
 
         proc = start_youtube_download("cached_vid")
+
+        assert proc is None
+        mock_popen.assert_not_called()
+
+    @patch("services.streaming.subprocess.Popen")
+    @patch("services.streaming.get_audio_cache")
+    @patch("services.streaming.config")
+    def test_returns_none_when_download_in_progress(
+        self, mock_cfg, mock_get_cache, mock_popen, temp_audio_dir
+    ):
+        """Does not start a duplicate process when a marker already exists."""
+        mock_cfg.temp_audio_dir = temp_audio_dir
+        mock_cfg.get_audio_path = lambda vid: os.path.join(temp_audio_dir, f"{vid}.mp3")
+        cache = Mock()
+        cache.check_file_exists = Mock(return_value=False)
+        mock_get_cache.return_value = cache
+        marker = os.path.join(temp_audio_dir, "downloading_vid.downloading")
+        open(marker, "w").close()
+
+        from services.streaming import start_youtube_download
+
+        proc = start_youtube_download("downloading_vid")
 
         assert proc is None
         mock_popen.assert_not_called()
@@ -375,15 +400,48 @@ class TestFinishYoutubeDownload:
         from services.streaming import finish_youtube_download
 
         with patch("services.cache.get_audio_cache") as mock_cache_getter:
-            mock_cache = Mock()
-            mock_cache.cleanup_old_files = Mock()
-            mock_cache_getter.return_value = mock_cache
+            with patch(
+                "services.database.get_queued_youtube_ids",
+                return_value=["queued_vid", "cleanup_vid"],
+            ):
+                mock_cache = Mock()
+                mock_cache.cleanup_old_files = Mock()
+                mock_cache_getter.return_value = mock_cache
 
-            finish_youtube_download("cleanup_vid", returncode=0)
+                finish_youtube_download("cleanup_vid", returncode=0)
 
-            # Verify cleanup was called
-            mock_cache_getter.assert_called_once()
-            mock_cache.cleanup_old_files.assert_called_once()
+                # Verify cleanup was called with queue/current protection.
+                mock_cache_getter.assert_called_once()
+                mock_cache.cleanup_old_files.assert_called_once_with(
+                    protected_video_ids={"queued_vid", "cleanup_vid"}
+                )
+
+    @patch("services.streaming.config")
+    def test_cleanup_error_is_contained_if_queue_lookup_fails(
+        self, mock_cfg, temp_audio_dir
+    ):
+        """Queue protection lookup failures are contained."""
+        mock_cfg.temp_audio_dir = temp_audio_dir
+        mock_cfg.get_audio_path = lambda vid: os.path.join(temp_audio_dir, f"{vid}.mp3")
+
+        audio_path = os.path.join(temp_audio_dir, "cleanup_vid.mp3")
+        with open(audio_path, "wb") as f:
+            f.write(b"audio data")
+
+        from services.streaming import finish_youtube_download
+
+        with patch("services.cache.get_audio_cache") as mock_cache_getter:
+            with patch(
+                "services.database.get_queued_youtube_ids",
+                side_effect=Exception("db unavailable"),
+            ):
+                mock_cache = Mock()
+                mock_cache.cleanup_old_files = Mock()
+                mock_cache_getter.return_value = mock_cache
+
+                finish_youtube_download("cleanup_vid", returncode=0)
+
+                mock_cache.cleanup_old_files.assert_not_called()
 
     @patch("services.streaming.config")
     def test_no_cleanup_on_failure(self, mock_cfg, temp_audio_dir):
@@ -403,3 +461,25 @@ class TestFinishYoutubeDownload:
             # Verify cleanup was NOT called (file failed)
             mock_cache_getter.assert_not_called()
             mock_cache.cleanup_old_files.assert_not_called()
+
+
+class TestAudioCacheProtectedCleanup:
+    """Tests for queue-aware audio cache cleanup."""
+
+    def test_cleanup_keeps_protected_queued_files(self, temp_audio_dir):
+        """Cleanup removes only unprotected files when queued files are old."""
+        cache = AudioCache(max_files=2)
+        cache.audio_dir = Path(temp_audio_dir)
+
+        for index, video_id in enumerate(["queued_old", "old1", "old2", "newest"]):
+            path = Path(temp_audio_dir) / f"{video_id}.mp3"
+            path.touch()
+            mtime = time.time() - (4 - index) * 10
+            os.utime(path, (mtime, mtime))
+
+        cache.cleanup_old_files(protected_video_ids={"queued_old"})
+
+        remaining_files = set(os.listdir(temp_audio_dir))
+        assert "queued_old.mp3" in remaining_files
+        assert "newest.mp3" in remaining_files
+        assert len(remaining_files) == 2

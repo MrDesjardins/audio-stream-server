@@ -12,11 +12,13 @@ let currentVideoId = null;
 let currentQueueId = null;
 let isPlaying = false;
 let lastQueueHash = null;
+let lastQueueAudioStatusHash = null;
 let loadingQueueId = null;
 let isDraggingQueue = false;
 let currentTrackTitle = null;
 let serverAudioDuration = null; // Authoritative duration from server (ffprobe)
 let currentSpeed = 1.0; // Persists playback rate across track switches
+let playbackRequestSeq = 0;
 const defaultTitle = 'YouTube Radio';
 
 // Soft click/tap feedback via Web Audio API (no external dependency)
@@ -207,7 +209,7 @@ function initSpeed() {
 initSpeed();
 
 // File polling functions
-async function waitForAudioFile(videoId, maxWaitSeconds = 60) {
+async function waitForAudioFile(videoId, maxWaitSeconds = 60, requestSeq = null) {
     /**
      * Poll the /audio endpoint until the file is available or timeout.
      * Returns true if file is ready, false if timeout.
@@ -217,6 +219,10 @@ async function waitForAudioFile(videoId, maxWaitSeconds = 60) {
     let attemptCount = 0;
 
     while (Date.now() - startTime < maxWaitMs) {
+        if (requestSeq !== null && !isPlaybackRequestCurrent(requestSeq)) {
+            return false;
+        }
+
         attemptCount++;
         try {
             const audioUrl = `${appConfig.apiBaseUrl}/audio/${videoId}?t=${Date.now()}`;
@@ -235,7 +241,9 @@ async function waitForAudioFile(videoId, maxWaitSeconds = 60) {
             // File not ready yet, wait before retry
             const waitTime = Math.min(500 + (attemptCount * 100), 2000); // Progressive backoff, max 2s
             const elapsed = Math.ceil((Date.now() - startTime) / 1000);
-            showStreamStatus(`Downloading from YouTube... (${elapsed}s)`);
+            if (requestSeq === null || isPlaybackRequestCurrent(requestSeq)) {
+                showStreamStatus(`Downloading from YouTube... (${elapsed}s)`);
+            }
             await new Promise(resolve => setTimeout(resolve, waitTime));
         } catch (error) {
             console.warn(`Polling attempt ${attemptCount} failed:`, error);
@@ -1014,6 +1022,7 @@ async function playNext() {
 }
 
 async function startStreamFromQueue(youtube_video_id, queue_id) {
+    const requestSeq = beginPlaybackRequest();
     setQueueItemLoading(queue_id);
     // Reset position save throttle so first save of new track isn't suppressed
     lastPositionSaveTime = 0;
@@ -1029,6 +1038,10 @@ async function startStreamFromQueue(youtube_video_id, queue_id) {
         });
         const data = await res.json();
         updateStatus(data.status || data.detail, res.ok ? 'streaming' : 'error');
+
+        if (!isPlaybackRequestCurrent(requestSeq)) {
+            return;
+        }
 
         if (res.ok) {
             currentVideoId = youtube_video_id;
@@ -1052,7 +1065,11 @@ async function startStreamFromQueue(youtube_video_id, queue_id) {
             showStreamStatus('Starting download from YouTube...');
             serverAudioDuration = null; // Reset for new track
             resetPositionState(); // Clear old scrub position from MediaSession
-            const fileReady = await waitForAudioFile(data.youtube_video_id, 60);
+            const fileReady = await waitForAudioFile(data.youtube_video_id, 60, requestSeq);
+
+            if (!isPlaybackRequestCurrent(requestSeq)) {
+                return;
+            }
 
             if (!fileReady) {
                 updateStatus('Download timed out or failed. Check server logs or try again.', 'error');
@@ -1065,6 +1082,10 @@ async function startStreamFromQueue(youtube_video_id, queue_id) {
             // is always registered before the event can fire (the file is already
             // downloaded, so canplay can fire on the next microtask after load()).
             const savedPos = await fetchSavedPosition(youtube_video_id);
+
+            if (!isPlaybackRequestCurrent(requestSeq)) {
+                return;
+            }
 
             // File is ready, now load and play
             const audioUrl = `${appConfig.apiBaseUrl}/audio/${data.youtube_video_id}?t=${Date.now()}`;
@@ -1087,23 +1108,31 @@ async function startStreamFromQueue(youtube_video_id, queue_id) {
             hideStreamStatus();
 
             player.play().catch(e => {
+                if (!isPlaybackRequestCurrent(requestSeq)) {
+                    return;
+                }
                 console.error('Audio playback failed:', e);
                 if (isPlaying) {
                     retryStream();
                 }
             });
         } else {
-            clearQueueItemLoading();
+            if (isPlaybackRequestCurrent(requestSeq)) {
+                clearQueueItemLoading();
+            }
             updateStatus('Failed to start stream', 'error');
         }
     } catch (error) {
-        clearQueueItemLoading();
-        updateStatus('Failed to start stream', 'error');
+        if (isPlaybackRequestCurrent(requestSeq)) {
+            clearQueueItemLoading();
+            updateStatus('Failed to start stream', 'error');
+        }
         console.error(error);
     }
 }
 
 async function startSummaryFromQueue(weekYear, queue_id) {
+    const requestSeq = beginPlaybackRequest();
     try {
         setQueueItemLoading(queue_id);
         // For summaries, we directly play the audio file from the server
@@ -1133,13 +1162,24 @@ async function startSummaryFromQueue(weekYear, queue_id) {
             }
         }
 
+        if (!isPlaybackRequestCurrent(requestSeq)) {
+            return;
+        }
+
         await renderQueue();
+
+        if (!isPlaybackRequestCurrent(requestSeq)) {
+            return;
+        }
 
         // Load and play the audio
         player.src = audioUrl;
         player.load();
 
         player.play().catch(e => {
+            if (!isPlaybackRequestCurrent(requestSeq)) {
+                return;
+            }
             console.error('Audio playback failed:', e);
             updateStatus('Failed to play summary', 'error');
             isPlaying = false;
@@ -1148,10 +1188,12 @@ async function startSummaryFromQueue(weekYear, queue_id) {
 
         updateStatus('Playing: ' + (currentItem ? currentItem.title : 'Weekly Summary'), 'streaming');
     } catch (error) {
-        clearQueueItemLoading();
-        updateStatus('Failed to play summary', 'error');
+        if (isPlaybackRequestCurrent(requestSeq)) {
+            clearQueueItemLoading();
+            updateStatus('Failed to play summary', 'error');
+            isPlaying = false;
+        }
         console.error(error);
-        isPlaying = false;
     }
 }
 
@@ -1163,6 +1205,15 @@ function setQueueItemLoading(queueId) {
 function clearQueueItemLoading() {
     loadingQueueId = null;
     _applyQueueLoadingClass();
+}
+
+function beginPlaybackRequest() {
+    playbackRequestSeq += 1;
+    return playbackRequestSeq;
+}
+
+function isPlaybackRequestCurrent(requestSeq) {
+    return requestSeq === playbackRequestSeq;
 }
 
 function _applyQueueLoadingClass() {
@@ -1248,6 +1299,10 @@ async function renderQueue() {
                 `0:00 / ${durStr}</span>`;
         }
 
+        const audioStatusBadge = itemType === 'youtube'
+            ? getAudioStatusBadge(item.audio_status)
+            : '';
+
         return `
             <div class="${itemClasses}"
                  data-queue-id="${item.id}"
@@ -1265,6 +1320,7 @@ async function renderQueue() {
                         <i class="fas fa-grip-vertical"></i>
                     </div>
                     ${isCurrentlyPlaying ? '<span class="playing-bars"><span></span><span></span><span></span></span>' : ''}
+                    ${audioStatusBadge}
                     ${resumeLabel}
                 </div>
                 <button onclick="event.stopPropagation(); playClickSound(); removeFromQueue(${item.id})"
@@ -1280,6 +1336,35 @@ async function renderQueue() {
     initializeQueueDragAndDrop();
     // Restore loading shimmer if still active (survives DOM rebuild)
     _applyQueueLoadingClass();
+}
+
+function getAudioStatusBadge(audioStatus) {
+    const statusMap = {
+        cached: {
+            className: 'queue-audio-status-cached',
+            icon: 'fa-check-circle',
+            label: 'Cached',
+        },
+        downloading: {
+            className: 'queue-audio-status-downloading',
+            icon: 'fa-cloud-download-alt',
+            label: 'Downloading',
+        },
+        queued: {
+            className: 'queue-audio-status-queued',
+            icon: 'fa-clock',
+            label: 'Queued',
+        },
+        failed: {
+            className: 'queue-audio-status-failed',
+            icon: 'fa-exclamation-circle',
+            label: 'Failed',
+        },
+    };
+    const badge = statusMap[audioStatus];
+    if (!badge) return '';
+    return `<span class="queue-audio-status ${badge.className}">` +
+        `<i class="fas ${badge.icon}"></i> ${badge.label}</span>`;
 }
 
 // Queue drag-and-drop functionality
@@ -1881,6 +1966,7 @@ function extractVideoId(input) {
 }
 
 async function startStream() {
+    const requestSeq = beginPlaybackRequest();
     const input = document.getElementById('youtube_video_id').value;
 
     if (!input.trim()) {
@@ -1908,6 +1994,10 @@ async function startStream() {
         });
         const data = await res.json();
         updateStatus(data.status || data.detail, res.ok ? 'streaming' : 'error');
+
+        if (!isPlaybackRequestCurrent(requestSeq)) {
+            return;
+        }
 
         if (res.ok) {
             currentVideoId = youtube_video_id;
@@ -1940,7 +2030,11 @@ async function startStream() {
             showStreamStatus('Starting download from YouTube...');
             serverAudioDuration = null; // Reset for new track
             resetPositionState(); // Clear old scrub position from MediaSession
-            const fileReady = await waitForAudioFile(youtube_video_id, 60);
+            const fileReady = await waitForAudioFile(youtube_video_id, 60, requestSeq);
+
+            if (!isPlaybackRequestCurrent(requestSeq)) {
+                return;
+            }
 
             if (!fileReady) {
                 updateStatus('Download timed out or failed. Check server logs or try again.', 'error');
@@ -1960,6 +2054,9 @@ async function startStream() {
             hideStreamStatus();
 
             player.play().catch(e => {
+                if (!isPlaybackRequestCurrent(requestSeq)) {
+                    return;
+                }
                 console.error('❌ Audio playback failed:', e);
                 // Auto-retry if initial play fails
                 if (isPlaying) {
@@ -1968,12 +2065,15 @@ async function startStream() {
             });
         }
     } catch (error) {
-        updateStatus('Failed to start stream', 'error');
+        if (isPlaybackRequestCurrent(requestSeq)) {
+            updateStatus('Failed to start stream', 'error');
+        }
         console.error(error);
     }
 }
 
 async function stopStream() {
+    beginPlaybackRequest();
     // Pause the player first
     player.pause();
     isPlaying = false;
@@ -2076,12 +2176,25 @@ async function fetchStatus() {
 
         // Queue sync: detect changes from other devices
         const serverHash = data.queue_hash;
+        const serverAudioStatusHash = data.queue_audio_status_hash;
         if (serverHash !== undefined) {
-            if (lastQueueHash !== null && lastQueueHash !== serverHash && !isDraggingQueue) {
-                remoteLog('log', 'Queue hash changed, refreshing queue', { old: lastQueueHash, new: serverHash });
+            const queueChanged = lastQueueHash !== null && lastQueueHash !== serverHash;
+            const audioStatusChanged = lastQueueAudioStatusHash !== null
+                && serverAudioStatusHash !== undefined
+                && lastQueueAudioStatusHash !== serverAudioStatusHash;
+            if ((queueChanged || audioStatusChanged) && !isDraggingQueue) {
+                remoteLog('log', 'Queue changed, refreshing queue', {
+                    oldQueueHash: lastQueueHash,
+                    newQueueHash: serverHash,
+                    oldAudioStatusHash: lastQueueAudioStatusHash,
+                    newAudioStatusHash: serverAudioStatusHash,
+                });
                 await renderQueue();
             }
             lastQueueHash = serverHash;
+        }
+        if (serverAudioStatusHash !== undefined) {
+            lastQueueAudioStatusHash = serverAudioStatusHash;
         }
 
         // Sync "now playing" indicator when this device is passive (not playing).

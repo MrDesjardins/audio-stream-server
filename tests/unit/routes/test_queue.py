@@ -23,9 +23,10 @@ class TestAddToQueueEndpoint:
 
     @patch("routes.queue.get_video_metadata")
     @patch("routes.queue.extract_video_id")
+    @patch("routes.queue.enqueue_audio_prefetch")
     @patch("routes.queue.add_to_queue")
     def test_add_to_queue_success(
-        self, mock_add, mock_extract, mock_get_metadata, client
+        self, mock_add, mock_enqueue, mock_extract, mock_get_metadata, client
     ):
         """Test successfully adding video to queue."""
         mock_extract.return_value = "test123"
@@ -44,12 +45,36 @@ class TestAddToQueueEndpoint:
         assert data["queue_id"] == 1
         assert data["youtube_id"] == "test123"
         assert data["title"] == "Test Video Title"
+        mock_enqueue.assert_called_once_with("test123")
 
     @patch("routes.queue.get_video_metadata")
     @patch("routes.queue.extract_video_id")
+    @patch("routes.queue.enqueue_audio_prefetch")
+    @patch("routes.queue.add_to_queue")
+    def test_add_to_queue_still_succeeds_if_prefetch_enqueue_fails(
+        self, mock_add, mock_enqueue, mock_extract, mock_get_metadata, client
+    ):
+        """Prefetch failures should not block adding an item to the queue."""
+        mock_extract.return_value = "test123"
+        mock_get_metadata.return_value = {
+            "title": "Test Video Title",
+            "channel": "Test Channel",
+            "thumbnail_url": "https://example.com/thumb.jpg",
+        }
+        mock_add.return_value = 1
+        mock_enqueue.side_effect = Exception("prefetch unavailable")
+
+        response = client.post("/queue/add", json={"youtube_video_id": "test123"})
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "added"
+
+    @patch("routes.queue.get_video_metadata")
+    @patch("routes.queue.extract_video_id")
+    @patch("routes.queue.enqueue_audio_prefetch")
     @patch("routes.queue.add_to_queue")
     def test_add_to_queue_with_url(
-        self, mock_add, mock_extract, mock_get_metadata, client
+        self, mock_add, mock_enqueue, mock_extract, mock_get_metadata, client
     ):
         """Test adding video with URL instead of ID."""
         mock_extract.return_value = "extracted123"
@@ -68,12 +93,14 @@ class TestAddToQueueEndpoint:
         assert response.status_code == 200
         # Verify ID was extracted
         mock_extract.assert_called_with("https://www.youtube.com/watch?v=extracted123")
+        mock_enqueue.assert_called_once_with("extracted123")
 
     @patch("routes.queue.get_video_metadata")
     @patch("routes.queue.extract_video_id")
+    @patch("routes.queue.enqueue_audio_prefetch")
     @patch("routes.queue.add_to_queue")
     def test_add_to_queue_no_title_uses_fallback(
-        self, mock_add, mock_extract, mock_get_metadata, client
+        self, mock_add, mock_enqueue, mock_extract, mock_get_metadata, client
     ):
         """Test using fallback title when title fetch fails."""
         mock_extract.return_value = "test123"
@@ -85,10 +112,14 @@ class TestAddToQueueEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert "YouTube Video test123" in data["title"]
+        mock_enqueue.assert_called_once_with("test123")
 
     @patch("routes.queue.extract_video_id")
+    @patch("routes.queue.enqueue_audio_prefetch")
     @patch("routes.queue.add_to_queue")
-    def test_add_to_queue_database_error(self, mock_add, mock_extract, client):
+    def test_add_to_queue_database_error(
+        self, mock_add, mock_enqueue, mock_extract, client
+    ):
         """Test handling database error."""
         mock_extract.return_value = "test123"
         mock_add.side_effect = Exception("Database error")
@@ -96,14 +127,17 @@ class TestAddToQueueEndpoint:
         response = client.post("/queue/add", json={"youtube_video_id": "test123"})
 
         assert response.status_code == 500
+        mock_enqueue.assert_not_called()
 
 
 class TestGetQueueEndpoint:
     """Tests for /queue endpoint."""
 
+    @patch("routes.queue.get_audio_prefetch_status")
     @patch("routes.queue.get_queue")
-    def test_get_queue_success(self, mock_get_queue, client):
+    def test_get_queue_success(self, mock_get_queue, mock_audio_status, client):
         """Test getting the queue."""
+        mock_audio_status.side_effect = ["cached", "downloading"]
         mock_get_queue.return_value = [
             QueueItem(
                 id=1,
@@ -137,6 +171,8 @@ class TestGetQueueEndpoint:
         assert len(data["queue"]) == 2
         assert data["queue"][0]["youtube_id"] == "video1"
         assert data["queue"][1]["youtube_id"] == "video2"
+        assert data["queue"][0]["audio_status"] == "cached"
+        assert data["queue"][1]["audio_status"] == "downloading"
 
     @patch("routes.queue.get_queue")
     def test_get_queue_empty(self, mock_get_queue, client):
@@ -316,6 +352,86 @@ class TestClearQueueEndpoint:
         assert response.status_code == 500
 
 
+class TestPrefetchEndpoint:
+    """Tests for /queue/prefetch endpoint."""
+
+    @patch("routes.queue.enqueue_audio_prefetch")
+    def test_prefetch_uses_shared_worker(self, mock_enqueue, client):
+        """Prefetch endpoint queues work through the shared prefetcher."""
+        mock_enqueue.return_value = "queued"
+
+        response = client.post("/queue/prefetch/video123")
+
+        assert response.status_code == 200
+        assert response.json() == {"status": "queued", "video_id": "video123"}
+        mock_enqueue.assert_called_once_with("video123")
+
+    @patch("routes.queue.enqueue_audio_prefetch")
+    def test_prefetch_returns_cached_status(self, mock_enqueue, client):
+        """Prefetch endpoint returns normalized prefetch statuses."""
+        mock_enqueue.return_value = "cached"
+
+        response = client.post("/queue/prefetch/video123")
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "cached"
+
+
+class TestQueueAudioStatusHash:
+    """Tests for queue audio readiness hash."""
+
+    @patch("routes.queue.get_audio_prefetch_status")
+    @patch("routes.queue.get_queue")
+    def test_hash_changes_when_audio_status_changes(
+        self, mock_get_queue, mock_audio_status
+    ):
+        """Audio readiness changes should produce a different status hash."""
+        from routes.queue import get_queue_audio_status_hash
+
+        mock_get_queue.return_value = [
+            QueueItem(
+                id=1,
+                youtube_id="video1",
+                title="Video 1",
+                channel=None,
+                thumbnail_url=None,
+                position=1,
+                created_at="2024-01-01T00:00:00",
+                type="youtube",
+                week_year=None,
+            )
+        ]
+        mock_audio_status.return_value = "queued"
+        queued_hash = get_queue_audio_status_hash()
+        mock_audio_status.return_value = "cached"
+        cached_hash = get_queue_audio_status_hash()
+
+        assert queued_hash != cached_hash
+
+    @patch("routes.queue.get_audio_prefetch_status")
+    @patch("routes.queue.get_queue")
+    def test_hash_ignores_summary_items(self, mock_get_queue, mock_audio_status):
+        """Summary items do not need audio prefetch status."""
+        from routes.queue import get_queue_audio_status_hash
+
+        mock_get_queue.return_value = [
+            QueueItem(
+                id=2,
+                youtube_id="",
+                title="Summary",
+                channel=None,
+                thumbnail_url=None,
+                position=1,
+                created_at="2024-01-01T00:00:00",
+                type="summary",
+                week_year="2026-W01",
+            )
+        ]
+
+        assert get_queue_audio_status_hash() == 0
+        mock_audio_status.assert_not_called()
+
+
 class TestSuggestionsEndpoint:
     """Tests for /queue/suggestions endpoint."""
 
@@ -331,6 +447,7 @@ class TestSuggestionsEndpoint:
 
     @patch("routes.queue.get_video_metadata")
     @patch("routes.queue.add_to_queue")
+    @patch("routes.queue.enqueue_audio_prefetch")
     @patch("services.book_suggestions.get_video_suggestions")
     @patch("routes.queue.config")
     @pytest.mark.asyncio
@@ -338,6 +455,7 @@ class TestSuggestionsEndpoint:
         self,
         mock_config,
         mock_get_suggestions,
+        mock_enqueue,
         mock_add_to_queue,
         mock_get_metadata,
         client,
@@ -386,6 +504,7 @@ class TestSuggestionsEndpoint:
         assert len(data["added"]) == 2
         assert data["added"][0]["video_id"] == "dQw4w9WgXcQ"
         assert data["added"][0]["title"] == "Atomic Habits Full Audiobook"
+        assert mock_enqueue.call_count == 2
 
     @patch("services.book_suggestions.get_video_suggestions")
     @patch("routes.queue.config")
@@ -406,6 +525,7 @@ class TestSuggestionsEndpoint:
 
     @patch("routes.queue.get_video_metadata")
     @patch("routes.queue.add_to_queue")
+    @patch("routes.queue.enqueue_audio_prefetch")
     @patch("services.book_suggestions.get_video_suggestions")
     @patch("routes.queue.config")
     @pytest.mark.asyncio
@@ -413,6 +533,7 @@ class TestSuggestionsEndpoint:
         self,
         mock_config,
         mock_get_suggestions,
+        mock_enqueue,
         mock_add_to_queue,
         mock_get_metadata,
         client,
@@ -451,6 +572,7 @@ class TestSuggestionsEndpoint:
         assert (
             len(data["added"]) == 2
         )  # Both should be added (second uses fallback title)
+        assert mock_enqueue.call_count == 2
 
     @patch("services.book_suggestions.get_video_suggestions")
     @patch("routes.queue.config")

@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from config import get_config
+from services.audio_prefetch import init_audio_prefetcher, shutdown_audio_prefetcher
 from services.background_tasks import init_background_tasks
 from services.database import init_database
 from services.path_utils import expand_path
@@ -98,6 +99,9 @@ if config.tts_enabled:
     expand_path(config.weekly_summary_audio_dir).mkdir(parents=True, exist_ok=True)
 
 # Initialize background tasks if transcription is enabled
+logger.info("Initializing audio prefetch worker")
+init_audio_prefetcher()
+
 if config.transcription_enabled:
     logger.info("Transcription enabled - initializing background tasks")
     init_background_tasks()
@@ -153,6 +157,11 @@ def shutdown_handler(signum=None, frame=None) -> None:
             logger.warning(f"Error accessing stream state during shutdown: {e}")
 
     # Stop background worker if transcription enabled
+    try:
+        shutdown_audio_prefetcher()
+    except Exception as e:
+        logger.warning(f"Error stopping audio prefetch worker: {e}")
+
     if config.transcription_enabled:
         try:
             from services.background_tasks import get_transcription_queue

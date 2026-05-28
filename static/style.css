@@ -645,6 +645,38 @@ main {
     margin-left: auto;
 }
 
+.queue-audio-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border-radius: 8px;
+    padding: 2px 7px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.queue-audio-status-cached {
+    background: rgba(34, 197, 94, 0.14);
+    color: rgba(34, 197, 94, 0.95);
+    border: 1px solid rgba(34, 197, 94, 0.28);
+}
+
+.queue-audio-status-downloading,
+.queue-audio-status-queued {
+    background: rgba(59, 130, 246, 0.14);
+    color: rgba(96, 165, 250, 0.95);
+    border: 1px solid rgba(59, 130, 246, 0.28);
+}
+
+.queue-audio-status-failed {
+    background: rgba(239, 68, 68, 0.14);
+    color: rgba(248, 113, 113, 0.95);
+    border: 1px solid rgba(239, 68, 68, 0.28);
+}
+
 /* Queue item loading state - while download/init is in progress */
 .queue-item-loading {
     position: relative;

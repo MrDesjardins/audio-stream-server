@@ -417,6 +417,21 @@ def get_queue() -> List[QueueItem]:
         return [QueueItem.from_db_row(row) for row in rows]
 
 
+def get_queued_youtube_ids() -> List[str]:
+    """Get YouTube IDs currently present in the playback queue."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT youtube_id
+            FROM queue
+            WHERE COALESCE(type, 'youtube') = 'youtube'
+              AND youtube_id IS NOT NULL
+              AND youtube_id != ''
+        """)
+
+        return [row["youtube_id"] for row in cursor.fetchall()]
+
+
 def get_next_in_queue() -> Optional[QueueItem]:
     """
     Get the first item in the queue (lowest position).
