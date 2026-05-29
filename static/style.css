@@ -677,6 +677,44 @@ main {
     border: 1px solid rgba(239, 68, 68, 0.28);
 }
 
+.queue-audio-status-cached-local {
+    background: rgba(34, 197, 94, 0.18);
+    color: rgba(250, 204, 21, 0.98);
+    border: 1px solid rgba(250, 204, 21, 0.45);
+}
+
+.queue-audio-status-cached-local .fa-bolt {
+    color: rgba(253, 224, 71, 1);
+    filter: drop-shadow(0 0 4px rgba(250, 204, 21, 0.5));
+}
+
+.client-cache-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    width: 100%;
+    margin-bottom: 12px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.client-cache-status {
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.7);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-client-cache-clear {
+    font-size: 0.8rem;
+    padding: 6px 12px;
+}
+
 /* Queue item loading state - while download/init is in progress */
 .queue-item-loading {
     position: relative;

@@ -44,6 +44,25 @@ function playClickSound() {
 const prefetchThresholdSeconds = appConfig.prefetchThresholdSeconds;
 let prefetchTriggered = false;
 
+// Client-side IndexedDB audio cache
+const clientCacheReady = clientAudioCache.init({
+    enabled: Boolean(appConfig.clientCacheEnabled),
+    maxItems: appConfig.clientCacheMaxItems || 5,
+    maxMb: appConfig.clientCacheMaxMb || 0,
+    apiBaseUrl: appConfig.apiBaseUrl,
+}).then((ok) => {
+    if (ok) {
+        updateClientCacheFooter();
+        clientAudioCache.checkStorageQuota().then((ratio) => {
+            if (ratio !== null) {
+                remoteLog('warn', 'Device storage over 80% full', { ratio });
+            }
+        });
+        syncClientCacheOnLoad();
+    }
+    return ok;
+});
+
 // Playback position persistence
 let lastPositionSaveTime = 0;
 const POSITION_SAVE_INTERVAL_MS = 10_000;
@@ -208,6 +227,106 @@ function initSpeed() {
 }
 initSpeed();
 
+async function updateClientCacheFooter() {
+    const statusEl = document.getElementById('client-cache-status');
+    if (!statusEl || !clientAudioCache.isEnabled()) {
+        return;
+    }
+    const stats = await clientAudioCache.getStats();
+    statusEl.innerHTML =
+        `<i class="fas fa-mobile-alt"></i> Device: ${stats.count}/${stats.maxItems} tracks` +
+        (stats.totalMb > 0 ? ` (${stats.totalMb} MB)` : '');
+}
+
+async function clearClientCache() {
+    await clientCacheReady;
+    if (!clientAudioCache.isEnabled()) {
+        return;
+    }
+    if (!confirm('Clear all audio cached on this device?')) {
+        return;
+    }
+    await clientAudioCache.clear();
+    await updateClientCacheFooter();
+    await renderQueue();
+}
+
+function refreshClientCacheUi() {
+    updateClientCacheFooter();
+    renderQueue();
+}
+
+/** Start server + device download for a video (non-blocking). */
+async function enqueueClientCacheForVideo(videoId) {
+    if (!videoId) {
+        return;
+    }
+    await clientCacheReady;
+    if (!clientAudioCache.isEnabled()) {
+        return;
+    }
+    if (await clientAudioCache.has(videoId)) {
+        return;
+    }
+
+    fetch(`/queue/prefetch/${videoId}`, { method: 'POST' }).catch(() => {});
+
+    clientAudioCache.prefetch(videoId)
+        .then(() => refreshClientCacheUi())
+        .catch((e) => console.warn('Client cache prefetch failed:', e));
+}
+
+/** On page load, backfill device cache for queue items not yet stored locally. */
+async function syncClientCacheOnLoad() {
+    await clientCacheReady;
+    if (!clientAudioCache.isEnabled()) {
+        return;
+    }
+
+    const queue = await fetchQueue();
+    for (const item of queue) {
+        if ((item.type || 'youtube') !== 'youtube') {
+            continue;
+        }
+        const videoId = item.youtube_id;
+        if (!videoId || await clientAudioCache.has(videoId)) {
+            continue;
+        }
+        enqueueClientCacheForVideo(videoId);
+    }
+}
+
+async function applyPlayerAudioSource(videoId) {
+    let url = null;
+    let fromDevice = false;
+
+    if (clientAudioCache.isEnabled() && await clientAudioCache.has(videoId)) {
+        url = await clientAudioCache.createObjectUrl(videoId);
+        fromDevice = Boolean(url);
+    }
+
+    if (!fromDevice) {
+        url = `${appConfig.apiBaseUrl}/audio/${videoId}`;
+    }
+
+    console.log(fromDevice ? 'Loading from device cache:' : 'Loading from server:', videoId);
+    player.src = url;
+
+    if (!fromDevice && clientAudioCache.isEnabled()) {
+        const title = currentTrackTitle || '';
+        player.addEventListener('canplay', function onCanPlayStore() {
+            player.removeEventListener('canplay', onCanPlayStore);
+            clientAudioCache.storeFromServer(videoId, title).then((stored) => {
+                if (stored) {
+                    refreshClientCacheUi();
+                }
+            });
+        }, { once: true });
+    }
+
+    return { url, fromDevice };
+}
+
 // File polling functions
 async function waitForAudioFile(videoId, maxWaitSeconds = 60, requestSeq = null) {
     /**
@@ -301,9 +420,9 @@ function retryStream() {
 
                     // Reload the audio file
                     if (currentVideoId) {
-                        const audioUrl = `${appConfig.apiBaseUrl}/audio/${currentVideoId}?t=${Date.now()}`;
-                        player.src = audioUrl;
-                        player.load();
+                        applyPlayerAudioSource(currentVideoId).then(() => {
+                            player.load();
+                        });
                     }
 
                     // Try to restore position
@@ -579,6 +698,8 @@ player.addEventListener('timeupdate', async function () {
     } catch (e) {
         console.warn('Prefetch request failed:', e);
     }
+
+    enqueueClientCacheForVideo(nextVideoId);
 });
 
 player.addEventListener('abort', function () {
@@ -852,6 +973,7 @@ async function addToQueue() {
             updateStatus('Added to queue: ' + data.title, 'streaming');
             document.getElementById('youtube_video_id').value = '';
             await renderQueue();
+            enqueueClientCacheForVideo(youtube_video_id);
         } else {
             updateStatus('Failed to add to queue', 'error');
         }
@@ -1088,10 +1210,7 @@ async function startStreamFromQueue(youtube_video_id, queue_id) {
             }
 
             // File is ready, now load and play
-            const audioUrl = `${appConfig.apiBaseUrl}/audio/${data.youtube_video_id}?t=${Date.now()}`;
-            console.log('Audio file ready, loading:', audioUrl);
-
-            player.src = audioUrl;
+            await applyPlayerAudioSource(data.youtube_video_id);
 
             if (savedPos > 30) {
                 const onCanPlay = () => {
@@ -1135,6 +1254,7 @@ async function startSummaryFromQueue(weekYear, queue_id) {
     const requestSeq = beginPlaybackRequest();
     try {
         setQueueItemLoading(queue_id);
+        clientAudioCache.revokeActiveBlobUrl();
         // For summaries, we directly play the audio file from the server
         updateStatus('Loading weekly summary...', 'streaming');
 
@@ -1209,6 +1329,7 @@ function clearQueueItemLoading() {
 
 function beginPlaybackRequest() {
     playbackRequestSeq += 1;
+    clientAudioCache.revokeActiveBlobUrl();
     return playbackRequestSeq;
 }
 
@@ -1247,6 +1368,11 @@ async function renderQueue() {
             if (posRes.ok) positions = await posRes.json();
         } catch (_) {}
     }
+
+    await clientCacheReady;
+    const onDeviceIds = clientAudioCache.isEnabled() && youtubeIds.length > 0
+        ? await clientAudioCache.hasMany(youtubeIds)
+        : new Set();
 
     queueContainer.innerHTML = queue.map((item, index) => {
         const isCurrentlyPlaying = currentQueueId === item.id;
@@ -1299,8 +1425,9 @@ async function renderQueue() {
                 `0:00 / ${durStr}</span>`;
         }
 
+        const onDevice = itemType === 'youtube' && onDeviceIds.has(item.youtube_id);
         const audioStatusBadge = itemType === 'youtube'
-            ? getAudioStatusBadge(item.audio_status)
+            ? getAudioStatusBadge(item.audio_status, onDevice)
             : '';
 
         return `
@@ -1338,32 +1465,45 @@ async function renderQueue() {
     _applyQueueLoadingClass();
 }
 
-function getAudioStatusBadge(audioStatus) {
+function getAudioStatusBadge(audioStatus, onDevice) {
+    if (onDevice) {
+        return '<span class="queue-audio-status queue-audio-status-cached queue-audio-status-cached-local" ' +
+            'title="Cached on this device">' +
+            '<i class="fas fa-bolt"></i> Cached</span>';
+    }
+
     const statusMap = {
         cached: {
             className: 'queue-audio-status-cached',
             icon: 'fa-check-circle',
             label: 'Cached',
+            title: 'Cached on server',
         },
         downloading: {
             className: 'queue-audio-status-downloading',
             icon: 'fa-cloud-download-alt',
             label: 'Downloading',
+            title: 'Downloading to server',
         },
         queued: {
             className: 'queue-audio-status-queued',
             icon: 'fa-clock',
             label: 'Queued',
+            title: 'Queued for download',
         },
         failed: {
             className: 'queue-audio-status-failed',
             icon: 'fa-exclamation-circle',
             label: 'Failed',
+            title: 'Download failed',
         },
     };
     const badge = statusMap[audioStatus];
-    if (!badge) return '';
-    return `<span class="queue-audio-status ${badge.className}">` +
+    if (!badge) {
+        return '';
+    }
+    const titleAttr = badge.title ? ` title="${badge.title}"` : '';
+    return `<span class="queue-audio-status ${badge.className}"${titleAttr}>` +
         `<i class="fas ${badge.icon}"></i> ${badge.label}</span>`;
 }
 
@@ -1930,6 +2070,7 @@ async function loadFromHistory(videoId) {
         if (res.ok) {
             updateStatus('Added to queue: ' + data.title, 'streaming');
             await renderQueue();
+            enqueueClientCacheForVideo(videoId);
         } else {
             updateStatus('Failed to add to queue', 'error');
         }
@@ -2044,10 +2185,7 @@ async function startStream() {
             }
 
             // File is ready, now load and play
-            const audioUrl = `${appConfig.apiBaseUrl}/audio/${youtube_video_id}?t=${Date.now()}`;
-            console.log('🎵 Audio file ready, loading:', audioUrl);
-
-            player.src = audioUrl;
+            await applyPlayerAudioSource(youtube_video_id);
             player.load();
             player.playbackRate = currentSpeed; // Reapply speed (src change can reset it)
 
@@ -2078,6 +2216,7 @@ async function stopStream() {
     player.pause();
     isPlaying = false;
     currentQueueId = null;
+    clientAudioCache.revokeActiveBlobUrl();
 
     // Cancel any retry attempts
     cancelRetry();

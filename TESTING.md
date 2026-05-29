@@ -293,6 +293,16 @@ Use `--durations=10` to find slow tests:
 pytest --durations=10
 ```
 
+## Manual Test Checklist: Client-Side Audio Cache
+
+Run these on a phone or mobile browser (or Chrome DevTools device mode):
+
+1. **Play and cache** — Play a YouTube track to completion. Footer should show `Device: 1/N tracks`. In DevTools → Application → IndexedDB → `audio-stream-client-cache`, confirm an entry exists.
+2. **Replay from device** — Play the same track again. Console should log `Loading from device cache`. Queue item shows **On device** badge (purple).
+3. **Prefetch next** — Queue two videos; play the first until ~30s before end. Server **Cached** and client **On device** should appear on the second item after prefetch.
+4. **Clear cache** — Click **Clear device cache** in the footer. Footer resets to `0/N`; **On device** badges disappear.
+5. **Private mode fallback** — Open the app in a private/incognito window (if IndexedDB is blocked). Playback should still work from the server; footer/cache UI may be hidden when `CLIENT_CACHE_ENABLED=false` or cache init fails silently.
+
 ## Next Steps
 
 1. Fix the 18 failing tests

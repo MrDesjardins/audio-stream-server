@@ -86,3 +86,25 @@ class TestConfigParsing:
         with patch.dict(os.environ, {"AUDIO_QUALITY": "7"}, clear=False):
             config = Config.load_from_env()
             assert config.audio_quality == 7
+
+    def test_client_cache_defaults(self):
+        """Should load client cache settings with defaults."""
+        with patch.dict(
+            os.environ,
+            {
+                "CLIENT_CACHE_ENABLED": "true",
+                "CLIENT_CACHE_MAX_ITEMS": "5",
+                "CLIENT_CACHE_MAX_MB": "0",
+            },
+            clear=False,
+        ):
+            config = Config.load_from_env()
+            assert config.client_cache_enabled is True
+            assert config.client_cache_max_items == 5
+            assert config.client_cache_max_mb == 0
+
+    def test_client_cache_can_be_disabled(self):
+        """Should allow disabling client-side cache."""
+        with patch.dict(os.environ, {"CLIENT_CACHE_ENABLED": "false"}, clear=False):
+            config = Config.load_from_env()
+            assert config.client_cache_enabled is False

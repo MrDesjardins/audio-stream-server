@@ -323,9 +323,14 @@ All configuration is done via the `.env` file. See `.env.example` for a complete
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `AUDIO_QUALITY` | `4` | MP3 quality (0=best, 9=smallest, 4=~128kbps) |
-| `AUDIO_CACHE_MAX_FILES` | `10` | Number of audio files to keep cached |
-| `PREFETCH_THRESHOLD_SECONDS` | `30` | When to start downloading next track |
-| `TEMP_AUDIO_DIR` | `/tmp/audio-transcriptions` | Where to store audio files |
+| `AUDIO_CACHE_MAX_FILES` | `10` | Number of audio files to keep on the **server** |
+| `PREFETCH_THRESHOLD_SECONDS` | `30` | When to start downloading next track on the server |
+| `TEMP_AUDIO_DIR` | `/tmp/audio-transcriptions` | Where to store audio files on the server |
+| `CLIENT_CACHE_ENABLED` | `true` | Store played tracks in the phone/browser (IndexedDB) |
+| `CLIENT_CACHE_MAX_ITEMS` | `5` | Max tracks kept on the device |
+| `CLIENT_CACHE_MAX_MB` | `0` | Max device storage in MB (`0` = no MB cap) |
+
+**Server vs device cache:** The server keeps the last N MP3 files on disk (`AUDIO_CACHE_MAX_FILES`) so replays and prefetch are fast for any client. When `CLIENT_CACHE_ENABLED=true`, the web UI also saves tracks in **IndexedDB on each phone/browser** when you add to the queue and on page load (for anything not yet stored locally). Queue badges show **Cached** (server only) or **Cached** with a lightning bolt (on this device).
 
 **Transcription Settings:**
 

@@ -249,6 +249,9 @@ def index(request: Request) -> HTMLResponse:
             "prefetch_threshold_seconds": config.prefetch_threshold_seconds,
             "trilium_url": config.trilium_url,
             "client_log_batch_interval": config.client_log_batch_interval,
+            "client_cache_enabled": config.client_cache_enabled,
+            "client_cache_max_items": config.client_cache_max_items,
+            "client_cache_max_mb": config.client_cache_max_mb,
             "vpn_warning": vpn_warning,
         },
     )

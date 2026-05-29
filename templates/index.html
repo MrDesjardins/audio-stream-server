@@ -143,6 +143,18 @@
         </main>
 
         <footer class="app-footer">
+            {% if client_cache_enabled %}
+            <div id="client-cache-footer" class="client-cache-footer">
+                <span id="client-cache-status" class="client-cache-status">
+                    <i class="fas fa-mobile-alt"></i>
+                    Device: —
+                </span>
+                <button type="button" onclick="clearClientCache()" class="btn btn-secondary btn-client-cache-clear">
+                    <i class="fas fa-trash-alt"></i>
+                    Clear device cache
+                </button>
+            </div>
+            {% endif %}
             <button onclick="window.location.href='/admin/stats'" class="btn btn-stats">
                 <i class="fas fa-chart-line"></i>
                 <span>LLM Usage Statistics</span>
@@ -233,15 +245,21 @@
             bookSuggestionsEnabled: {{ 'true' if book_suggestions_enabled else 'false' }},
             prefetchThresholdSeconds: {{ prefetch_threshold_seconds }},
             clientLogBatchInterval: {{ client_log_batch_interval }},
-            triliumUrl: '{{ trilium_url }}'
+            triliumUrl: '{{ trilium_url }}',
+            clientCacheEnabled: {{ 'true' if client_cache_enabled else 'false' }},
+            clientCacheMaxItems: {{ client_cache_max_items }},
+            clientCacheMaxMb: {{ client_cache_max_mb }}
         };
     </script>
 
     <!-- Update Checker Script -->
     <script src="/static/update-checker.js?v=1737842302"></script>
 
+    <!-- Client-side audio cache (IndexedDB) -->
+    <script src="/static/client-audio-cache.js?v=1"></script>
+
     <!-- Main Application Script -->
-    <script src="/static/app.js?v=1772075940"></script>
+    <script src="/static/app.js?v=1772075942"></script>
 </body>
 
 </html>

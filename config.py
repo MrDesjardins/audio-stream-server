@@ -68,6 +68,9 @@ class Config:
     prefetch_threshold_seconds: (
         int  # Seconds before end to start pre-downloading next track
     )
+    client_cache_enabled: bool  # Enable IndexedDB audio cache in the browser
+    client_cache_max_items: int  # Max tracks stored on the client device
+    client_cache_max_mb: int  # Max total MB on device (0 = no MB cap)
 
     # Transcription settings
     transcription_enabled: bool
@@ -162,6 +165,14 @@ class Config:
             audio_quality=_parse_int(os.getenv("AUDIO_QUALITY", "4"), 4, 0, 9),
             prefetch_threshold_seconds=_parse_int(
                 os.getenv("PREFETCH_THRESHOLD_SECONDS", "30"), 30, 0, 300
+            ),
+            client_cache_enabled=os.getenv("CLIENT_CACHE_ENABLED", "true").lower()
+            == "true",
+            client_cache_max_items=_parse_int(
+                os.getenv("CLIENT_CACHE_MAX_ITEMS", "5"), 5, 1, 50
+            ),
+            client_cache_max_mb=_parse_int(
+                os.getenv("CLIENT_CACHE_MAX_MB", "0"), 0, 0, 10000
             ),
             # Transcription settings
             transcription_enabled=transcription_enabled,
