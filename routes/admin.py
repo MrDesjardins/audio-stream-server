@@ -54,7 +54,7 @@ class ClientLogEntry(BaseModel):
 @router.get("/stats", response_class=HTMLResponse)
 async def stats_page(request: Request):
     """Serve the LLM usage statistics dashboard page."""
-    return templates.TemplateResponse("stats.html", {"request": request})
+    return templates.TemplateResponse(request, "stats.html")
 
 
 @router.post("/weekly-summary/trigger")

@@ -1721,12 +1721,17 @@ class TestGenerateAndSaveWeeklySummary:
             "unrecoverable": ["vid2"],
         }
 
-        result = generate_and_save_weekly_summary(datetime(2026, 4, 12))
+        target_date = datetime.now(timezone.utc) - timedelta(days=1)
+        expected_week_year = (
+            f"{target_date.isocalendar().year}-W{target_date.isocalendar().week:02d}"
+        )
+
+        result = generate_and_save_weekly_summary(target_date)
 
         assert result is None
         mock_create_note.assert_not_called()
         call_kwargs = mock_save_run.call_args.kwargs
-        assert call_kwargs["week_year"] == "2026-W15"
+        assert call_kwargs["week_year"] == expected_week_year
         assert call_kwargs["status"] == "retrying"
         assert call_kwargs["missing_video_ids"] == '["vid2"]'
 

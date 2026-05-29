@@ -238,9 +238,9 @@ def index(request: Request) -> HTMLResponse:
         client_ip, config.wireguard_subnet
     )
     return templates.TemplateResponse(
+        request,
         "index.html",
         {
-            "request": request,
             "host": server_host,
             "api_port": api_port,
             "transcription_enabled": config.transcription_enabled,
