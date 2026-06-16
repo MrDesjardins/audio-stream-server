@@ -3,7 +3,7 @@
 
 importScripts('/static/client-cache-db.js?v=3');
 
-const SW_VERSION = 'queue-cache-v3';
+const SW_VERSION = 'queue-cache-v4';
 let activeDownloadTag = null;
 let lastApiBaseUrl = '';
 let lastPrefetchAllowedFromPage = false;
@@ -30,6 +30,18 @@ self.addEventListener('message', (event) => {
     }
     if (data.type === 'CLEAR_DEVICE_CACHE') {
         event.waitUntil(handleClearCache());
+        return;
+    }
+    if (data.type === 'QUEUE_REMOVE') {
+        event.waitUntil(enqueueQueueMutation({ kind: 'remove', queueId: data.queueId }));
+        return;
+    }
+    if (data.type === 'QUEUE_NEXT') {
+        event.waitUntil(enqueueQueueMutation({ kind: 'next', queueId: data.queueId }));
+        return;
+    }
+    if (data.type === 'FLUSH_QUEUE_MUTATIONS') {
+        event.waitUntil(flushQueueMutations());
     }
 });
 
@@ -293,4 +305,96 @@ async function notifyClients(message) {
     for (const client of clients) {
         client.postMessage(message);
     }
+}
+
+const MUTATION_DB_NAME = 'audio-stream-queue-sync';
+const MUTATION_STORE = 'mutations';
+
+function openMutationDb() {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open(MUTATION_DB_NAME, 1);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve(request.result);
+        request.onupgradeneeded = (event) => {
+            const db = event.target.result;
+            if (!db.objectStoreNames.contains(MUTATION_STORE)) {
+                db.createObjectStore(MUTATION_STORE, { keyPath: 'id', autoIncrement: true });
+            }
+        };
+    });
+}
+
+async function enqueueQueueMutation(mutation) {
+    if (!mutation || !mutation.kind) {
+        return;
+    }
+    const db = await openMutationDb();
+    await new Promise((resolve, reject) => {
+        const tx = db.transaction(MUTATION_STORE, 'readwrite');
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+        tx.objectStore(MUTATION_STORE).add({
+            kind: mutation.kind,
+            queueId: mutation.queueId ?? null,
+            createdAt: Date.now(),
+        });
+    });
+    await flushQueueMutations();
+}
+
+async function listQueueMutations() {
+    const db = await openMutationDb();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(MUTATION_STORE, 'readonly');
+        const request = tx.objectStore(MUTATION_STORE).getAll();
+        request.onsuccess = () => resolve(request.result || []);
+        request.onerror = () => reject(request.error);
+    });
+}
+
+async function deleteQueueMutation(id) {
+    const db = await openMutationDb();
+    await new Promise((resolve, reject) => {
+        const tx = db.transaction(MUTATION_STORE, 'readwrite');
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+        tx.objectStore(MUTATION_STORE).delete(id);
+    });
+}
+
+async function applyQueueMutation(mutation) {
+    if (mutation.kind === 'remove') {
+        const response = await fetch(`/queue/${mutation.queueId}`, { method: 'DELETE' });
+        return response.ok || response.status === 404;
+    }
+    if (mutation.kind === 'next') {
+        const body = mutation.queueId != null ? JSON.stringify({ queue_id: mutation.queueId }) : '{}';
+        const response = await fetch('/queue/next', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body,
+        });
+        return response.ok;
+    }
+    return true;
+}
+
+async function flushQueueMutations() {
+    const mutations = await listQueueMutations();
+    mutations.sort((a, b) => a.id - b.id);
+
+    for (const mutation of mutations) {
+        try {
+            const ok = await applyQueueMutation(mutation);
+            if (!ok) {
+                break;
+            }
+            await deleteQueueMutation(mutation.id);
+        } catch (e) {
+            console.warn('Queue mutation sync paused:', e);
+            break;
+        }
+    }
+
+    notifyClients({ type: 'QUEUE_MUTATIONS_FLUSHED' });
 }

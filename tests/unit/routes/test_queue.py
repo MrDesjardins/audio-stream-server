@@ -236,35 +236,35 @@ class TestRemoveFromQueueEndpoint:
 class TestPlayNextEndpoint:
     """Tests for /queue/next endpoint."""
 
-    @patch("routes.queue.get_next_in_queue")
+    @patch("routes.queue.get_next_in_queue_after_position")
     @patch("routes.queue.remove_from_queue")
-    def test_play_next_success(self, mock_remove, mock_get_next, client):
+    @patch("routes.queue.get_next_in_queue")
+    def test_play_next_success(
+        self, mock_get_next, mock_remove, mock_get_after, client
+    ):
         """Test successfully playing next item."""
-        # First call returns current item, second returns next
-        mock_get_next.side_effect = [
-            QueueItem(
-                id=1,
-                youtube_id="video1",
-                title="Video 1",
-                channel=None,
-                thumbnail_url=None,
-                position=1,
-                created_at="2024-01-01T00:00:00",
-                type="youtube",
-                week_year=None,
-            ),
-            QueueItem(
-                id=2,
-                youtube_id="video2",
-                title="Video 2",
-                channel=None,
-                thumbnail_url=None,
-                position=2,
-                created_at="2024-01-01T00:01:00",
-                type="youtube",
-                week_year=None,
-            ),
-        ]
+        mock_get_next.return_value = QueueItem(
+            id=1,
+            youtube_id="video1",
+            title="Video 1",
+            channel=None,
+            thumbnail_url=None,
+            position=1,
+            created_at="2024-01-01T00:00:00",
+            type="youtube",
+            week_year=None,
+        )
+        mock_get_after.return_value = QueueItem(
+            id=2,
+            youtube_id="video2",
+            title="Video 2",
+            channel=None,
+            thumbnail_url=None,
+            position=2,
+            created_at="2024-01-01T00:01:00",
+            type="youtube",
+            week_year=None,
+        )
         mock_remove.return_value = True
 
         response = client.post("/queue/next")
@@ -276,8 +276,48 @@ class TestPlayNextEndpoint:
         assert data["title"] == "Video 2"
         assert data["queue_id"] == 2
 
-        # Verify current was removed
         mock_remove.assert_called_with(1)
+        mock_get_after.assert_called_with(1)
+
+    @patch("routes.queue.get_next_in_queue_after_position")
+    @patch("routes.queue.remove_from_queue")
+    @patch("routes.queue.get_queue_item_by_id")
+    def test_play_next_removes_specified_queue_id(
+        self, mock_get_by_id, mock_remove, mock_get_after, client
+    ):
+        """Test playing next removes the specified item, not always the first."""
+        mock_get_by_id.return_value = QueueItem(
+            id=3,
+            youtube_id="video3",
+            title="Video 3",
+            channel=None,
+            thumbnail_url=None,
+            position=3,
+            created_at="2024-01-01T00:02:00",
+            type="youtube",
+            week_year=None,
+        )
+        mock_get_after.return_value = QueueItem(
+            id=4,
+            youtube_id="video4",
+            title="Video 4",
+            channel=None,
+            thumbnail_url=None,
+            position=4,
+            created_at="2024-01-01T00:03:00",
+            type="youtube",
+            week_year=None,
+        )
+        mock_remove.return_value = True
+
+        response = client.post("/queue/next", json={"queue_id": 3})
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "next"
+        assert data["queue_id"] == 4
+        mock_remove.assert_called_with(3)
+        mock_get_after.assert_called_with(3)
 
     @patch("routes.queue.get_next_in_queue")
     def test_play_next_empty_queue(self, mock_get_next, client):
@@ -290,25 +330,25 @@ class TestPlayNextEndpoint:
         data = response.json()
         assert data["status"] == "queue_empty"
 
-    @patch("routes.queue.get_next_in_queue")
+    @patch("routes.queue.get_next_in_queue_after_position")
     @patch("routes.queue.remove_from_queue")
-    def test_play_next_last_item(self, mock_remove, mock_get_next, client):
+    @patch("routes.queue.get_next_in_queue")
+    def test_play_next_last_item(
+        self, mock_get_next, mock_remove, mock_get_after, client
+    ):
         """Test playing next when on last item."""
-        # First call returns current item, second returns None (no next)
-        mock_get_next.side_effect = [
-            QueueItem(
-                id=1,
-                youtube_id="video1",
-                title="Video 1",
-                channel=None,
-                thumbnail_url=None,
-                position=1,
-                created_at="2024-01-01T00:00:00",
-                type="youtube",
-                week_year=None,
-            ),
-            None,  # No next item
-        ]
+        mock_get_next.return_value = QueueItem(
+            id=1,
+            youtube_id="video1",
+            title="Video 1",
+            channel=None,
+            thumbnail_url=None,
+            position=1,
+            created_at="2024-01-01T00:00:00",
+            type="youtube",
+            week_year=None,
+        )
+        mock_get_after.return_value = None
         mock_remove.return_value = True
 
         response = client.post("/queue/next")

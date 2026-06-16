@@ -452,6 +452,54 @@ def get_next_in_queue() -> Optional[QueueItem]:
         return QueueItem.from_db_row(row) if row else None
 
 
+def get_queue_item_by_id(queue_id: int) -> Optional[QueueItem]:
+    """
+    Get a single queue item by its ID.
+
+    Returns:
+        QueueItem object or None if not found
+    """
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT id, youtube_id, title, channel, thumbnail_url, position, created_at, type, week_year
+            FROM queue
+            WHERE id = ?
+        """,
+            (queue_id,),
+        )
+
+        row = cursor.fetchone()
+        return QueueItem.from_db_row(row) if row else None
+
+
+def get_next_in_queue_after_position(position: int) -> Optional[QueueItem]:
+    """
+    Get the first queue item at or after the given position.
+
+    Used after removing an item to find the next track in queue order.
+
+    Returns:
+        QueueItem object or None if no item exists at/after that position
+    """
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT id, youtube_id, title, channel, thumbnail_url, position, created_at, type, week_year
+            FROM queue
+            WHERE position >= ?
+            ORDER BY position ASC
+            LIMIT 1
+        """,
+            (position,),
+        )
+
+        row = cursor.fetchone()
+        return QueueItem.from_db_row(row) if row else None
+
+
 def remove_from_queue(queue_id: int) -> bool:
     """
     Remove a specific item from the queue and reorder remaining items.

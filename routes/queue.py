@@ -4,7 +4,7 @@ Queue management routes.
 
 import asyncio
 import logging
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -16,6 +16,8 @@ from services.database import (
     add_to_queue,
     get_queue,
     get_next_in_queue,
+    get_queue_item_by_id,
+    get_next_in_queue_after_position,
     remove_from_queue,
     clear_queue,
     reorder_queue,
@@ -35,6 +37,10 @@ class QueueRequest(BaseModel):
 
 class ReorderRequest(BaseModel):
     queue_item_ids: List[int]
+
+
+class PlayNextRequest(BaseModel):
+    queue_id: Optional[int] = None
 
 
 def _queue_item_to_response(item) -> dict:
@@ -137,21 +143,23 @@ def remove_from_queue_endpoint(queue_id: int) -> JSONResponse:
 
 
 @router.post("/queue/next")
-def play_next_in_queue() -> JSONResponse:
-    """Remove current item and start playing the next item in queue."""
+def play_next_in_queue(request: PlayNextRequest = PlayNextRequest()) -> JSONResponse:
+    """Remove the completed/skipped item and return the next item in queue order."""
     try:
-        next_item = get_next_in_queue()
+        if request.queue_id is not None:
+            current_item = get_queue_item_by_id(request.queue_id)
+        else:
+            current_item = get_next_in_queue()
 
-        if not next_item:
+        if not current_item:
             return JSONResponse(
                 {"status": "queue_empty", "message": "No more items in queue"}
             )
 
-        # Remove the current first item
-        remove_from_queue(next_item.id)
+        removed_position = current_item.position
+        remove_from_queue(current_item.id)
 
-        # Get the new first item (which was second)
-        next_item = get_next_in_queue()
+        next_item = get_next_in_queue_after_position(removed_position)
 
         if not next_item:
             return JSONResponse(

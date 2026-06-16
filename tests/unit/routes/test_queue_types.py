@@ -159,14 +159,15 @@ class TestQueueItemModel:
 class TestQueueNextWithSummary:
     """Tests for /queue/next endpoint with summary items."""
 
-    @patch("routes.queue.get_next_in_queue")
+    @patch("routes.queue.get_next_in_queue_after_position")
     @patch("routes.queue.remove_from_queue")
-    def test_next_returns_summary_fields(self, mock_remove, mock_get_next, client):
+    @patch("routes.queue.get_next_in_queue")
+    def test_next_returns_summary_fields(
+        self, mock_get_next, mock_remove, mock_get_after, client
+    ):
         """When next item is a summary, response should have week_year, not youtube_id."""
-        mock_get_next.side_effect = [
-            _youtube_item(id=1, position=0),
-            _summary_item(id=2, position=1),
-        ]
+        mock_get_next.return_value = _youtube_item(id=1, position=0)
+        mock_get_after.return_value = _summary_item(id=2, position=1)
         mock_remove.return_value = True
 
         response = client.post("/queue/next")
@@ -178,14 +179,15 @@ class TestQueueNextWithSummary:
         assert data["week_year"] == "2026-W07"
         assert "youtube_id" not in data
 
-    @patch("routes.queue.get_next_in_queue")
+    @patch("routes.queue.get_next_in_queue_after_position")
     @patch("routes.queue.remove_from_queue")
-    def test_next_returns_youtube_fields(self, mock_remove, mock_get_next, client):
+    @patch("routes.queue.get_next_in_queue")
+    def test_next_returns_youtube_fields(
+        self, mock_get_next, mock_remove, mock_get_after, client
+    ):
         """When next item is youtube, response should have youtube_id, not week_year."""
-        mock_get_next.side_effect = [
-            _summary_item(id=1, position=0),
-            _youtube_item(id=2, position=1),
-        ]
+        mock_get_next.return_value = _summary_item(id=1, position=0)
+        mock_get_after.return_value = _youtube_item(id=2, position=1)
         mock_remove.return_value = True
 
         response = client.post("/queue/next")
@@ -197,14 +199,19 @@ class TestQueueNextWithSummary:
         assert data["youtube_id"] == "dQw4w9WgXcQ"
         assert "week_year" not in data
 
-    @patch("routes.queue.get_next_in_queue")
+    @patch("routes.queue.get_next_in_queue_after_position")
     @patch("routes.queue.remove_from_queue")
-    def test_next_summary_after_summary(self, mock_remove, mock_get_next, client):
+    @patch("routes.queue.get_next_in_queue")
+    def test_next_summary_after_summary(
+        self, mock_get_next, mock_remove, mock_get_after, client
+    ):
         """When both current and next are summaries, should work correctly."""
-        mock_get_next.side_effect = [
-            _summary_item(id=1, week_year="2026-W06", position=0),
-            _summary_item(id=2, week_year="2026-W07", position=1),
-        ]
+        mock_get_next.return_value = _summary_item(
+            id=1, week_year="2026-W06", position=0
+        )
+        mock_get_after.return_value = _summary_item(
+            id=2, week_year="2026-W07", position=1
+        )
         mock_remove.return_value = True
 
         response = client.post("/queue/next")

@@ -8,6 +8,8 @@ from services.database import (
     add_to_queue,
     get_queue,
     get_next_in_queue,
+    get_queue_item_by_id,
+    get_next_in_queue_after_position,
     get_queue_hash,
     remove_from_queue,
     clear_queue,
@@ -231,6 +233,38 @@ class TestQueue:
         next_item = get_next_in_queue()
 
         assert next_item is None
+
+    def test_get_queue_item_by_id(self, db_path):
+        """Test fetching a queue item by ID."""
+        init_database()
+
+        id1 = add_to_queue("video1", "Title 1")
+        add_to_queue("video2", "Title 2")
+
+        item = get_queue_item_by_id(id1)
+
+        assert item is not None
+        assert item.youtube_id == "video1"
+        assert get_queue_item_by_id(99999) is None
+
+    def test_get_next_in_queue_after_position(self, db_path):
+        """Test finding the next item after removing a queue item."""
+        init_database()
+
+        add_to_queue("video1", "Title 1")
+        id2 = add_to_queue("video2", "Title 2")
+        id3 = add_to_queue("video3", "Title 3")
+
+        item2 = get_queue_item_by_id(id2)
+        remove_from_queue(id2)
+        next_after_2 = get_next_in_queue_after_position(item2.position)
+
+        assert next_after_2 is not None
+        assert next_after_2.id == id3
+
+        item3 = get_queue_item_by_id(id3)
+        remove_from_queue(id3)
+        assert get_next_in_queue_after_position(item3.position) is None
 
     def test_remove_from_queue(self, db_path):
         """Test removing an item from the queue."""

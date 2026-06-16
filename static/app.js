@@ -51,6 +51,12 @@ let prefetchTriggered = false;
 let cacheServiceWorkerRegistration = null;
 const deviceCachePending = new Set();
 
+// Optimistic queue state — UI updates immediately; server sync runs in background
+let optimisticQueue = null;
+const pendingQueueRemovals = new Set();
+let queueMutationProcessing = false;
+const QUEUE_MUTATIONS_STORAGE_KEY = 'audioStreamPendingQueueMutations';
+
 function markDeviceCachePending(videoId) {
     if (videoId) {
         deviceCachePending.add(videoId);
@@ -128,10 +134,157 @@ function initCacheServiceWorkerMessageListener() {
             }
             refreshClientCacheUi();
         }
+        if (data.type === 'QUEUE_MUTATIONS_FLUSHED') {
+            reconcileOptimisticQueue().catch(() => {});
+        }
     });
     navigator.serviceWorker.addEventListener('controllerchange', () => {
         fetchQueue().then((queue) => syncClientCacheWithQueue(queue)).catch(() => {});
     });
+}
+
+function loadStoredQueueMutations() {
+    try {
+        const raw = localStorage.getItem(QUEUE_MUTATIONS_STORAGE_KEY);
+        if (!raw) {
+            return [];
+        }
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function saveStoredQueueMutations(mutations) {
+    try {
+        localStorage.setItem(QUEUE_MUTATIONS_STORAGE_KEY, JSON.stringify(mutations));
+    } catch (e) {
+        console.warn('Failed to persist queue mutations:', e);
+    }
+}
+
+function applyOptimisticQueueFilter(queue) {
+    return queue.filter((item) => !pendingQueueRemovals.has(item.id));
+}
+
+function setOptimisticQueue(queue) {
+    optimisticQueue = applyOptimisticQueueFilter(Array.isArray(queue) ? queue.slice() : []);
+}
+
+function optimisticallyRemoveQueueItem(queueId) {
+    if (queueId == null) {
+        return;
+    }
+    pendingQueueRemovals.add(queueId);
+    if (optimisticQueue) {
+        optimisticQueue = optimisticQueue.filter((item) => item.id !== queueId);
+    }
+}
+
+function scheduleQueueRemoval(queueId) {
+    if (queueId == null) {
+        return;
+    }
+    if (postCacheServiceWorkerMessage({ type: 'QUEUE_REMOVE', queueId })) {
+        return;
+    }
+    const mutations = loadStoredQueueMutations();
+    mutations.push({ kind: 'remove', queueId, createdAt: Date.now() });
+    saveStoredQueueMutations(mutations);
+    processPendingQueueMutations().catch(() => {});
+}
+
+function scheduleQueueNext(queueId) {
+    if (postCacheServiceWorkerMessage({ type: 'QUEUE_NEXT', queueId })) {
+        return;
+    }
+    const mutations = loadStoredQueueMutations();
+    mutations.push({ kind: 'next', queueId, createdAt: Date.now() });
+    saveStoredQueueMutations(mutations);
+    processPendingQueueMutations().catch(() => {});
+}
+
+async function applyLocalQueueMutation(mutation) {
+    if (mutation.kind === 'remove') {
+        const response = await fetch(`/queue/${mutation.queueId}`, { method: 'DELETE' });
+        return response.ok || response.status === 404;
+    }
+    if (mutation.kind === 'next') {
+        const body = mutation.queueId != null
+            ? JSON.stringify({ queue_id: mutation.queueId })
+            : '{}';
+        const response = await fetch('/queue/next', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body,
+        });
+        return response.ok;
+    }
+    return true;
+}
+
+async function processPendingQueueMutations() {
+    if (queueMutationProcessing) {
+        return;
+    }
+    queueMutationProcessing = true;
+    try {
+        const mutations = loadStoredQueueMutations();
+        let index = 0;
+        while (index < mutations.length) {
+            const mutation = mutations[index];
+            try {
+                const ok = await applyLocalQueueMutation(mutation);
+                if (!ok) {
+                    break;
+                }
+                if (mutation.kind === 'remove') {
+                    pendingQueueRemovals.delete(mutation.queueId);
+                }
+                index += 1;
+            } catch (e) {
+                break;
+            }
+        }
+        saveStoredQueueMutations(mutations.slice(index));
+        if (index > 0 && index === mutations.length) {
+            await reconcileOptimisticQueue();
+        }
+    } finally {
+        queueMutationProcessing = false;
+    }
+}
+
+async function reconcileOptimisticQueue() {
+    try {
+        const res = await fetch('/queue');
+        if (!res.ok) {
+            return;
+        }
+        const data = await res.json();
+        const serverQueue = data.queue || [];
+        setOptimisticQueue(serverQueue);
+        pendingQueueRemovals.clear();
+        saveStoredQueueMutations([]);
+        await renderQueue(true);
+    } catch (e) {
+        // Offline — keep optimistic state
+    }
+}
+
+function findNextQueueItemAfterRemoval(queue, queueIdToRemove) {
+    if (!queue || queue.length === 0) {
+        return null;
+    }
+    if (queueIdToRemove == null) {
+        return queue.length > 1 ? queue[1] : null;
+    }
+    const index = queue.findIndex((item) => item.id === queueIdToRemove);
+    if (index < 0) {
+        return queue[0] || null;
+    }
+    return queue[index + 1] || null;
 }
 
 const clientCacheReady = Promise.all([
@@ -153,6 +306,11 @@ const clientCacheReady = Promise.all([
         });
         syncClientCacheOnLoad();
         initClientCacheNetworkListener();
+        processPendingQueueMutations().catch(() => {});
+        window.addEventListener('online', () => {
+            processPendingQueueMutations().catch(() => {});
+            postCacheServiceWorkerMessage({ type: 'FLUSH_QUEUE_MUTATIONS' });
+        });
     }
     return cacheOk;
 });
@@ -1175,13 +1333,22 @@ async function refreshPositionFromServer() {
 }
 
 // Queue Management
-async function fetchQueue() {
+async function fetchQueue(forceRefresh = false) {
+    if (!forceRefresh && optimisticQueue !== null) {
+        return optimisticQueue.slice();
+    }
+
     try {
         const res = await fetch('/queue');
         const data = await res.json();
-        return data.queue || [];
+        const serverQueue = data.queue || [];
+        setOptimisticQueue(serverQueue);
+        return optimisticQueue.slice();
     } catch (e) {
         console.error('Error fetching queue:', e);
+        if (optimisticQueue !== null) {
+            return optimisticQueue.slice();
+        }
         return [];
     }
 }
@@ -1301,41 +1468,40 @@ async function suggestVideos() {
 const suggestAudiobooks = suggestVideos;
 
 async function removeFromQueue(queueId) {
-    try {
-        await fetch(`/queue/${queueId}`, { method: 'DELETE' });
+    const wasPlaying = queueId === currentQueueId;
+    optimisticallyRemoveQueueItem(queueId);
+    await renderQueue(true);
+    scheduleQueueRemoval(queueId);
 
-        if (queueId === currentQueueId) {
-            // The currently playing track was removed — stop and play the next one
-            player.pause();
-            isPlaying = false;
-            currentQueueId = null;
-            cancelRetry();
-            updateWindowTitle(null);
-            hideStreamStatus();
-            await fetch('/stop', { method: 'POST' });
+    if (!wasPlaying) {
+        return;
+    }
 
-            // Reset progress bar
-            const progressBar = document.querySelector('.queue-progress-bar');
-            if (progressBar) progressBar.style.width = '0%';
+    // The currently playing track was removed — stop and play the next one
+    player.pause();
+    isPlaying = false;
+    currentQueueId = null;
+    cancelRetry();
+    updateWindowTitle(null);
+    hideStreamStatus();
+    fetch('/stop', { method: 'POST' }).catch(() => {});
 
-            // Play from the queue (first remaining item) without removing it
-            const queue = await fetchQueue();
-            if (queue.length === 0) {
-                updateStatus('Queue is empty', 'idle');
-                await renderQueue();
-            } else {
-                const nextItem = queue[0];
-                if (nextItem.type === 'summary') {
-                    await startSummaryFromQueue(nextItem.week_year, nextItem.id);
-                } else {
-                    await startStreamFromQueue(nextItem.youtube_id, nextItem.id);
-                }
-            }
-        } else {
-            await renderQueue();
-        }
-    } catch (e) {
-        console.error('Error removing from queue:', e);
+    const progressBar = document.querySelector('.queue-progress-bar');
+    if (progressBar) {
+        progressBar.style.width = '0%';
+    }
+
+    const queue = await fetchQueue();
+    if (queue.length === 0) {
+        updateStatus('Queue is empty', 'idle');
+        return;
+    }
+
+    const nextItem = queue[0];
+    if (nextItem.type === 'summary') {
+        await startSummaryFromQueue(nextItem.week_year, nextItem.id);
+    } else {
+        await startStreamFromQueue(nextItem.youtube_id, nextItem.id);
     }
 }
 
@@ -1358,34 +1524,94 @@ async function playQueue() {
     }
 }
 
-async function playNext() {
-    try {
-        const res = await fetch('/queue/next', { method: 'POST' });
-        const data = await res.json();
+async function playNext(queueIdToRemove = null) {
+    const removeId = queueIdToRemove ?? currentQueueId;
+    const queue = await fetchQueue();
+    const nextItem = findNextQueueItemAfterRemoval(queue, removeId);
 
-        if (data.status === 'queue_empty') {
-            updateStatus('Queue is empty', 'idle');
-            player.pause();
-            isPlaying = false;
-            cancelRetry(); // Stop any retry attempts
-            updateWindowTitle(null);  // Reset title when queue is empty
-            await renderQueue();
+    if (removeId != null) {
+        optimisticallyRemoveQueueItem(removeId);
+        await renderQueue(true);
+        scheduleQueueNext(removeId);
+    }
+
+    if (!nextItem) {
+        updateStatus('Queue is empty', 'idle');
+        player.pause();
+        isPlaying = false;
+        cancelRetry();
+        updateWindowTitle(null);
+        await renderQueue(true);
+        return;
+    }
+
+    if (nextItem.type === 'summary') {
+        await startSummaryFromQueue(nextItem.week_year, nextItem.id);
+    } else {
+        await startStreamFromQueue(nextItem.youtube_id, nextItem.id);
+    }
+    await renderQueue(true);
+}
+
+async function playFromDeviceCache(youtube_video_id, queue_id, requestSeq) {
+    currentVideoId = youtube_video_id;
+    currentQueueId = queue_id;
+    isPlaying = true;
+    prefetchTriggered = false;
+    cancelRetry();
+    serverAudioDuration = null;
+    resetPositionState();
+
+    const queue = await fetchQueue();
+    const currentItem = queue.find((item) => item.id === queue_id);
+    if (currentItem) {
+        updateWindowTitle(currentItem.title);
+        setupMediaSession(currentItem);
+    }
+
+    await renderQueue(true);
+    hideStreamStatus();
+    clearQueueItemLoading();
+
+    if (!isPlaybackRequestCurrent(requestSeq)) {
+        return;
+    }
+
+    let savedPos = 0;
+    try {
+        savedPos = await fetchSavedPosition(youtube_video_id);
+    } catch (e) {
+        savedPos = 0;
+    }
+
+    if (!isPlaybackRequestCurrent(requestSeq)) {
+        return;
+    }
+
+    await applyPlayerAudioSource(youtube_video_id);
+
+    if (savedPos > 30) {
+        const onCanPlay = () => {
+            player.currentTime = savedPos;
+            player.removeEventListener('canplay', onCanPlay);
+        };
+        player.addEventListener('canplay', onCanPlay);
+        console.log(`Restoring playback position to ${savedPos}s`);
+    }
+
+    player.load();
+    player.playbackRate = currentSpeed;
+    updateStatus('Playing from device cache', 'streaming');
+
+    player.play().catch((e) => {
+        if (!isPlaybackRequestCurrent(requestSeq)) {
             return;
         }
-
-        if (data.status === 'next') {
-            // Check type and call appropriate function
-            if (data.type === 'summary') {
-                await startSummaryFromQueue(data.week_year, data.queue_id);
-            } else {
-                await startStreamFromQueue(data.youtube_id, data.queue_id);
-            }
-            await renderQueue();
-        }
-    } catch (error) {
-        console.error('Error playing next:', error);
-        updateStatus('Failed to play next', 'error');
-    }
+        console.error('Device cache playback failed:', e);
+        updateStatus('Failed to play cached audio', 'error');
+        isPlaying = false;
+        clearQueueItemLoading();
+    });
 }
 
 async function startStreamFromQueue(youtube_video_id, queue_id) {
@@ -1393,6 +1619,16 @@ async function startStreamFromQueue(youtube_video_id, queue_id) {
     setQueueItemLoading(queue_id);
     // Reset position save throttle so first save of new track isn't suppressed
     lastPositionSaveTime = 0;
+
+    await clientCacheReady;
+    if (clientAudioCache.isEnabled() && await clientAudioCache.has(youtube_video_id)) {
+        try {
+            await playFromDeviceCache(youtube_video_id, queue_id, requestSeq);
+            return;
+        } catch (error) {
+            console.warn('Device cache playback failed, trying server:', error);
+        }
+    }
 
     const skipTranscriptionCheckbox = document.getElementById('skip_transcription');
     const skip_transcription = skipTranscriptionCheckbox ? skipTranscriptionCheckbox.checked : false;
@@ -2127,8 +2363,9 @@ player.addEventListener('ended', async function () {
     if (progressBar) {
         progressBar.style.width = '0%';
     }
+    const completedQueueId = currentQueueId;
     currentQueueId = null;
-    await playNext();
+    await playNext(completedQueueId);
 });
 
 // Weekly Summaries Management
