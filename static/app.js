@@ -414,7 +414,18 @@ async function clearClientCache() {
 
 function refreshClientCacheUi() {
     updateClientCacheFooter();
-    renderQueue();
+    renderQueue(true).catch((e) => console.warn('Queue refresh failed:', e));
+}
+
+async function waitForClientCacheReady(timeoutMs = 3000) {
+    try {
+        await Promise.race([
+            clientCacheReady,
+            new Promise((resolve) => setTimeout(resolve, timeoutMs)),
+        ]);
+    } catch (e) {
+        console.warn('Client cache init failed:', e);
+    }
 }
 
 /** Start server + device download for a video (non-blocking). */
@@ -1579,15 +1590,21 @@ function _applyQueueLoadingClass() {
     }
 }
 
-async function renderQueue() {
+async function renderQueue(skipCacheSync = false) {
     const queueContainer = document.getElementById('queue-list');
     const queueCountEl = document.getElementById('queue-count');
+    if (!queueContainer || !queueCountEl) {
+        return;
+    }
+
     const queue = await fetchQueue();
 
     queueCountEl.textContent = `${queue.length} track${queue.length !== 1 ? 's' : ''}`;
 
     if (queue.length === 0) {
         queueContainer.innerHTML = '<p class="queue-empty">Queue is empty. Add videos above to start!</p>';
+        clearDeviceCachePending();
+        updateClientCacheFooter().catch(() => {});
         return;
     }
 
@@ -1603,17 +1620,18 @@ async function renderQueue() {
         } catch (_) {}
     }
 
-    await clientCacheReady;
-    const onDeviceIds = clientAudioCache.isEnabled() && youtubeIds.length > 0
-        ? await clientAudioCache.hasMany(youtubeIds)
-        : new Set();
-
-    // Drop stale pending flags once a track is fully on the device.
-    for (const videoId of onDeviceIds) {
-        markDeviceCacheComplete(videoId);
+    let onDeviceIds = new Set();
+    try {
+        await waitForClientCacheReady();
+        if (clientAudioCache.isEnabled() && youtubeIds.length > 0) {
+            onDeviceIds = await clientAudioCache.hasMany(youtubeIds);
+            for (const videoId of onDeviceIds) {
+                markDeviceCacheComplete(videoId);
+            }
+        }
+    } catch (e) {
+        console.warn('Client cache check failed during queue render:', e);
     }
-
-    await syncClientCacheWithQueue(queue);
 
     queueContainer.innerHTML = queue.map((item, index) => {
         const isCurrentlyPlaying = currentQueueId === item.id;
@@ -1707,7 +1725,15 @@ async function renderQueue() {
     initializeQueueDragAndDrop();
     // Restore loading shimmer if still active (survives DOM rebuild)
     _applyQueueLoadingClass();
-    await updateClientCacheFooter();
+    updateClientCacheFooter().catch(() => {});
+
+    if (!skipCacheSync) {
+        syncClientCacheWithQueue(queue)
+            .then(() => renderQueue(true))
+            .catch((e) => {
+                console.warn('Queue cache sync failed:', e);
+            });
+    }
 }
 
 function getAudioStatusBadge(audioStatus, onDevice, devicePending) {
