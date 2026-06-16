@@ -182,27 +182,30 @@ function optimisticallyRemoveQueueItem(queueId) {
     }
 }
 
-function scheduleQueueRemoval(queueId) {
-    if (queueId == null) {
-        return;
-    }
-    if (postCacheServiceWorkerMessage({ type: 'QUEUE_REMOVE', queueId })) {
-        return;
-    }
+function enqueuePageQueueMutation(mutation) {
     const mutations = loadStoredQueueMutations();
-    mutations.push({ kind: 'remove', queueId, createdAt: Date.now() });
+    mutations.push({ ...mutation, createdAt: Date.now() });
     saveStoredQueueMutations(mutations);
     processPendingQueueMutations().catch(() => {});
 }
 
-function scheduleQueueNext(queueId) {
-    if (postCacheServiceWorkerMessage({ type: 'QUEUE_NEXT', queueId })) {
+function scheduleQueueRemoval(queueId) {
+    if (queueId == null) {
         return;
     }
-    const mutations = loadStoredQueueMutations();
-    mutations.push({ kind: 'next', queueId, createdAt: Date.now() });
-    saveStoredQueueMutations(mutations);
-    processPendingQueueMutations().catch(() => {});
+    // Always sync from the page — required on HTTP where the service worker
+    // may not run or its fetch won't appear in the page Network tab.
+    enqueuePageQueueMutation({ kind: 'remove', queueId });
+    if (isClientCacheBackgroundCapable()) {
+        postCacheServiceWorkerMessage({ type: 'QUEUE_REMOVE', queueId });
+    }
+}
+
+function scheduleQueueNext(queueId) {
+    enqueuePageQueueMutation({ kind: 'next', queueId });
+    if (isClientCacheBackgroundCapable()) {
+        postCacheServiceWorkerMessage({ type: 'QUEUE_NEXT', queueId });
+    }
 }
 
 async function applyLocalQueueMutation(mutation) {
@@ -253,6 +256,9 @@ async function processPendingQueueMutations() {
         }
     } finally {
         queueMutationProcessing = false;
+        if (loadStoredQueueMutations().length > 0) {
+            processPendingQueueMutations().catch(() => {});
+        }
     }
 }
 
