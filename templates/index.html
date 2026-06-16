@@ -239,7 +239,7 @@
     <!-- Application Configuration - Injected from Server -->
     <script>
         window.appConfig = {
-            apiBaseUrl: 'http://{{ host }}:{{ api_port }}',
+            apiBaseUrl: '{{ api_base_url }}',
             transcriptionEnabled: {{ 'true' if transcription_enabled else 'false' }},
             weeklySummaryEnabled: {{ 'true' if weekly_summary_enabled else 'false' }},
             bookSuggestionsEnabled: {{ 'true' if book_suggestions_enabled else 'false' }},
@@ -256,10 +256,11 @@
     <script src="/static/update-checker.js?v=1737842302"></script>
 
     <!-- Client-side audio cache (IndexedDB) -->
-    <script src="/static/client-audio-cache.js?v=1"></script>
+    <script src="/static/client-cache-db.js?v=3"></script>
+    <script src="/static/client-audio-cache.js?v=5"></script>
 
     <!-- Main Application Script -->
-    <script src="/static/app.js?v=1772075942"></script>
+    <script src="/static/app.js?v=6"></script>
 </body>
 
 </html>

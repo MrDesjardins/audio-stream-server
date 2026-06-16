@@ -1,6 +1,9 @@
 // Audio Stream Server - Main Application JavaScript
 // This file expects a global `appConfig` object to be defined before loading
 
+// Always use the page origin so HTTPS reverse proxies and WireGuard TLS work.
+appConfig.apiBaseUrl = window.location.origin;
+
 const player = document.getElementById('player');
 const statusDot = document.getElementById('status-dot');
 const statusText = document.getElementById('status');
@@ -45,13 +48,83 @@ const prefetchThresholdSeconds = appConfig.prefetchThresholdSeconds;
 let prefetchTriggered = false;
 
 // Client-side IndexedDB audio cache
-const clientCacheReady = clientAudioCache.init({
-    enabled: Boolean(appConfig.clientCacheEnabled),
-    maxItems: appConfig.clientCacheMaxItems || 5,
-    maxMb: appConfig.clientCacheMaxMb || 0,
-    apiBaseUrl: appConfig.apiBaseUrl,
-}).then((ok) => {
-    if (ok) {
+let cacheServiceWorkerRegistration = null;
+
+async function initCacheServiceWorker() {
+    if (!Boolean(appConfig.clientCacheEnabled) || !('serviceWorker' in navigator)) {
+        return null;
+    }
+
+    try {
+        cacheServiceWorkerRegistration = await navigator.serviceWorker.register('/service-worker.js', {
+            scope: '/',
+        });
+        await navigator.serviceWorker.ready;
+        return cacheServiceWorkerRegistration;
+    } catch (e) {
+        console.warn('Cache service worker unavailable:', e);
+        if (!window.isSecureContext) {
+            console.info(
+                'Background queue caching requires HTTPS (or localhost). ' +
+                'Over HTTP (e.g. WireGuard at http://10.x.x.x), caching runs only while ' +
+                'the app is open on WiFi.'
+            );
+        }
+        return null;
+    }
+}
+
+function getCacheServiceWorkerTarget() {
+    return navigator.serviceWorker.controller
+        || (cacheServiceWorkerRegistration && cacheServiceWorkerRegistration.active)
+        || null;
+}
+
+function postCacheServiceWorkerMessage(message) {
+    const target = getCacheServiceWorkerTarget();
+    if (!target) {
+        return false;
+    }
+    target.postMessage(message);
+    return true;
+}
+
+async function postCacheServiceWorkerMessageAsync(message) {
+    if (!('serviceWorker' in navigator)) {
+        return false;
+    }
+    if (!getCacheServiceWorkerTarget()) {
+        await navigator.serviceWorker.ready;
+    }
+    return postCacheServiceWorkerMessage(message);
+}
+
+function initCacheServiceWorkerMessageListener() {
+    if (!('serviceWorker' in navigator)) {
+        return;
+    }
+    navigator.serviceWorker.addEventListener('message', (event) => {
+        const data = event.data || {};
+        if (data.type === 'CACHE_UPDATED') {
+            refreshClientCacheUi();
+        }
+    });
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+        fetchQueue().then((queue) => syncClientCacheWithQueue(queue)).catch(() => {});
+    });
+}
+
+const clientCacheReady = Promise.all([
+    clientAudioCache.init({
+        enabled: Boolean(appConfig.clientCacheEnabled),
+        maxItems: appConfig.clientCacheMaxItems || 5,
+        maxMb: appConfig.clientCacheMaxMb || 0,
+        apiBaseUrl: appConfig.apiBaseUrl,
+    }),
+    initCacheServiceWorker(),
+]).then(([cacheOk]) => {
+    if (cacheOk) {
+        initCacheServiceWorkerMessageListener();
         updateClientCacheFooter();
         clientAudioCache.checkStorageQuota().then((ratio) => {
             if (ratio !== null) {
@@ -59,9 +132,67 @@ const clientCacheReady = clientAudioCache.init({
             }
         });
         syncClientCacheOnLoad();
+        initClientCacheNetworkListener();
     }
-    return ok;
+    return cacheOk;
 });
+
+function isMobileDevice() {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+        || (navigator.maxTouchPoints > 1 && window.matchMedia('(pointer: coarse)').matches);
+}
+
+/** True when background device downloads are allowed (desktop always; mobile on WiFi). */
+function isClientCachePrefetchAllowed() {
+    if (!clientAudioCache.isEnabled()) {
+        return false;
+    }
+    if (!isMobileDevice()) {
+        return true;
+    }
+
+    const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    if (conn) {
+        if (conn.saveData) {
+            return false;
+        }
+        if (conn.type === 'wifi' || conn.type === 'ethernet') {
+            return true;
+        }
+        if (conn.type === 'cellular') {
+            return false;
+        }
+    }
+
+    // Unknown connection type on mobile: deny. WireGuard over 5G still uses the same
+    // http://10.x server URL as home WiFi, so URL-based heuristics are not safe here.
+    return false;
+}
+
+function isClientCacheBackgroundCapable() {
+    return 'serviceWorker' in navigator && window.isSecureContext;
+}
+
+function initClientCacheNetworkListener() {
+    const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    if (!conn || typeof conn.addEventListener !== 'function') {
+        return;
+    }
+    conn.addEventListener('change', () => {
+        if (isClientCachePrefetchAllowed()) {
+            fetchQueue().then((queue) => syncClientCacheWithQueue(queue)).catch(() => {});
+        } else {
+            abortClientCacheDownloads();
+        }
+    });
+}
+
+function abortClientCacheDownloads() {
+    postCacheServiceWorkerMessage({ type: 'ABORT_DOWNLOADS' });
+    if (clientAudioCache.isEnabled()) {
+        clientAudioCache.abortDownloads();
+    }
+}
 
 // Playback position persistence
 let lastPositionSaveTime = 0;
@@ -233,9 +364,14 @@ async function updateClientCacheFooter() {
         return;
     }
     const stats = await clientAudioCache.getStats();
+    let suffix = stats.totalMb > 0 ? ` (${stats.totalMb} MB)` : '';
+    if (isMobileDevice() && !isClientCacheBackgroundCapable()) {
+        suffix += ' · WiFi only, while app is open (HTTP)';
+    } else if (isMobileDevice()) {
+        suffix += ' · WiFi only';
+    }
     statusEl.innerHTML =
-        `<i class="fas fa-mobile-alt"></i> Device: ${stats.count}/${stats.maxItems} tracks` +
-        (stats.totalMb > 0 ? ` (${stats.totalMb} MB)` : '');
+        `<i class="fas fa-mobile-alt"></i> Device: ${stats.count}/${stats.maxItems} tracks${suffix}`;
 }
 
 async function clearClientCache() {
@@ -246,6 +382,7 @@ async function clearClientCache() {
     if (!confirm('Clear all audio cached on this device?')) {
         return;
     }
+    postCacheServiceWorkerMessage({ type: 'CLEAR_DEVICE_CACHE' });
     await clientAudioCache.clear();
     await updateClientCacheFooter();
     await renderQueue();
@@ -257,7 +394,7 @@ function refreshClientCacheUi() {
 }
 
 /** Start server + device download for a video (non-blocking). */
-async function enqueueClientCacheForVideo(videoId) {
+async function enqueueClientCacheForVideo(videoId, options = {}) {
     if (!videoId) {
         return;
     }
@@ -265,35 +402,99 @@ async function enqueueClientCacheForVideo(videoId) {
     if (!clientAudioCache.isEnabled()) {
         return;
     }
+
+    if (!options.skipServerPrefetch) {
+        fetch(`/queue/prefetch/${videoId}`, { method: 'POST' }).catch(() => {});
+    }
+
     if (await clientAudioCache.has(videoId)) {
         return;
     }
-
-    fetch(`/queue/prefetch/${videoId}`, { method: 'POST' }).catch(() => {});
+    if (!isClientCachePrefetchAllowed()) {
+        return;
+    }
 
     clientAudioCache.prefetch(videoId)
         .then(() => refreshClientCacheUi())
         .catch((e) => console.warn('Client cache prefetch failed:', e));
 }
 
-/** On page load, backfill device cache for queue items not yet stored locally. */
-async function syncClientCacheOnLoad() {
+function getQueueYoutubeVideoIds(queue) {
+    return (queue || [])
+        .filter((item) => (item.type || 'youtube') === 'youtube')
+        .map((item) => item.youtube_id)
+        .filter(Boolean);
+}
+
+function buildQueueCacheItems(queue) {
+    return (queue || [])
+        .filter((item) => (item.type || 'youtube') === 'youtube')
+        .filter((item) => item.youtube_id)
+        .map((item) => ({
+            videoId: item.youtube_id,
+            title: item.title || '',
+        }));
+}
+
+/** Keep device cache aligned with queue: prefetch on WiFi, drop items no longer queued. */
+async function syncClientCacheWithQueue(queue) {
     await clientCacheReady;
     if (!clientAudioCache.isEnabled()) {
         return;
     }
 
-    const queue = await fetchQueue();
-    for (const item of queue) {
-        if ((item.type || 'youtube') !== 'youtube') {
-            continue;
+    const queueVideoIds = getQueueYoutubeVideoIds(queue);
+    clientAudioCache.setProtectedVideoIds(queueVideoIds);
+
+    const prefetchAllowed = isClientCachePrefetchAllowed();
+    const sentToServiceWorker = await postCacheServiceWorkerMessageAsync({
+        type: 'SYNC_QUEUE',
+        apiBaseUrl: appConfig.apiBaseUrl,
+        prefetchAllowed,
+        maxItems: appConfig.clientCacheMaxItems || 5,
+        maxMb: appConfig.clientCacheMaxMb || 0,
+        items: buildQueueCacheItems(queue),
+    });
+
+    if (sentToServiceWorker) {
+        if (!prefetchAllowed) {
+            abortClientCacheDownloads();
+        } else {
+            for (const videoId of queueVideoIds) {
+                fetch(`/queue/prefetch/${videoId}`, { method: 'POST' }).catch(() => {});
+            }
         }
-        const videoId = item.youtube_id;
-        if (!videoId || await clientAudioCache.has(videoId)) {
-            continue;
-        }
-        enqueueClientCacheForVideo(videoId);
+        await updateClientCacheFooter();
+        return;
     }
+
+    if (!prefetchAllowed) {
+        abortClientCacheDownloads();
+    }
+
+    const queueVideoIdSet = new Set(queueVideoIds);
+    const cachedIds = await clientAudioCache.listVideoIds();
+    for (const videoId of cachedIds) {
+        if (!queueVideoIdSet.has(videoId)) {
+            await clientAudioCache.remove(videoId);
+        }
+    }
+
+    if (prefetchAllowed) {
+        for (const videoId of queueVideoIds) {
+            if (!(await clientAudioCache.has(videoId))) {
+                enqueueClientCacheForVideo(videoId, { skipServerPrefetch: true });
+            }
+        }
+    }
+
+    await updateClientCacheFooter();
+}
+
+/** On page load, backfill device cache for queue items not yet stored locally. */
+async function syncClientCacheOnLoad() {
+    const queue = await fetchQueue();
+    await syncClientCacheWithQueue(queue);
 }
 
 async function applyPlayerAudioSource(videoId) {
@@ -306,13 +507,13 @@ async function applyPlayerAudioSource(videoId) {
     }
 
     if (!fromDevice) {
-        url = `${appConfig.apiBaseUrl}/audio/${videoId}`;
+        url = `/audio/${videoId}`;
     }
 
     console.log(fromDevice ? 'Loading from device cache:' : 'Loading from server:', videoId);
     player.src = url;
 
-    if (!fromDevice && clientAudioCache.isEnabled()) {
+    if (!fromDevice && clientAudioCache.isEnabled() && isClientCachePrefetchAllowed()) {
         const title = currentTrackTitle || '';
         player.addEventListener('canplay', function onCanPlayStore() {
             player.removeEventListener('canplay', onCanPlayStore);
@@ -344,7 +545,7 @@ async function waitForAudioFile(videoId, maxWaitSeconds = 60, requestSeq = null)
 
         attemptCount++;
         try {
-            const audioUrl = `${appConfig.apiBaseUrl}/audio/${videoId}?t=${Date.now()}`;
+            const audioUrl = `/audio/${videoId}?t=${Date.now()}`;
             const response = await fetch(audioUrl, { method: 'HEAD' }); // Use HEAD to avoid downloading
 
             if (response.ok) {
@@ -1259,7 +1460,7 @@ async function startSummaryFromQueue(weekYear, queue_id) {
         updateStatus('Loading weekly summary...', 'streaming');
 
         // Get the audio file URL
-        const audioUrl = `${appConfig.apiBaseUrl}/weekly-summaries/${weekYear}/audio?t=${Date.now()}`;
+        const audioUrl = `/weekly-summaries/${weekYear}/audio?t=${Date.now()}`;
 
         currentVideoId = null; // No video ID for summaries
         currentQueueId = queue_id;
@@ -1463,6 +1664,7 @@ async function renderQueue() {
     initializeQueueDragAndDrop();
     // Restore loading shimmer if still active (survives DOM rebuild)
     _applyQueueLoadingClass();
+    await syncClientCacheWithQueue(queue);
 }
 
 function getAudioStatusBadge(audioStatus, onDevice) {

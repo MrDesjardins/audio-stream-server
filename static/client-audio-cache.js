@@ -3,101 +3,30 @@
  * Stores MP3 blobs on the device for faster replays and offline playback.
  */
 const clientAudioCache = (function () {
-    const DB_NAME = 'audio-stream-client-cache';
-    const DB_VERSION = 1;
-    const STORE_NAME = 'audio_files';
-
     let enabled = false;
-    let maxItems = 5;
-    let maxMb = 0;
     let apiBaseUrl = '';
-    let db = null;
     let initPromise = null;
     let activeBlobUrl = null;
     const prefetchInFlight = new Set();
+    let downloadAbortController = null;
+
+    function createDownloadAbortController() {
+        if (downloadAbortController) {
+            downloadAbortController.abort();
+        }
+        downloadAbortController = new AbortController();
+        return downloadAbortController;
+    }
+
+    function abortDownloads() {
+        if (downloadAbortController) {
+            downloadAbortController.abort();
+            downloadAbortController = null;
+        }
+    }
 
     function isEnabled() {
-        return enabled && db !== null;
-    }
-
-    function _tx(storeName, mode) {
-        return db.transaction(storeName, mode).objectStore(storeName);
-    }
-
-    function _getAllEntries() {
-        return new Promise((resolve, reject) => {
-            const request = _tx(STORE_NAME, 'readonly').getAll();
-            request.onsuccess = () => resolve(request.result || []);
-            request.onerror = () => reject(request.error);
-        });
-    }
-
-    function _getEntry(videoId) {
-        return new Promise((resolve, reject) => {
-            const request = _tx(STORE_NAME, 'readonly').get(videoId);
-            request.onsuccess = () => resolve(request.result || null);
-            request.onerror = () => reject(request.error);
-        });
-    }
-
-    function _putEntry(entry) {
-        return new Promise((resolve, reject) => {
-            const request = _tx(STORE_NAME, 'readwrite').put(entry);
-            request.onsuccess = () => resolve();
-            request.onerror = () => reject(request.error);
-        });
-    }
-
-    function _deleteEntry(videoId) {
-        return new Promise((resolve, reject) => {
-            const request = _tx(STORE_NAME, 'readwrite').delete(videoId);
-            request.onsuccess = () => resolve();
-            request.onerror = () => reject(request.error);
-        });
-    }
-
-    async function _evictIfNeeded() {
-        if (!isEnabled()) {
-            return;
-        }
-
-        let entries = await _getAllEntries();
-        entries.sort((a, b) => a.cachedAt - b.cachedAt);
-
-        const totalBytes = () => entries.reduce((sum, e) => sum + (e.sizeBytes || 0), 0);
-
-        while (entries.length > maxItems) {
-            const oldest = entries.shift();
-            await _deleteEntry(oldest.videoId);
-        }
-
-        if (maxMb > 0) {
-            const maxBytes = maxMb * 1024 * 1024;
-            while (entries.length > 0 && totalBytes() > maxBytes) {
-                const oldest = entries.shift();
-                await _deleteEntry(oldest.videoId);
-            }
-        }
-    }
-
-    async function _waitForServerAudio(videoId, maxWaitMs) {
-        const start = Date.now();
-        let attempt = 0;
-        while (Date.now() - start < maxWaitMs) {
-            attempt += 1;
-            try {
-                const url = `${apiBaseUrl}/audio/${videoId}`;
-                const response = await fetch(url, { method: 'HEAD' });
-                if (response.ok) {
-                    return true;
-                }
-            } catch (e) {
-                /* retry */
-            }
-            const waitMs = Math.min(500 + attempt * 100, 2000);
-            await new Promise((resolve) => setTimeout(resolve, waitMs));
-        }
-        return false;
+        return enabled && typeof ClientCacheDb !== 'undefined';
     }
 
     async function init(config) {
@@ -107,36 +36,27 @@ const clientAudioCache = (function () {
 
         initPromise = (async () => {
             enabled = Boolean(config && config.enabled);
-            maxItems = (config && config.maxItems) || 5;
-            maxMb = (config && config.maxMb) || 0;
             apiBaseUrl = (config && config.apiBaseUrl) || '';
 
             if (!enabled) {
                 return false;
             }
 
-            if (typeof indexedDB === 'undefined') {
+            if (typeof indexedDB === 'undefined' || typeof ClientCacheDb === 'undefined') {
                 enabled = false;
                 return false;
             }
 
             try {
-                db = await new Promise((resolve, reject) => {
-                    const request = indexedDB.open(DB_NAME, DB_VERSION);
-                    request.onerror = () => reject(request.error);
-                    request.onsuccess = () => resolve(request.result);
-                    request.onupgradeneeded = (event) => {
-                        const database = event.target.result;
-                        if (!database.objectStoreNames.contains(STORE_NAME)) {
-                            database.createObjectStore(STORE_NAME, { keyPath: 'videoId' });
-                        }
-                    };
+                ClientCacheDb.configure({
+                    maxItems: (config && config.maxItems) || 5,
+                    maxMb: (config && config.maxMb) || 0,
                 });
+                await ClientCacheDb.listVideoIds();
                 return true;
             } catch (e) {
                 console.warn('Client audio cache disabled:', e);
                 enabled = false;
-                db = null;
                 return false;
             }
         })();
@@ -148,8 +68,7 @@ const clientAudioCache = (function () {
         if (!isEnabled() || !videoId) {
             return false;
         }
-        const entry = await _getEntry(videoId);
-        return entry !== null && entry.blob instanceof Blob;
+        return ClientCacheDb.has(videoId);
     }
 
     async function hasMany(videoIds) {
@@ -169,25 +88,14 @@ const clientAudioCache = (function () {
         if (!isEnabled() || !videoId || !(blob instanceof Blob)) {
             return false;
         }
-
-        const entry = {
-            videoId,
-            blob,
-            sizeBytes: blob.size,
-            title: (metadata && metadata.title) || '',
-            cachedAt: Date.now(),
-        };
-
-        await _putEntry(entry);
-        await _evictIfNeeded();
-        return true;
+        return ClientCacheDb.put(videoId, blob, metadata);
     }
 
     async function remove(videoId) {
         if (!isEnabled() || !videoId) {
             return;
         }
-        await _deleteEntry(videoId);
+        await ClientCacheDb.remove(videoId);
     }
 
     async function clear() {
@@ -195,21 +103,28 @@ const clientAudioCache = (function () {
             return;
         }
         revokeActiveBlobUrl();
-        const entries = await _getAllEntries();
-        await Promise.all(entries.map((e) => _deleteEntry(e.videoId)));
+        await ClientCacheDb.clear();
     }
 
     async function getStats() {
         if (!isEnabled()) {
-            return { count: 0, maxItems, totalMb: 0 };
+            return { count: 0, maxItems: 5, totalMb: 0 };
         }
-        const entries = await _getAllEntries();
-        const totalBytes = entries.reduce((sum, e) => sum + (e.sizeBytes || 0), 0);
-        return {
-            count: entries.length,
-            maxItems,
-            totalMb: Math.round((totalBytes / (1024 * 1024)) * 10) / 10,
-        };
+        return ClientCacheDb.getStats();
+    }
+
+    async function listVideoIds() {
+        if (!isEnabled()) {
+            return [];
+        }
+        return ClientCacheDb.listVideoIds();
+    }
+
+    function setProtectedVideoIds(videoIds) {
+        if (!isEnabled()) {
+            return;
+        }
+        ClientCacheDb.setProtectedVideoIds(videoIds);
     }
 
     function revokeActiveBlobUrl() {
@@ -224,20 +139,19 @@ const clientAudioCache = (function () {
             return null;
         }
 
-        const entry = await _getEntry(videoId);
+        const entry = await ClientCacheDb.getEntry(videoId);
         if (!entry || !(entry.blob instanceof Blob)) {
             return null;
         }
 
-        entry.cachedAt = Date.now();
-        await _putEntry(entry);
+        await ClientCacheDb.touch(videoId);
 
         revokeActiveBlobUrl();
         activeBlobUrl = URL.createObjectURL(entry.blob);
         return activeBlobUrl;
     }
 
-    async function storeFromServer(videoId, title) {
+    async function storeFromServer(videoId, title, externalSignal) {
         if (!isEnabled() || !videoId || prefetchInFlight.has(`store:${videoId}`)) {
             return false;
         }
@@ -247,14 +161,17 @@ const clientAudioCache = (function () {
         }
 
         prefetchInFlight.add(`store:${videoId}`);
+        let signal = externalSignal;
+        if (!signal) {
+            signal = createDownloadAbortController().signal;
+        }
         try {
-            const ready = await _waitForServerAudio(videoId, 5000);
+            const ready = await ClientCacheDb.waitForServerAudio(videoId, 5000, signal);
             if (!ready) {
                 return false;
             }
 
-            const url = `${apiBaseUrl}/audio/${videoId}`;
-            const response = await fetch(url);
+            const response = await fetch(`/audio/${videoId}`, { signal });
             if (!response.ok) {
                 return false;
             }
@@ -262,6 +179,9 @@ const clientAudioCache = (function () {
             const blob = await response.blob();
             return await put(videoId, blob, { title: title || '' });
         } catch (e) {
+            if (signal.aborted) {
+                return false;
+            }
             console.warn(`Client cache store failed for ${videoId}:`, e);
             return false;
         } finally {
@@ -279,12 +199,17 @@ const clientAudioCache = (function () {
         }
 
         prefetchInFlight.add(`prefetch:${videoId}`);
+        const controller = createDownloadAbortController();
         try {
-            const ready = await _waitForServerAudio(videoId, 120000);
+            const ready = await ClientCacheDb.waitForServerAudio(
+                videoId,
+                120000,
+                controller.signal
+            );
             if (!ready) {
                 return;
             }
-            await storeFromServer(videoId, '');
+            await storeFromServer(videoId, '', controller.signal);
         } finally {
             prefetchInFlight.delete(`prefetch:${videoId}`);
         }
@@ -315,10 +240,13 @@ const clientAudioCache = (function () {
         remove,
         clear,
         getStats,
+        listVideoIds,
+        setProtectedVideoIds,
         revokeActiveBlobUrl,
         createObjectUrl,
         storeFromServer,
         prefetch,
+        abortDownloads,
         checkStorageQuota,
     };
 })();

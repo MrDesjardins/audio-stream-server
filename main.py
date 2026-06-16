@@ -10,7 +10,7 @@ from typing import Optional
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -202,6 +202,37 @@ app.include_router(admin_router)
 app.include_router(weekly_summaries_router)
 
 
+def _build_client_base_url(request: Request) -> str:
+    """Build the browser-facing base URL, honoring reverse-proxy TLS headers."""
+    forwarded_proto = request.headers.get("x-forwarded-proto")
+    scheme = (
+        forwarded_proto.split(",")[0].strip() if forwarded_proto else request.url.scheme
+    )
+
+    forwarded_host = request.headers.get("x-forwarded-host")
+    if forwarded_host:
+        host = forwarded_host.split(",")[0].strip()
+    else:
+        host = request.url.hostname or ""
+        port = request.url.port
+        if port and not (
+            (scheme == "http" and port == 80) or (scheme == "https" and port == 443)
+        ):
+            host = f"{host}:{port}"
+
+    return f"{scheme}://{host}"
+
+
+@app.get("/service-worker.js")
+async def serve_service_worker() -> FileResponse:
+    """Serve the cache service worker from site root for full-scope registration."""
+    return FileResponse(
+        "static/service-worker.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-cache"},
+    )
+
+
 def _is_on_wireguard(client_ip: str, wireguard_subnet: Optional[str]) -> bool:
     """Return True if client IP is within the configured WireGuard subnet (or no subnet is set)."""
     if not wireguard_subnet:
@@ -228,12 +259,11 @@ def vpn_status(request: Request) -> JSONResponse:
 def index(request: Request) -> HTMLResponse:
     """Serve the main HTML page."""
     server_host = request.url.hostname
+    api_base_url = _build_client_base_url(request)
     client = request.client
     client_ip = client.host if client else ""
     logger.info(f"📄 Index page requested by {client_ip or 'unknown'}")
-    logger.info(
-        f"   Audio files served from: http://{server_host}:{api_port}/audio/{{video_id}}"
-    )
+    logger.info(f"   Audio files served from: {api_base_url}/audio/{{video_id}}")
     vpn_warning = config.wireguard_subnet is not None and not _is_on_wireguard(
         client_ip, config.wireguard_subnet
     )
@@ -243,6 +273,7 @@ def index(request: Request) -> HTMLResponse:
         {
             "host": server_host,
             "api_port": api_port,
+            "api_base_url": api_base_url,
             "transcription_enabled": config.transcription_enabled,
             "book_suggestions_enabled": config.book_suggestions_enabled,
             "weekly_summary_enabled": config.weekly_summary_enabled,
