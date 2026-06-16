@@ -49,6 +49,23 @@ let prefetchTriggered = false;
 
 // Client-side IndexedDB audio cache
 let cacheServiceWorkerRegistration = null;
+const deviceCachePending = new Set();
+
+function markDeviceCachePending(videoId) {
+    if (videoId) {
+        deviceCachePending.add(videoId);
+    }
+}
+
+function markDeviceCacheComplete(videoId) {
+    if (videoId) {
+        deviceCachePending.delete(videoId);
+    }
+}
+
+function clearDeviceCachePending() {
+    deviceCachePending.clear();
+}
 
 async function initCacheServiceWorker() {
     if (!Boolean(appConfig.clientCacheEnabled) || !('serviceWorker' in navigator)) {
@@ -106,6 +123,9 @@ function initCacheServiceWorkerMessageListener() {
     navigator.serviceWorker.addEventListener('message', (event) => {
         const data = event.data || {};
         if (data.type === 'CACHE_UPDATED') {
+            if (data.videoId) {
+                markDeviceCacheComplete(data.videoId);
+            }
             refreshClientCacheUi();
         }
     });
@@ -189,6 +209,7 @@ function initClientCacheNetworkListener() {
 
 function abortClientCacheDownloads() {
     postCacheServiceWorkerMessage({ type: 'ABORT_DOWNLOADS' });
+    clearDeviceCachePending();
     if (clientAudioCache.isEnabled()) {
         clientAudioCache.abortDownloads();
     }
@@ -364,14 +385,17 @@ async function updateClientCacheFooter() {
         return;
     }
     const stats = await clientAudioCache.getStats();
+    const savingCount = deviceCachePending.size;
     let suffix = stats.totalMb > 0 ? ` (${stats.totalMb} MB)` : '';
-    if (isMobileDevice() && !isClientCacheBackgroundCapable()) {
+    if (savingCount > 0) {
+        suffix += ` · <span class="client-cache-saving"><i class="fas fa-spinner fa-spin"></i> Caching ${savingCount}…</span>`;
+    } else if (isMobileDevice() && !isClientCacheBackgroundCapable()) {
         suffix += ' · WiFi only, while app is open (HTTP)';
     } else if (isMobileDevice()) {
         suffix += ' · WiFi only';
     }
     statusEl.innerHTML =
-        `<i class="fas fa-mobile-alt"></i> Device: ${stats.count}/${stats.maxItems} tracks${suffix}`;
+        `<i class="fas fa-mobile-alt"></i> On this phone: ${stats.count}/${stats.maxItems} tracks${suffix}`;
 }
 
 async function clearClientCache() {
@@ -414,9 +438,14 @@ async function enqueueClientCacheForVideo(videoId, options = {}) {
         return;
     }
 
+    markDeviceCachePending(videoId);
     clientAudioCache.prefetch(videoId)
+        .then(() => markDeviceCacheComplete(videoId))
         .then(() => refreshClientCacheUi())
-        .catch((e) => console.warn('Client cache prefetch failed:', e));
+        .catch((e) => {
+            markDeviceCacheComplete(videoId);
+            console.warn('Client cache prefetch failed:', e);
+        });
 }
 
 function getQueueYoutubeVideoIds(queue) {
@@ -447,6 +476,7 @@ async function syncClientCacheWithQueue(queue) {
     clientAudioCache.setProtectedVideoIds(queueVideoIds);
 
     const prefetchAllowed = isClientCachePrefetchAllowed();
+
     const sentToServiceWorker = await postCacheServiceWorkerMessageAsync({
         type: 'SYNC_QUEUE',
         apiBaseUrl: appConfig.apiBaseUrl,
@@ -461,6 +491,9 @@ async function syncClientCacheWithQueue(queue) {
             abortClientCacheDownloads();
         } else {
             for (const videoId of queueVideoIds) {
+                if (!(await clientAudioCache.has(videoId))) {
+                    markDeviceCachePending(videoId);
+                }
                 fetch(`/queue/prefetch/${videoId}`, { method: 'POST' }).catch(() => {});
             }
         }
@@ -1575,6 +1608,13 @@ async function renderQueue() {
         ? await clientAudioCache.hasMany(youtubeIds)
         : new Set();
 
+    // Drop stale pending flags once a track is fully on the device.
+    for (const videoId of onDeviceIds) {
+        markDeviceCacheComplete(videoId);
+    }
+
+    await syncClientCacheWithQueue(queue);
+
     queueContainer.innerHTML = queue.map((item, index) => {
         const isCurrentlyPlaying = currentQueueId === item.id;
         const itemType = item.type || 'youtube';
@@ -1627,8 +1667,11 @@ async function renderQueue() {
         }
 
         const onDevice = itemType === 'youtube' && onDeviceIds.has(item.youtube_id);
+        const devicePending = itemType === 'youtube'
+            && deviceCachePending.has(item.youtube_id)
+            && !onDevice;
         const audioStatusBadge = itemType === 'youtube'
-            ? getAudioStatusBadge(item.audio_status, onDevice)
+            ? getAudioStatusBadge(item.audio_status, onDevice, devicePending)
             : '';
 
         return `
@@ -1664,40 +1707,46 @@ async function renderQueue() {
     initializeQueueDragAndDrop();
     // Restore loading shimmer if still active (survives DOM rebuild)
     _applyQueueLoadingClass();
-    await syncClientCacheWithQueue(queue);
+    await updateClientCacheFooter();
 }
 
-function getAudioStatusBadge(audioStatus, onDevice) {
+function getAudioStatusBadge(audioStatus, onDevice, devicePending) {
     if (onDevice) {
-        return '<span class="queue-audio-status queue-audio-status-cached queue-audio-status-cached-local" ' +
-            'title="Cached on this device">' +
-            '<i class="fas fa-bolt"></i> Cached</span>';
+        return '<span class="queue-audio-status queue-audio-status-on-device" ' +
+            'title="Audio saved on this phone — plays offline">' +
+            '<i class="fas fa-mobile-alt"></i> On this phone</span>';
+    }
+
+    if (devicePending && audioStatus === 'cached') {
+        return '<span class="queue-audio-status queue-audio-status-saving-device" ' +
+            'title="Saving audio to this phone">' +
+            '<i class="fas fa-spinner fa-spin"></i> Saving to phone</span>';
     }
 
     const statusMap = {
         cached: {
-            className: 'queue-audio-status-cached',
-            icon: 'fa-check-circle',
-            label: 'Cached',
-            title: 'Cached on server',
+            className: 'queue-audio-status-server-ready',
+            icon: 'fa-server',
+            label: 'Ready on server',
+            title: 'Downloaded on server — not on this phone yet',
         },
         downloading: {
             className: 'queue-audio-status-downloading',
             icon: 'fa-cloud-download-alt',
-            label: 'Downloading',
-            title: 'Downloading to server',
+            label: 'Downloading…',
+            title: 'Server is downloading from YouTube',
         },
         queued: {
             className: 'queue-audio-status-queued',
             icon: 'fa-clock',
-            label: 'Queued',
-            title: 'Queued for download',
+            label: 'Waiting…',
+            title: 'Queued for server download',
         },
         failed: {
             className: 'queue-audio-status-failed',
             icon: 'fa-exclamation-circle',
             label: 'Failed',
-            title: 'Download failed',
+            title: 'Server download failed',
         },
     };
     const badge = statusMap[audioStatus];
