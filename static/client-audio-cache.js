@@ -8,21 +8,43 @@ const clientAudioCache = (function () {
     let initPromise = null;
     let activeBlobUrl = null;
     const prefetchInFlight = new Set();
-    let downloadAbortController = null;
+    const prefetchQueue = [];
+    const prefetchPromises = new Map();
+    let prefetchWorkerRunning = false;
+    let batchAbortController = null;
+    let standaloneAbortController = null;
 
-    function createDownloadAbortController() {
-        if (downloadAbortController) {
-            downloadAbortController.abort();
+    function beginBatchAbortController() {
+        if (batchAbortController) {
+            batchAbortController.abort();
         }
-        downloadAbortController = new AbortController();
-        return downloadAbortController;
+        batchAbortController = new AbortController();
+        return batchAbortController;
+    }
+
+    function createStandaloneAbortController() {
+        if (standaloneAbortController) {
+            standaloneAbortController.abort();
+        }
+        standaloneAbortController = new AbortController();
+        return standaloneAbortController;
     }
 
     function abortDownloads() {
-        if (downloadAbortController) {
-            downloadAbortController.abort();
-            downloadAbortController = null;
+        if (batchAbortController) {
+            batchAbortController.abort();
+            batchAbortController = null;
         }
+        if (standaloneAbortController) {
+            standaloneAbortController.abort();
+            standaloneAbortController = null;
+        }
+        while (prefetchQueue.length > 0) {
+            const entry = prefetchQueue.shift();
+            entry.reject(new DOMException('Aborted', 'AbortError'));
+        }
+        prefetchPromises.clear();
+        prefetchWorkerRunning = false;
     }
 
     function isEnabled() {
@@ -103,6 +125,7 @@ const clientAudioCache = (function () {
             return;
         }
         revokeActiveBlobUrl();
+        abortDownloads();
         await ClientCacheDb.clear();
     }
 
@@ -163,7 +186,7 @@ const clientAudioCache = (function () {
         prefetchInFlight.add(`store:${videoId}`);
         let signal = externalSignal;
         if (!signal) {
-            signal = createDownloadAbortController().signal;
+            signal = createStandaloneAbortController().signal;
         }
         try {
             const ready = await ClientCacheDb.waitForServerAudio(videoId, 5000, signal);
@@ -189,30 +212,79 @@ const clientAudioCache = (function () {
         }
     }
 
-    async function prefetch(videoId) {
-        if (!isEnabled() || !videoId || prefetchInFlight.has(`prefetch:${videoId}`)) {
-            return;
-        }
-
-        if (await has(videoId)) {
-            return;
-        }
-
+    async function downloadPrefetchedVideo(videoId, signal) {
         prefetchInFlight.add(`prefetch:${videoId}`);
-        const controller = createDownloadAbortController();
         try {
             const ready = await ClientCacheDb.waitForServerAudio(
                 videoId,
                 120000,
-                controller.signal
+                signal
             );
-            if (!ready) {
-                return;
+            if (!ready || signal.aborted) {
+                return false;
             }
-            await storeFromServer(videoId, '', controller.signal);
+            return await storeFromServer(videoId, '', signal);
         } finally {
             prefetchInFlight.delete(`prefetch:${videoId}`);
         }
+    }
+
+    async function runPrefetchWorker() {
+        if (prefetchWorkerRunning) {
+            return;
+        }
+        prefetchWorkerRunning = true;
+        const controller = beginBatchAbortController();
+        const signal = controller.signal;
+
+        try {
+            while (prefetchQueue.length > 0 && !signal.aborted) {
+                const entry = prefetchQueue.shift();
+                if (!entry) {
+                    continue;
+                }
+
+                try {
+                    if (await has(entry.videoId)) {
+                        entry.resolve(true);
+                        continue;
+                    }
+
+                    const stored = await downloadPrefetchedVideo(entry.videoId, signal);
+                    entry.resolve(stored);
+                } catch (e) {
+                    entry.reject(e);
+                }
+            }
+        } finally {
+            prefetchWorkerRunning = false;
+            if (prefetchQueue.length > 0 && !signal.aborted) {
+                runPrefetchWorker().catch((e) => {
+                    console.warn('Client cache prefetch worker failed:', e);
+                });
+            }
+        }
+    }
+
+    function prefetch(videoId) {
+        if (!isEnabled() || !videoId) {
+            return Promise.resolve(false);
+        }
+        if (prefetchPromises.has(videoId)) {
+            return prefetchPromises.get(videoId);
+        }
+
+        const promise = new Promise((resolve, reject) => {
+            prefetchQueue.push({ videoId, resolve, reject });
+            runPrefetchWorker().catch((e) => {
+                console.warn('Client cache prefetch worker failed:', e);
+            });
+        });
+        prefetchPromises.set(videoId, promise);
+        promise.finally(() => {
+            prefetchPromises.delete(videoId);
+        });
+        return promise;
     }
 
     async function checkStorageQuota() {

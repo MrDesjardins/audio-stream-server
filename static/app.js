@@ -619,7 +619,9 @@ async function enqueueClientCacheForVideo(videoId, options = {}) {
         return;
     }
 
-    markDeviceCachePending(videoId);
+    if (!options.skipMarkPending) {
+        markDeviceCachePending(videoId);
+    }
     clientAudioCache.prefetch(videoId)
         .then(() => markDeviceCacheComplete(videoId))
         .then(() => refreshClientCacheUi())
@@ -697,7 +699,16 @@ async function syncClientCacheWithQueue(queue) {
     if (prefetchAllowed) {
         for (const videoId of queueVideoIds) {
             if (!(await clientAudioCache.has(videoId))) {
-                enqueueClientCacheForVideo(videoId, { skipServerPrefetch: true });
+                markDeviceCachePending(videoId);
+            }
+        }
+        refreshClientCacheUi();
+        for (const videoId of queueVideoIds) {
+            if (!(await clientAudioCache.has(videoId))) {
+                enqueueClientCacheForVideo(videoId, {
+                    skipServerPrefetch: true,
+                    skipMarkPending: true,
+                });
             }
         }
     }
