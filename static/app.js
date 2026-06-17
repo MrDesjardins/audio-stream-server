@@ -73,8 +73,12 @@ function clearDeviceCachePending() {
     deviceCachePending.clear();
 }
 
+function isClientCacheBackgroundCapable() {
+    return 'serviceWorker' in navigator && window.isSecureContext;
+}
+
 async function initCacheServiceWorker() {
-    if (!Boolean(appConfig.clientCacheEnabled) || !('serviceWorker' in navigator)) {
+    if (!Boolean(appConfig.clientCacheEnabled) || !isClientCacheBackgroundCapable()) {
         return null;
     }
 
@@ -113,7 +117,7 @@ function postCacheServiceWorkerMessage(message) {
 }
 
 async function postCacheServiceWorkerMessageAsync(message) {
-    if (!('serviceWorker' in navigator)) {
+    if (!isClientCacheBackgroundCapable()) {
         return false;
     }
     if (!getCacheServiceWorkerTarget()) {
@@ -348,13 +352,15 @@ function isClientCachePrefetchAllowed() {
         }
     }
 
-    // Unknown connection type on mobile: deny. WireGuard over 5G still uses the same
-    // http://10.x server URL as home WiFi, so URL-based heuristics are not safe here.
-    return false;
-}
+    // Foreground-only mode (HTTP): caching stops when the tab closes, so allow prefetch
+    // while the app is open even when the OS omits connection type (common on iOS Safari).
+    if (!isClientCacheBackgroundCapable()) {
+        return true;
+    }
 
-function isClientCacheBackgroundCapable() {
-    return 'serviceWorker' in navigator && window.isSecureContext;
+    // Unknown connection type on mobile with a service worker: deny. WireGuard over 5G
+    // still uses the same http://10.x server URL as home WiFi, so URL heuristics are unsafe.
+    return false;
 }
 
 function initClientCacheNetworkListener() {
