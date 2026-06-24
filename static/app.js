@@ -50,6 +50,7 @@ let prefetchTriggered = false;
 // Client-side IndexedDB audio cache
 let cacheServiceWorkerRegistration = null;
 const deviceCachePending = new Set();
+const deviceCacheFailures = new Map();
 
 // Optimistic queue state — UI updates immediately; server sync runs in background
 let optimisticQueue = null;
@@ -59,6 +60,7 @@ const QUEUE_MUTATIONS_STORAGE_KEY = 'audioStreamPendingQueueMutations';
 
 function markDeviceCachePending(videoId) {
     if (videoId) {
+        deviceCacheFailures.delete(videoId);
         deviceCachePending.add(videoId);
     }
 }
@@ -66,11 +68,24 @@ function markDeviceCachePending(videoId) {
 function markDeviceCacheComplete(videoId) {
     if (videoId) {
         deviceCachePending.delete(videoId);
+        deviceCacheFailures.delete(videoId);
+    }
+}
+
+function markDeviceCacheFailed(videoId, reason) {
+    if (videoId) {
+        deviceCachePending.delete(videoId);
+        deviceCacheFailures.set(videoId, reason || 'Could not save to this phone');
     }
 }
 
 function clearDeviceCachePending() {
     deviceCachePending.clear();
+    deviceCacheFailures.clear();
+}
+
+function getDeviceCacheFailure(videoId) {
+    return videoId ? deviceCacheFailures.get(videoId) : null;
 }
 
 function isClientCacheBackgroundCapable() {
@@ -135,6 +150,16 @@ function initCacheServiceWorkerMessageListener() {
         if (data.type === 'CACHE_UPDATED') {
             if (data.videoId) {
                 markDeviceCacheComplete(data.videoId);
+            }
+            refreshClientCacheUi();
+        }
+        if (data.type === 'CACHE_FAILED') {
+            markDeviceCacheFailed(data.videoId, data.reason);
+            if (data.videoId) {
+                remoteLog('warn', 'Device cache failed', {
+                    videoId: data.videoId,
+                    reason: data.reason || 'unknown',
+                });
             }
             refreshClientCacheUi();
         }
@@ -352,15 +377,39 @@ function isClientCachePrefetchAllowed() {
         }
     }
 
+    if (window.isSecureContext) {
+        return true;
+    }
+
     // Foreground-only mode (HTTP): caching stops when the tab closes, so allow prefetch
     // while the app is open even when the OS omits connection type (common on iOS Safari).
     if (!isClientCacheBackgroundCapable()) {
         return true;
     }
 
-    // Unknown connection type on mobile with a service worker: deny. WireGuard over 5G
-    // still uses the same http://10.x server URL as home WiFi, so URL heuristics are unsafe.
+    // Unknown connection type on insecure mobile origins: deny. WireGuard over 5G
+    // can use the same http://10.x server URL as home WiFi, so URL heuristics are unsafe.
     return false;
+}
+
+function getClientCacheBlockedReason() {
+    if (!clientAudioCache.isEnabled()) {
+        return 'Device cache is disabled';
+    }
+    if (!isMobileDevice()) {
+        return '';
+    }
+    const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    if (conn && conn.saveData) {
+        return 'Data Saver is on';
+    }
+    if (conn && conn.type === 'cellular') {
+        return 'Phone cache paused on cellular';
+    }
+    if (!window.isSecureContext) {
+        return 'HTTPS required for background phone cache';
+    }
+    return '';
 }
 
 function initClientCacheNetworkListener() {
@@ -616,6 +665,10 @@ async function enqueueClientCacheForVideo(videoId, options = {}) {
         return;
     }
     if (!isClientCachePrefetchAllowed()) {
+        const reason = getClientCacheBlockedReason();
+        markDeviceCacheFailed(videoId, reason || 'Phone cache paused');
+        remoteLog('warn', 'Device cache not started', { videoId, reason });
+        refreshClientCacheUi();
         return;
     }
 
@@ -623,11 +676,23 @@ async function enqueueClientCacheForVideo(videoId, options = {}) {
         markDeviceCachePending(videoId);
     }
     clientAudioCache.prefetch(videoId)
-        .then(() => markDeviceCacheComplete(videoId))
+        .then((stored) => {
+            if (stored) {
+                markDeviceCacheComplete(videoId);
+            } else {
+                markDeviceCacheFailed(videoId, 'Could not save audio to this phone');
+                remoteLog('warn', 'Device cache store returned false', { videoId });
+            }
+        })
         .then(() => refreshClientCacheUi())
         .catch((e) => {
-            markDeviceCacheComplete(videoId);
+            markDeviceCacheFailed(videoId, e && e.message ? e.message : 'Phone cache failed');
+            remoteLog('warn', 'Client cache prefetch failed', {
+                videoId,
+                error: e && e.message ? e.message : String(e),
+            });
             console.warn('Client cache prefetch failed:', e);
+            refreshClientCacheUi();
         });
 }
 
@@ -672,6 +737,13 @@ async function syncClientCacheWithQueue(queue) {
     if (sentToServiceWorker) {
         if (!prefetchAllowed) {
             abortClientCacheDownloads();
+            const reason = getClientCacheBlockedReason();
+            for (const videoId of queueVideoIds) {
+                if (!(await clientAudioCache.has(videoId))) {
+                    markDeviceCacheFailed(videoId, reason || 'Phone cache paused');
+                }
+            }
+            remoteLog('warn', 'Device cache sync paused', { reason });
         } else {
             for (const videoId of queueVideoIds) {
                 if (!(await clientAudioCache.has(videoId))) {
@@ -686,6 +758,13 @@ async function syncClientCacheWithQueue(queue) {
 
     if (!prefetchAllowed) {
         abortClientCacheDownloads();
+        const reason = getClientCacheBlockedReason();
+        for (const videoId of queueVideoIds) {
+            if (!(await clientAudioCache.has(videoId))) {
+                markDeviceCacheFailed(videoId, reason || 'Phone cache paused');
+            }
+        }
+        remoteLog('warn', 'Device cache sync paused', { reason });
     }
 
     const queueVideoIdSet = new Set(queueVideoIds);
@@ -1947,8 +2026,11 @@ async function renderQueue(skipCacheSync = false) {
         const devicePending = itemType === 'youtube'
             && deviceCachePending.has(item.youtube_id)
             && !onDevice;
+        const deviceFailure = itemType === 'youtube' && !onDevice
+            ? getDeviceCacheFailure(item.youtube_id)
+            : null;
         const audioStatusBadge = itemType === 'youtube'
-            ? getAudioStatusBadge(item.audio_status, onDevice, devicePending)
+            ? getAudioStatusBadge(item.audio_status, onDevice, devicePending, deviceFailure)
             : '';
 
         return `
@@ -1995,11 +2077,17 @@ async function renderQueue(skipCacheSync = false) {
     }
 }
 
-function getAudioStatusBadge(audioStatus, onDevice, devicePending) {
+function getAudioStatusBadge(audioStatus, onDevice, devicePending, deviceFailure) {
     if (onDevice) {
         return '<span class="queue-audio-status queue-audio-status-on-device" ' +
             'title="Audio saved on this phone — plays offline">' +
             '<i class="fas fa-mobile-alt"></i> On this phone</span>';
+    }
+
+    if (deviceFailure) {
+        return '<span class="queue-audio-status queue-audio-status-device-failed" ' +
+            `title="${escapeAttr(deviceFailure)}">` +
+            '<i class="fas fa-exclamation-triangle"></i> Phone cache failed</span>';
     }
 
     if (devicePending && audioStatus === 'cached') {
@@ -2591,6 +2679,10 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+function escapeAttr(text) {
+    return escapeHtml(text).replace(/"/g, '&quot;');
 }
 
 async function loadFromHistory(videoId) {

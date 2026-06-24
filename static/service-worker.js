@@ -3,12 +3,13 @@
 
 importScripts('/static/client-cache-db.js?v=3');
 
-const SW_VERSION = 'queue-cache-v4';
+const SW_VERSION = 'queue-cache-v6';
 let activeDownloadTag = null;
 let lastApiBaseUrl = '';
 let lastPrefetchAllowedFromPage = false;
 let sequentialDownloadAbortController = null;
 let connectionListenerAttached = false;
+const backgroundFetchItems = new Map();
 
 self.addEventListener('install', (event) => {
     event.waitUntil(self.skipWaiting());
@@ -51,11 +52,11 @@ self.addEventListener('backgroundfetchsuccess', (event) => {
 
 self.addEventListener('backgroundfetchfail', (event) => {
     console.warn('Background fetch failed:', event.registration.id);
-    notifyClients({ type: 'CACHE_UPDATED' });
+    notifyBackgroundFetchFailure(event.registration.id, 'Background fetch failed');
 });
 
-self.addEventListener('backgroundfetchabort', () => {
-    notifyClients({ type: 'CACHE_UPDATED' });
+self.addEventListener('backgroundfetchabort', (event) => {
+    notifyBackgroundFetchFailure(event.registration.id, 'Background fetch was aborted');
 });
 
 function isPrefetchAllowedInServiceWorker(apiBaseUrl, trustedFromPage) {
@@ -223,6 +224,7 @@ async function tryBackgroundFetch(pending, apiBaseUrl) {
             title: `Caching ${readyItems.length} queued track${readyItems.length === 1 ? '' : 's'}`,
             downloadTotal: readyItems.length,
         });
+        backgroundFetchItems.set(downloadTag, readyItems.map((item) => item.videoId));
         activeDownloadTag = downloadTag;
         sequentialDownloadAbortController = null;
         return true;
@@ -238,6 +240,7 @@ async function handleBackgroundFetchSuccess(registration) {
         return;
     }
 
+    const storedVideoIds = new Set();
     try {
         const records = await registration.matchAll();
         for (const record of records) {
@@ -251,12 +254,40 @@ async function handleBackgroundFetchSuccess(registration) {
             }
             const blob = await response.blob();
             await ClientCacheDb.put(videoId, blob, { title: '' });
+            storedVideoIds.add(videoId);
         }
     } catch (e) {
         console.warn('Failed to persist background fetch results:', e);
     }
 
+    const expectedVideoIds = backgroundFetchItems.get(registration.id) || [];
+    for (const videoId of expectedVideoIds) {
+        if (!storedVideoIds.has(videoId)) {
+            notifyClients({
+                type: 'CACHE_FAILED',
+                videoId,
+                reason: 'Background fetch did not save audio',
+            });
+        }
+    }
+    backgroundFetchItems.delete(registration.id);
     activeDownloadTag = null;
+    notifyClients({ type: 'CACHE_UPDATED' });
+}
+
+function notifyBackgroundFetchFailure(registrationId, reason) {
+    const videoIds = backgroundFetchItems.get(registrationId) || [];
+    for (const videoId of videoIds) {
+        notifyClients({
+            type: 'CACHE_FAILED',
+            videoId,
+            reason,
+        });
+    }
+    backgroundFetchItems.delete(registrationId);
+    if (activeDownloadTag === registrationId) {
+        activeDownloadTag = null;
+    }
     notifyClients({ type: 'CACHE_UPDATED' });
 }
 
@@ -275,12 +306,24 @@ async function downloadSequentially(pending, apiBaseUrl) {
         const ready = await ClientCacheDb.waitForServerAudio(item.videoId, 120000, signal);
         if (!ready || signal.aborted
             || !isPrefetchAllowedInServiceWorker(apiBaseUrl, lastPrefetchAllowedFromPage)) {
+            if (!signal.aborted) {
+                notifyClients({
+                    type: 'CACHE_FAILED',
+                    videoId: item.videoId,
+                    reason: 'Server audio was not ready for phone cache',
+                });
+            }
             break;
         }
 
         try {
             const response = await fetch(`/audio/${item.videoId}`, { signal });
             if (!response.ok) {
+                notifyClients({
+                    type: 'CACHE_FAILED',
+                    videoId: item.videoId,
+                    reason: `Audio download failed with HTTP ${response.status}`,
+                });
                 continue;
             }
             const blob = await response.blob();
@@ -291,6 +334,11 @@ async function downloadSequentially(pending, apiBaseUrl) {
                 break;
             }
             console.warn(`Service worker download failed for ${item.videoId}:`, e);
+            notifyClients({
+                type: 'CACHE_FAILED',
+                videoId: item.videoId,
+                reason: e && e.message ? e.message : 'Service worker download failed',
+            });
         }
     }
 
