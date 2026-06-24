@@ -201,6 +201,18 @@ function setOptimisticQueue(queue) {
     optimisticQueue = applyOptimisticQueueFilter(Array.isArray(queue) ? queue.slice() : []);
 }
 
+function appendOptimisticQueueItem(item) {
+    if (!item || item.id == null) {
+        return;
+    }
+    const currentQueue = optimisticQueue ? optimisticQueue.slice() : [];
+    if (currentQueue.some((queueItem) => queueItem.id === item.id)) {
+        return;
+    }
+    currentQueue.push(item);
+    setOptimisticQueue(currentQueue);
+}
+
 function optimisticallyRemoveQueueItem(queueId) {
     if (queueId == null) {
         return;
@@ -1486,7 +1498,15 @@ async function addToQueue() {
         if (res.ok) {
             updateStatus('Added to queue: ' + data.title, 'streaming');
             document.getElementById('youtube_video_id').value = '';
-            await renderQueue();
+            appendOptimisticQueueItem({
+                id: data.queue_id,
+                youtube_id: data.youtube_id,
+                title: data.title,
+                type: 'youtube',
+                audio_status: 'queued',
+            });
+            await renderQueue(true);
+            renderQueue(false, true).catch((e) => console.warn('Queue refresh after add failed:', e));
             enqueueClientCacheForVideo(youtube_video_id);
         } else {
             updateStatus('Failed to add to queue', 'error');
@@ -1504,7 +1524,8 @@ async function clearQueue() {
 
     try {
         await fetch('/queue/clear', { method: 'POST' });
-        await renderQueue();
+        setOptimisticQueue([]);
+        await renderQueue(true, true);
         updateStatus('Queue cleared', 'idle');
     } catch (e) {
         console.error('Error clearing queue:', e);
@@ -1548,7 +1569,8 @@ async function suggestVideos() {
                 }
 
                 // Refresh queue display
-                await renderQueue();
+                await renderQueue(true, true);
+                renderQueue(false, true).catch((e) => console.warn('Queue refresh after suggestions failed:', e));
             } else {
                 updateStatus(data.message || 'No suggestions available', 'error');
             }
@@ -1928,14 +1950,14 @@ function _applyQueueLoadingClass() {
     }
 }
 
-async function renderQueue(skipCacheSync = false) {
+async function renderQueue(skipCacheSync = false, forceRefresh = false) {
     const queueContainer = document.getElementById('queue-list');
     const queueCountEl = document.getElementById('queue-count');
     if (!queueContainer || !queueCountEl) {
         return;
     }
 
-    const queue = await fetchQueue();
+    const queue = await fetchQueue(forceRefresh);
 
     queueCountEl.textContent = `${queue.length} track${queue.length !== 1 ? 's' : ''}`;
 
